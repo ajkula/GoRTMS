@@ -1,0 +1,201 @@
+syntax = "proto3";
+
+package gortms;
+
+option go_package = "github.com/ajkula/GoRTMS/adapter/inbound/grpc/proto/generated;pb";
+
+// Service principal
+service GoRTMS {
+  // Opérations sur les domaines
+  rpc ListDomains(ListDomainsRequest) returns (ListDomainsResponse);
+  rpc CreateDomain(CreateDomainRequest) returns (CreateDomainResponse);
+  rpc GetDomain(GetDomainRequest) returns (DomainResponse);
+  rpc DeleteDomain(DeleteDomainRequest) returns (StatusResponse);
+  
+  // Opérations sur les files d'attente
+  rpc ListQueues(ListQueuesRequest) returns (ListQueuesResponse);
+  rpc CreateQueue(CreateQueueRequest) returns (CreateQueueResponse);
+  rpc GetQueue(GetQueueRequest) returns (QueueResponse);
+  rpc DeleteQueue(DeleteQueueRequest) returns (StatusResponse);
+  
+  // Opérations sur les messages
+  rpc PublishMessage(PublishMessageRequest) returns (PublishMessageResponse);
+  rpc ConsumeMessages(ConsumeMessagesRequest) returns (ConsumeMessagesResponse);
+  rpc SubscribeToQueue(SubscribeRequest) returns (stream MessageResponse);
+  
+  // Opérations sur les règles de routage
+  rpc AddRoutingRule(AddRoutingRuleRequest) returns (StatusResponse);
+  rpc RemoveRoutingRule(RemoveRoutingRuleRequest) returns (StatusResponse);
+  rpc ListRoutingRules(ListRoutingRulesRequest) returns (ListRoutingRulesResponse);
+}
+
+// Requêtes et réponses pour les domaines
+message ListDomainsRequest {}
+
+message ListDomainsResponse {
+  repeated DomainInfo domains = 1;
+}
+
+message DomainInfo {
+  string name = 1;
+}
+
+message CreateDomainRequest {
+  string name = 1;
+  SchemaInfo schema = 2;
+  map<string, QueueConfig> queue_configs = 3;
+  repeated RoutingRuleInfo routing_rules = 4;
+}
+
+message CreateDomainResponse {
+  string domain_id = 1;
+}
+
+message GetDomainRequest {
+  string name = 1;
+}
+
+message DomainResponse {
+  string name = 1;
+  SchemaInfo schema = 2;
+  repeated QueueInfo queues = 3;
+  repeated RoutingRuleInfo routing_rules = 4;
+}
+
+message DeleteDomainRequest {
+  string name = 1;
+}
+
+message SchemaInfo {
+  map<string, string> fields = 1;
+}
+
+// Requêtes et réponses pour les files d'attente
+message ListQueuesRequest {
+  string domain_name = 1;
+}
+
+message ListQueuesResponse {
+  repeated QueueInfo queues = 1;
+}
+
+message QueueInfo {
+  string name = 1;
+  int32 message_count = 2;
+}
+
+message CreateQueueRequest {
+  string domain_name = 1;
+  string name = 2;
+  QueueConfig config = 3;
+}
+
+message CreateQueueResponse {
+  string queue_id = 1;
+}
+
+message GetQueueRequest {
+  string domain_name = 1;
+  string name = 2;
+}
+
+message QueueResponse {
+  string name = 1;
+  int32 message_count = 2;
+  QueueConfig config = 3;
+}
+
+message DeleteQueueRequest {
+  string domain_name = 1;
+  string name = 2;
+}
+
+message QueueConfig {
+  bool is_persistent = 1;
+  int32 max_size = 2;
+  int64 ttl_ms = 3;
+  DeliveryMode delivery_mode = 4;
+}
+
+enum DeliveryMode {
+  BROADCAST = 0;
+  ROUND_ROBIN = 1;
+  SINGLE_CONSUMER = 2;
+}
+
+// Requêtes et réponses pour les messages
+message PublishMessageRequest {
+  string domain_name = 1;
+  string queue_name = 2;
+  Message message = 3;
+}
+
+message PublishMessageResponse {
+  string message_id = 1;
+}
+
+message ConsumeMessagesRequest {
+  string domain_name = 1;
+  string queue_name = 2;
+  int32 max_messages = 3;
+  int32 timeout_seconds = 4;
+}
+
+message ConsumeMessagesResponse {
+  repeated Message messages = 1;
+}
+
+message SubscribeRequest {
+  string domain_name = 1;
+  string queue_name = 2;
+}
+
+message Message {
+  string id = 1;
+  bytes payload = 2;
+  map<string, string> headers = 3;
+  map<string, string> metadata = 4;
+  int64 timestamp = 5;
+}
+
+message MessageResponse {
+  Message message = 1;
+}
+
+// Requêtes et réponses pour les règles de routage
+message AddRoutingRuleRequest {
+  string domain_name = 1;
+  RoutingRuleInfo rule = 2;
+}
+
+message RemoveRoutingRuleRequest {
+  string domain_name = 1;
+  string source_queue = 2;
+  string destination_queue = 3;
+}
+
+message ListRoutingRulesRequest {
+  string domain_name = 1;
+}
+
+message ListRoutingRulesResponse {
+  repeated RoutingRuleInfo rules = 1;
+}
+
+message RoutingRuleInfo {
+  string source_queue = 1;
+  string destination_queue = 2;
+  Predicate predicate = 3;
+}
+
+message Predicate {
+  string type = 1;
+  string field = 2;
+  string value = 3;
+}
+
+// Réponse générique pour les opérations de statut
+message StatusResponse {
+  bool success = 1;
+  string message = 2;
+}

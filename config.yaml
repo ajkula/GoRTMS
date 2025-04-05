@@ -1,0 +1,53 @@
+general:
+    nodeId: node1
+    dataDir: ./data
+    logLevel: info
+    development: false
+storage:
+    engine: memory
+    path: ./data/storage
+    retentionDays: 7
+    sync: true
+    maxSizeMB: 1024
+http:
+    enabled: true
+    address: 0.0.0.0
+    port: 8080
+    tls: false
+    certFile: ""
+    keyFile: ""
+    cors:
+        enabled: true
+        allowedOrigins:
+            - '*'
+    jwt:
+        secret: changeme
+        expirationMinutes: 60
+amqp:
+    enabled: false
+    address: 0.0.0.0
+    port: 5672
+mqtt:
+    enabled: false
+    address: 0.0.0.0
+    port: 1883
+grpc:
+    enabled: false
+    address: 0.0.0.0
+    port: 50051
+security:
+    enableAuthentication: false
+    enableAuthorization: false
+    adminUsername: admin
+    adminPassword: admin
+monitoring:
+    enabled: true
+    address: 0.0.0.0
+    port: 9090
+    prometheus: true
+cluster:
+    enabled: false
+    peers: []
+    heartbeatInterval: 100ms
+    electionTimeout: 1s
+domains: []
