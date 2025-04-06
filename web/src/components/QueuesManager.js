@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { PlusCircle, Trash2, Loader, AlertTriangle, Eye, ArrowLeft } from 'lucide-react';
+import { PlusCircle, Trash2, Loader, AlertTriangle, Eye, ArrowLeft, Send, GitBranch } from 'lucide-react';
 import api from '../api';
 
-const QueuesManager = ({ domainName, onBack, onSelectQueue }) => {
+const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, onViewRouting }) => {
   const [queues, setQueues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -33,11 +33,11 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue }) => {
   const handleCreateQueue = async (e) => {
     e.preventDefault();
     if (!newQueueName.trim()) return;
-    
+
     try {
       setCreateLoading(true);
       setCreateError(null);
-      
+
       await api.createQueue(domainName, {
         name: newQueueName,
         config: {
@@ -47,7 +47,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue }) => {
           deliveryMode: "broadcast"
         }
       });
-      
+
       setNewQueueName('');
       await fetchQueues();
     } catch (err) {
@@ -63,7 +63,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue }) => {
     if (!window.confirm(`Are you sure you want to delete queue "${queueName}"? This will also delete all its messages.`)) {
       return;
     }
-    
+
     try {
       await api.deleteQueue(domainName, queueName);
       await fetchQueues();
@@ -76,7 +76,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue }) => {
   return (
     <div>
       <div className="flex items-center mb-6">
-        <button 
+        <button
           onClick={onBack}
           className="mr-3 inline-flex items-center justify-center p-2 rounded-md text-gray-500 hover:bg-gray-100"
         >
@@ -85,12 +85,19 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue }) => {
         <h1 className="text-2xl font-bold">
           Queues: <span className="text-indigo-600">{domainName}</span>
         </h1>
+        <button
+          onClick={() => onViewRouting(domainName)}
+          className="ml-auto inline-flex items-center py-2 px-3 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+        >
+          <GitBranch className="h-4 w-4 mr-1.5" />
+          Routing Rules
+        </button>
       </div>
-      
+
       {/* Formulaire de création de file d'attente */}
       <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
         <h2 className="text-lg font-medium mb-4">Create New Queue</h2>
-        
+
         <form onSubmit={handleCreateQueue} className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
           <input
             type="text"
@@ -100,7 +107,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue }) => {
             className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-2"
             disabled={createLoading}
           />
-          
+
           <button
             type="submit"
             className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
@@ -116,7 +123,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue }) => {
             )}
           </button>
         </form>
-        
+
         {createError && (
           <div className="mt-2 text-sm text-red-600">
             <AlertTriangle className="h-4 w-4 inline mr-1" />
@@ -124,13 +131,13 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue }) => {
           </div>
         )}
       </div>
-      
+
       {/* Liste des files d'attente */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-medium">Queue List</h2>
         </div>
-        
+
         {loading && queues.length === 0 ? (
           <div className="flex items-center justify-center h-32">
             <Loader className="h-6 w-6 animate-spin text-indigo-600" />
@@ -141,7 +148,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue }) => {
             <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
             <h3 className="text-lg font-medium text-red-800">Failed to load queues</h3>
             <p className="text-sm text-red-600 mt-1">{error}</p>
-            <button 
+            <button
               onClick={fetchQueues}
               className="mt-3 bg-red-100 px-3 py-1 rounded-md text-red-800 hover:bg-red-200"
             >
@@ -201,6 +208,13 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue }) => {
                       >
                         <Eye className="h-4 w-4 inline mr-1" />
                         Monitor
+                      </button>
+                      <button
+                        onClick={() => onPublishMessage(queue.name)}
+                        className="text-green-600 hover:text-green-900 mr-3"
+                      >
+                        <Send className="h-4 w-4 inline mr-1" />
+                        Publish
                       </button>
                       <button
                         onClick={() => handleDeleteQueue(queue.name)}

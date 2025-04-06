@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, AlertTriangle, Loader, Plus, X } from 'lucide-react';
+import { Send, AlertTriangle, Loader, Plus, X, Check } from 'lucide-react';
 import api from '../api';
 
 const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
@@ -9,17 +9,18 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState(null);
   const [headers, setHeaders] = useState([{ key: '', value: '' }]);
+  const [success, setSuccess] = useState(false);
 
   // Valider le JSON lors de la modification du contenu
   const handleContentChange = (content) => {
     setMessageContent(content);
-    
+
     if (!content.trim()) {
       setIsJsonValid(true);
       setJsonError(null);
       return;
     }
-    
+
     try {
       JSON.parse(content);
       setIsJsonValid(true);
@@ -80,7 +81,7 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
         }
       }
     ];
-    
+
     const sample = samples[Math.floor(Math.random() * samples.length)];
     setMessageContent(JSON.stringify(sample, null, 2));
     setIsJsonValid(true);
@@ -90,15 +91,15 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
   // Publier le message
   const handlePublish = async (e) => {
     e.preventDefault();
-    
+
     if (!messageContent.trim() || !isJsonValid) {
       return;
     }
-    
+
     try {
       setPublishing(true);
       setError(null);
-      
+
       // Construire l'objet message
       let content;
       try {
@@ -107,7 +108,7 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
         // Si ce n'est pas un JSON valide, utiliser le texte brut
         content = messageContent;
       }
-      
+
       // Construire l'objet d'en-têtes
       const messageHeaders = {};
       headers.forEach(header => {
@@ -115,25 +116,27 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
           messageHeaders[header.key] = header.value;
         }
       });
-      
+
       const message = {
         content,
         headers: Object.keys(messageHeaders).length > 0 ? messageHeaders : undefined
       };
-      
+
       // Publier le message
       await api.publishMessage(domainName, queueName, message);
-      
+
       // Notifier le parent
       if (onMessagePublished) {
         onMessagePublished(message);
+        setSuccess(true);
       }
-      
+
     } catch (err) {
       console.error('Error publishing message:', err);
       setError(err.message || 'Failed to publish message');
     } finally {
       setPublishing(false);
+      setTimeout(() => setSuccess(false), 5000);
     }
   };
 
@@ -141,15 +144,15 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
     <div className="bg-white rounded-lg shadow-sm overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
         <h2 className="text-lg font-medium">Publish Message</h2>
-        <button 
-          type="button" 
+        <button
+          type="button"
           onClick={generateSampleMessage}
           className="text-sm text-indigo-600 hover:text-indigo-800"
         >
           Generate Sample
         </button>
       </div>
-      
+
       <div className="p-6">
         <form onSubmit={handlePublish}>
           {/* Contenu du message */}
@@ -163,9 +166,8 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
               value={messageContent}
               onChange={(e) => handleContentChange(e.target.value)}
               placeholder='{ "key": "value" }'
-              className={`w-full rounded-md shadow-sm font-mono text-sm ${
-                !isJsonValid ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500'
-              } focus:ring-1`}
+              className={`w-full rounded-md shadow-sm font-mono text-sm ${!isJsonValid ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500'
+                } focus:ring-1`}
               disabled={publishing}
             />
             {!isJsonValid && (
@@ -175,7 +177,7 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
               </p>
             )}
           </div>
-          
+
           {/* En-têtes */}
           <div className="mb-6">
             <div className="flex justify-between items-center mb-2">
@@ -189,7 +191,7 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
                 Add Header
               </button>
             </div>
-            
+
             {headers.map((header, index) => (
               <div key={index} className="flex space-x-2 mb-2">
                 <input
@@ -221,14 +223,21 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
               </div>
             ))}
           </div>
-          
+
           {error && (
             <div className="mb-4 px-4 py-3 bg-red-50 text-red-700 text-sm rounded-md flex items-center">
               <AlertTriangle className="h-4 w-4 mr-1.5" />
               {error}
             </div>
           )}
-          
+
+          {success && (
+            <div className="mb-4 px-4 py-3 bg-green-50 text-green-700 text-sm rounded-md flex items-center">
+              <Check className="h-4 w-4 mr-1.5" />
+              Message published successfully
+            </div>
+          )}
+
           {/* Bouton de publication */}
           <div className="flex justify-end">
             <button

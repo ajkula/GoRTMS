@@ -1,4 +1,3 @@
-// web/src/api.js
 const API_BASE_URL = '/api';
 
 const api = {
@@ -81,14 +80,35 @@ const api = {
         },
         body: JSON.stringify({}), // Corps vide ou avec callbackUrl si nécessaire
       });
-      
+
       if (!response.ok) {
         throw new Error(`Error subscribing to queue: ${response.statusText}`);
       }
-      
+
       return await response.json();
     } catch (error) {
       console.error(`Error subscribing to queue ${domainName}/${queueName}:`, error);
+      throw error;
+    }
+  },
+
+  async unsubscribeFromQueue(domainName, queueName, subscriptionId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/unsubscribe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ subscriptionId }), // Passer l'ID d'abonnement dans le corps
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error unsubscribing from queue: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error(`Error unsubscribing from queue ${domainName}/${queueName}:`, error);
       throw error;
     }
   },
@@ -98,14 +118,14 @@ const api = {
     // Si le message a content et headers, extraire content pour le payload principal
     let payload = message;
     let headers = { 'Content-Type': 'application/json' };
-    
+
     if (message.content && typeof message.content === 'object') {
       payload = message.content;
       if (message.headers) {
         headers = { ...headers, ...message.headers };
       }
     }
-    
+
     return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/messages`, {
       method: 'POST',
       headers,
@@ -126,14 +146,47 @@ const api = {
     }
   },
 
+  async getRoutingRules(domainName) {
+    try {
+      const data = await this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/routes`);
+      return data.rules || [];
+    } catch (error) {
+      console.error(`Error fetching routing rules for domain ${domainName}:`, error);
+      return []; // Retourner un tableau vide en cas d'erreur
+    }
+  },
+
+  async addRoutingRule(domainName, rule) {
+    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/routes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rule)
+    });
+  },
+
+  async deleteRoutingRule(domainName, sourceQueue, destinationQueue) {
+    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/routes/${sourceQueue}/${destinationQueue}`, {
+      method: 'DELETE'
+    });
+  },
+
+  // Tester les règles de routage
+  async testRouting(domainName, message) {
+    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/routes/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    });
+  },
+
   // WebSocket pour le moniteur en temps réel
   createQueueMonitor(domainName, queueName, onMessage, onError) {
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/api/ws/domains/${domainName}/queues/${queueName}`;
-      
+
       const socket = new WebSocket(wsUrl);
-      
+
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -154,12 +207,12 @@ const api = {
           if (onError) onError(error);
         }
       };
-      
+
       socket.onerror = (error) => {
         console.error('WebSocket error:', error);
         if (onError) onError(error);
       };
-      
+
       return {
         socket,
         close: () => socket.close()
@@ -174,7 +227,7 @@ const api = {
       };
     }
   },
-  
+
   // Statistiques
   async getStats() {
     try {
@@ -191,7 +244,7 @@ const api = {
       };
     }
   },
-  
+
   // Vérification de santé
   async healthCheck() {
     try {

@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  LayoutDashboard, 
-  Database, 
-  MessageSquare, 
-  GitBranch, 
-  Settings, 
-  ChevronDown, 
-  Menu, 
-  X, 
-  Bell, 
+import {
+  LayoutDashboard,
+  Database,
+  MessageSquare,
+  GitBranch,
+  Settings,
+  ChevronDown,
+  Menu,
+  X,
+  Bell,
   Search,
   Activity,
   LogOut,
-  User
+  User,
+  ArrowLeft,
 } from 'lucide-react';
 
 // Importer les composants
@@ -20,18 +21,20 @@ import Dashboard from './pages/Dashboard';
 import DomainsManager from './components/DomainsManager';
 import QueuesManager from './components/QueuesManager';
 import QueueMonitor from './components/QueueMonitor';
+import MessagePublisher from './components/MessagePublisher';
+import Routing from './pages/Routing';
 import api from './api';
 
 // Composant Header
 const Header = ({ toggleSidebar }) => {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  
+
   return (
     <header className="bg-white border-b border-gray-200">
       <div className="px-4 sm:px-6 lg:px-8 flex justify-between h-16">
         <div className="flex items-center">
-          <button 
+          <button
             className="p-2 rounded-md text-gray-500 lg:hidden"
             onClick={toggleSidebar}
           >
@@ -41,7 +44,7 @@ const Header = ({ toggleSidebar }) => {
             <span className="text-lg font-bold text-indigo-600">GoRTMS</span>
           </div>
         </div>
-        
+
         <div className="flex items-center space-x-4">
           <div className="hidden sm:block relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -53,16 +56,16 @@ const Header = ({ toggleSidebar }) => {
               className="pl-10 w-64 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
-          
+
           <div className="relative">
-            <button 
+            <button
               className="p-2 rounded-full text-gray-500 hover:bg-gray-100 relative"
               onClick={() => setNotificationsOpen(!notificationsOpen)}
             >
               <Bell className="h-6 w-6" />
               <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500"></span>
             </button>
-            
+
             {notificationsOpen && (
               <div className="absolute right-0 mt-2 w-80 bg-white rounded-md shadow-lg overflow-hidden z-10">
                 <div className="px-4 py-2 border-b border-gray-200">
@@ -98,9 +101,9 @@ const Header = ({ toggleSidebar }) => {
               </div>
             )}
           </div>
-          
+
           <div className="relative">
-            <button 
+            <button
               className="flex items-center space-x-2 text-gray-700 hover:text-gray-900"
               onClick={() => setProfileOpen(!profileOpen)}
             >
@@ -110,7 +113,7 @@ const Header = ({ toggleSidebar }) => {
               <span className="hidden md:block text-sm font-medium">Admin User</span>
               <ChevronDown className="h-4 w-4 text-gray-500" />
             </button>
-            
+
             {profileOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg overflow-hidden z-10">
                 <div className="py-1">
@@ -142,12 +145,12 @@ const Sidebar = ({ isOpen, toggleSidebar, setPage, currentPage }) => {
     <>
       {/* Mobile sidebar overlay */}
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-gray-600 bg-opacity-75 z-20 lg:hidden"
           onClick={toggleSidebar}
         ></div>
       )}
-      
+
       {/* Sidebar */}
       <div className={`
         fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200 z-30
@@ -158,17 +161,17 @@ const Sidebar = ({ isOpen, toggleSidebar, setPage, currentPage }) => {
           <div className="flex items-center">
             <span className="text-lg font-bold text-indigo-600">GoRTMS</span>
           </div>
-          <button 
+          <button
             className="p-2 rounded-md text-gray-500"
             onClick={toggleSidebar}
           >
             <X className="h-6 w-6" />
           </button>
         </div>
-        
+
         <div className="overflow-y-auto h-full pb-8">
           <nav className="px-2 py-4 space-y-1">
-            <button 
+            <button
               onClick={() => setPage({ type: 'dashboard' })}
               className={`flex items-center px-4 py-2 text-base font-medium rounded-md w-full text-left
                 ${currentPage.type === 'dashboard' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}
@@ -177,7 +180,7 @@ const Sidebar = ({ isOpen, toggleSidebar, setPage, currentPage }) => {
               <LayoutDashboard className="mr-3 h-5 w-5" />
               Dashboard
             </button>
-            
+
             <button
               onClick={() => setPage({ type: 'domains' })}
               className={`flex items-center px-4 py-2 text-base font-medium rounded-md w-full text-left
@@ -187,7 +190,7 @@ const Sidebar = ({ isOpen, toggleSidebar, setPage, currentPage }) => {
               <Database className="mr-3 h-5 w-5" />
               Domains
             </button>
-            
+
             <button
               onClick={() => setPage({ type: 'domains' })}
               className={`flex items-center px-4 py-2 text-base font-medium rounded-md w-full text-left
@@ -197,7 +200,7 @@ const Sidebar = ({ isOpen, toggleSidebar, setPage, currentPage }) => {
               <MessageSquare className="mr-3 h-5 w-5" />
               Queues
             </button>
-            
+
             <button
               onClick={() => setPage({ type: 'routes' })}
               className={`flex items-center px-4 py-2 text-base font-medium rounded-md w-full text-left
@@ -207,7 +210,7 @@ const Sidebar = ({ isOpen, toggleSidebar, setPage, currentPage }) => {
               <GitBranch className="mr-3 h-5 w-5" />
               Routing
             </button>
-            
+
             <button
               onClick={() => setPage({ type: 'settings' })}
               className={`flex items-center px-4 py-2 text-base font-medium rounded-md w-full text-left
@@ -218,7 +221,7 @@ const Sidebar = ({ isOpen, toggleSidebar, setPage, currentPage }) => {
               Settings
             </button>
           </nav>
-          
+
           <div className="px-4 py-4 mt-6">
             <div className="bg-indigo-50 rounded-lg px-4 py-3">
               <h3 className="text-sm font-medium text-indigo-800 mb-1">Need help?</h3>
@@ -241,7 +244,7 @@ const RoutingRules = ({ domainName, onBack }) => {
   return (
     <div className="p-6">
       <div className="flex items-center mb-6">
-        <button 
+        <button
           onClick={onBack}
           className="mr-3 inline-flex items-center justify-center p-2 rounded-md text-gray-500 hover:bg-gray-100"
         >
@@ -251,7 +254,7 @@ const RoutingRules = ({ domainName, onBack }) => {
           Routing Rules: <span className="text-indigo-600">{domainName}</span>
         </h1>
       </div>
-      
+
       <div className="bg-white rounded-lg shadow p-6">
         <p className="text-gray-600">Routing configuration is coming soon.</p>
         <ul className="mt-4 list-disc pl-5 text-gray-600">
@@ -269,11 +272,11 @@ const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [page, setPage] = useState({ type: 'dashboard' });
   const [systemHealthy, setSystemHealthy] = useState(true);
-  
+
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
   };
-  
+
   // Vérifier l'état de santé de l'API
   useEffect(() => {
     const checkHealth = async () => {
@@ -285,24 +288,24 @@ const App = () => {
         setSystemHealthy(false);
       }
     };
-    
+
     checkHealth();
     // Vérifier toutes les 30 secondes
     const interval = setInterval(checkHealth, 30000);
-    
+
     return () => clearInterval(interval);
   }, []);
-  
+
   // Navigation vers un domaine ou une file d'attente
   const handleSelectDomain = (domainName) => {
     setPage({ type: 'queues', domainName });
   };
 
   const handleSelectQueue = (queueName) => {
-    setPage({ 
-      type: 'queue-monitor', 
-      domainName: page.domainName, 
-      queueName 
+    setPage({
+      type: 'queue-monitor',
+      domainName: page.domainName,
+      queueName
     });
   };
 
@@ -313,7 +316,19 @@ const App = () => {
   const handleBackToQueues = () => {
     setPage({ type: 'queues', domainName: page.domainName });
   };
-  
+
+  const handlePublishMessage = (queueName) => {
+    setPage({
+      type: 'message-publisher',
+      domainName: page.domainName,
+      queueName
+    });
+  };
+
+  const handleViewRouting = (domainName) => {
+    setPage({ type: 'domain-routing', domainName });
+  };
+
   // Fonction pour rendre la page active
   const renderPage = () => {
     switch (page.type) {
@@ -326,18 +341,20 @@ const App = () => {
       case 'queues':
         return (
           <div className="p-6">
-            <QueuesManager 
-              domainName={page.domainName} 
+            <QueuesManager
+              domainName={page.domainName}
               onBack={handleBackToDomains}
               onSelectQueue={handleSelectQueue}
+              onPublishMessage={handlePublishMessage}
+              onViewRouting={handleViewRouting}
             />
           </div>
         );
       case 'queue-monitor':
         return (
           <div className="p-6">
-            <QueueMonitor 
-              domainName={page.domainName} 
+            <QueueMonitor
+              domainName={page.domainName}
               queueName={page.queueName}
               onBack={handleBackToQueues}
             />
@@ -357,6 +374,25 @@ const App = () => {
             <p className="mt-2 text-gray-600">System settings will be available soon.</p>
           </div>
         );
+      case 'message-publisher':
+        return (
+          <div className="p-6">
+            <MessagePublisher
+              domainName={page.domainName}
+              queueName={page.queueName}
+              onBack={handleBackToQueues}
+            />
+          </div>
+        );
+      case 'domain-routing':
+        return (
+          <div className="p-6">
+            <Routing
+              domainName={page.domainName}
+              onBack={handleBackToQueues}
+            />
+          </div>
+        );
       case 'dashboard':
       default:
         return (
@@ -364,25 +400,25 @@ const App = () => {
         );
     }
   };
-  
+
   return (
     <div className="h-screen flex flex-col">
       <Header toggleSidebar={toggleSidebar} />
-      
+
       {!systemHealthy && (
         <div className="bg-red-600 text-white px-4 py-2 text-center">
           Backend API unavailable. Some features might not work correctly.
         </div>
       )}
-      
+
       <div className="flex-1 flex overflow-hidden">
-        <Sidebar 
-          isOpen={sidebarOpen} 
-          toggleSidebar={toggleSidebar} 
+        <Sidebar
+          isOpen={sidebarOpen}
+          toggleSidebar={toggleSidebar}
           setPage={setPage}
           currentPage={page}
         />
-        
+
         <main className="flex-1 overflow-auto lg:ml-64">
           {renderPage()}
         </main>
