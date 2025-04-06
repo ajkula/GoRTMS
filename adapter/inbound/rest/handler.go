@@ -1,9 +1,12 @@
 package rest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -41,19 +44,6 @@ func NewHandler(
 		routingService: routingService,
 		statsService:   statsService,
 	}
-}
-
-// Middleware pour servir index.html dans les dossiers
-func serveIndexMiddleware(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-		// Si l'URL se termine par /, servir index.html
-		if strings.HasSuffix(path, "/") {
-			http.ServeFile(w, r, filepath.Join("./web/dist", path, "index.html"))
-			return
-		}
-		h.ServeHTTP(w, r)
-	})
 }
 
 // SetupRoutes configure les routes de l'API REST
@@ -168,8 +158,58 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Créer une structure simplifiée sans références circulaires
+	type QueueInfo struct {
+		Name         string `json:"name"`
+		MessageCount int    `json:"messageCount"`
+	}
+
+	type RouteInfo struct {
+		SourceQueue      string      `json:"sourceQueue"`
+		DestinationQueue string      `json:"destinationQueue"`
+		Predicate        interface{} `json:"predicate"`
+	}
+
+	type DomainResponse struct {
+		Name   string      `json:"name"`
+		Schema interface{} `json:"schema,omitempty"`
+		Queues []QueueInfo `json:"queues"`
+		Routes []RouteInfo `json:"routes"`
+	}
+
+	// Remplir la réponse
+	response := DomainResponse{
+		Name:   domain.Name,
+		Schema: domain.Schema,
+		Queues: make([]QueueInfo, 0, len(domain.Queues)),
+		Routes: make([]RouteInfo, 0),
+	}
+
+	// Ajouter les queues
+	for _, queue := range domain.Queues {
+		response.Queues = append(response.Queues, QueueInfo{
+			Name:         queue.Name,
+			MessageCount: queue.MessageCount,
+		})
+	}
+
+	// Ajouter les routes
+	for srcQueue, dstRoutes := range domain.Routes {
+		for dstQueue, rule := range dstRoutes {
+			response.Routes = append(response.Routes, RouteInfo{
+				SourceQueue:      srcQueue,
+				DestinationQueue: dstQueue,
+				Predicate:        rule.Predicate,
+			})
+		}
+	}
+
+	// Log la réponse pour débogage
+	respBytes, _ := json.MarshalIndent(response, "", "  ")
+	log.Printf("Domain response: %s", string(respBytes))
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(domain)
+	json.NewEncoder(w).Encode(response)
 }
 
 // deleteDomain supprime un domaine
@@ -224,17 +264,85 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
 
+	// Lire le corps de la requête brut
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("Error reading request body: %v", err)
+		http.Error(w, "Failed to read request", http.StatusBadRequest)
+		return
+	}
+	// Réinitialiser le corps pour le décodeur JSON
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	// Log le corps de la requête
+	log.Printf("Queue creation request body: %s", string(bodyBytes))
+
 	var request struct {
-		Name   string            `json:"name"`
-		Config model.QueueConfig `json:"config"`
+		Name   string          `json:"name"`
+		Config json.RawMessage `json:"config"` // Utilisez RawMessage pour éviter les problèmes de décodage
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		log.Printf("Error decoding request JSON: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if err := h.queueService.CreateQueue(r.Context(), domainName, request.Name, &request.Config); err != nil {
+	log.Printf("Parsed queue name: %s", request.Name)
+
+	// Maintenant, décodez la configuration manuellement
+	var configMap map[string]interface{}
+	if err := json.Unmarshal(request.Config, &configMap); err != nil {
+		log.Printf("Error decoding config: %v", err)
+		http.Error(w, "Invalid config format", http.StatusBadRequest)
+		return
+	}
+
+	// Construire la configuration
+	config := &model.QueueConfig{
+		IsPersistent: false, // Valeurs par défaut
+		MaxSize:      0,
+		TTL:          0,
+	}
+
+	// Appliquer les valeurs de la requête
+	if isPersistent, ok := configMap["isPersistent"].(bool); ok {
+		config.IsPersistent = isPersistent
+	}
+
+	if maxSize, ok := configMap["maxSize"].(float64); ok { // JSON envoie les nombres comme float64
+		config.MaxSize = int(maxSize)
+	}
+
+	if ttlStr, ok := configMap["ttl"].(string); ok {
+		ttl, err := time.ParseDuration(ttlStr)
+		if err != nil {
+			log.Printf("Error parsing TTL duration: %v", err)
+			// Ne pas échouer, utiliser la valeur par défaut
+		} else {
+			config.TTL = ttl
+		}
+	}
+
+	// Traiter le mode de livraison
+	if modeStr, ok := configMap["deliveryMode"].(string); ok {
+		switch modeStr {
+		case "broadcast":
+			config.DeliveryMode = model.BroadcastMode
+		case "roundRobin":
+			config.DeliveryMode = model.RoundRobinMode
+		case "singleConsumer":
+			config.DeliveryMode = model.SingleConsumerMode
+		default:
+			log.Printf("Unknown delivery mode: %s, using default", modeStr)
+			config.DeliveryMode = model.BroadcastMode
+		}
+	}
+
+	log.Printf("Creating queue with config: %+v", config)
+
+	if err := h.queueService.CreateQueue(r.Context(), domainName, request.Name, config); err != nil {
+		log.Printf("Error from service: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

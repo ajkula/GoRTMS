@@ -35,12 +35,17 @@ func (s *QueueServiceImpl) CreateQueue(ctx context.Context, domainName, queueNam
 	// Récupérer le domaine
 	domain, err := s.domainRepo.GetDomain(ctx, domainName)
 	if err != nil {
+		log.Printf("Error getting domain %s: %v", domainName, err)
 		return ErrDomainNotFound
 	}
 
 	// Vérifier si la file d'attente existe déjà
-	if _, exists := domain.Queues[queueName]; exists {
-		return ErrQueueAlreadyExists
+	if domain.Queues != nil {
+		if _, exists := domain.Queues[queueName]; exists {
+			return ErrQueueAlreadyExists
+		}
+	} else {
+		domain.Queues = make(map[string]*model.Queue)
 	}
 
 	// Créer la file d'attente
@@ -52,13 +57,21 @@ func (s *QueueServiceImpl) CreateQueue(ctx context.Context, domainName, queueNam
 	}
 
 	// Ajouter la file d'attente au domaine
-	if domain.Queues == nil {
-		domain.Queues = make(map[string]*model.Queue)
-	}
 	domain.Queues[queueName] = queue
 
+	// Vérifier que Routes est initialisé
+	if domain.Routes == nil {
+		domain.Routes = make(map[string]map[string]*model.RoutingRule)
+	}
+
 	// Mettre à jour le domaine
-	return s.domainRepo.StoreDomain(ctx, domain)
+	log.Printf("Storing domain with new queue %s", queueName)
+	if err := s.domainRepo.StoreDomain(ctx, domain); err != nil {
+		log.Printf("Error storing domain %s: %v", domainName, err)
+		return err
+	}
+
+	return nil
 }
 
 // GetQueue récupère une file d'attente
@@ -72,6 +85,10 @@ func (s *QueueServiceImpl) GetQueue(ctx context.Context, domainName, queueName s
 	}
 
 	// Récupérer la file d'attente
+	if domain.Queues == nil {
+		return nil, ErrQueueNotFound
+	}
+
 	queue, exists := domain.Queues[queueName]
 	if !exists {
 		return nil, ErrQueueNotFound
@@ -91,7 +108,7 @@ func (s *QueueServiceImpl) DeleteQueue(ctx context.Context, domainName, queueNam
 	}
 
 	// Vérifier si la file d'attente existe
-	if _, exists := domain.Queues[queueName]; !exists {
+	if domain.Queues == nil || domain.Queues[queueName] == nil {
 		return ErrQueueNotFound
 	}
 
@@ -125,9 +142,11 @@ func (s *QueueServiceImpl) ListQueues(ctx context.Context, domainName string) ([
 	}
 
 	// Construire la liste des files d'attente
-	queues := make([]*model.Queue, 0, len(domain.Queues))
-	for _, queue := range domain.Queues {
-		queues = append(queues, queue)
+	queues := make([]*model.Queue, 0)
+	if domain.Queues != nil {
+		for _, queue := range domain.Queues {
+			queues = append(queues, queue)
+		}
 	}
 
 	return queues, nil

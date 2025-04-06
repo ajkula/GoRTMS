@@ -116,8 +116,15 @@ func main() {
 		)
 
 		router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
-			pathTemplate, _ := route.GetPathTemplate()
-			methods, _ := route.GetMethods()
+			pathTemplate, err := route.GetPathTemplate()
+			if err != nil {
+				log.Println("ROUTE ERROR:", err)
+				return nil
+			}
+			methods, err := route.GetMethods()
+			if err != nil {
+				methods = []string{"ANY"}
+			}
 			log.Printf("ROUTE: %s [%v]", pathTemplate, methods)
 			return nil
 		})
@@ -287,66 +294,4 @@ func createDomainFromConfig(
 	}
 
 	return nil
-}
-
-// Services mock pour la compilation jusqu'à ce que les vrais services soient implémentés
-type mockDomainService struct{}
-
-func (s *mockDomainService) CreateDomain(ctx context.Context, config *model.DomainConfig) error {
-	log.Printf("Mock creating domain: %s", config.Name)
-	return nil
-}
-
-func (s *mockDomainService) GetDomain(ctx context.Context, name string) (*model.Domain, error) {
-	log.Printf("Mock getting domain: %s", name)
-	return &model.Domain{Name: name}, nil
-}
-
-func (s *mockDomainService) DeleteDomain(ctx context.Context, name string) error {
-	log.Printf("Mock deleting domain: %s", name)
-	return nil
-}
-
-func (s *mockDomainService) ListDomains(ctx context.Context) ([]*model.Domain, error) {
-	log.Println("Mock listing domains")
-	return []*model.Domain{}, nil
-}
-
-type mockQueueService struct{}
-
-func (s *mockQueueService) CreateQueue(ctx context.Context, domainName, queueName string, config *model.QueueConfig) error {
-	log.Printf("Mock creating queue: %s.%s", domainName, queueName)
-	return nil
-}
-
-func (s *mockQueueService) GetQueue(ctx context.Context, domainName, queueName string) (*model.Queue, error) {
-	log.Printf("Mock getting queue: %s.%s", domainName, queueName)
-	return &model.Queue{Name: queueName, DomainName: domainName}, nil
-}
-
-func (s *mockQueueService) DeleteQueue(ctx context.Context, domainName, queueName string) error {
-	log.Printf("Mock deleting queue: %s.%s", domainName, queueName)
-	return nil
-}
-
-func (s *mockQueueService) ListQueues(ctx context.Context, domainName string) ([]*model.Queue, error) {
-	log.Printf("Mock listing queues for domain: %s", domainName)
-	return []*model.Queue{}, nil
-}
-
-type mockRoutingService struct{}
-
-func (s *mockRoutingService) AddRoutingRule(ctx context.Context, domainName string, rule *model.RoutingRule) error {
-	log.Printf("Mock adding routing rule in domain %s: %s -> %s", domainName, rule.SourceQueue, rule.DestinationQueue)
-	return nil
-}
-
-func (s *mockRoutingService) RemoveRoutingRule(ctx context.Context, domainName string, sourceQueue, destQueue string) error {
-	log.Printf("Mock removing routing rule in domain %s: %s -> %s", domainName, sourceQueue, destQueue)
-	return nil
-}
-
-func (s *mockRoutingService) ListRoutingRules(ctx context.Context, domainName string) ([]*model.RoutingRule, error) {
-	log.Printf("Mock listing routing rules for domain: %s", domainName)
-	return []*model.RoutingRule{}, nil
 }

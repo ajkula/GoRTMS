@@ -9,6 +9,7 @@ const api = {
       if (!response.ok) {
         throw new Error(`API error: ${response.status} ${response.statusText}`);
       }
+
       return await response.json();
     } catch (error) {
       console.error(`API fetch error for ${url}: ${error.message}`);
@@ -68,6 +69,28 @@ const api = {
     return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}`, {
       method: 'DELETE'
     });
+  },
+
+  async subscribeToQueue(domainName, queueName) {
+    try {
+      // Cette API est juste pour l'enregistrement initial
+      const response = await fetch(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/subscribe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}), // Corps vide ou avec callbackUrl si nécessaire
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error subscribing to queue: ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error(`Error subscribing to queue ${domainName}/${queueName}:`, error);
+      throw error;
+    }
   },
 
   // Messages

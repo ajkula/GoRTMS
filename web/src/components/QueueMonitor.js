@@ -13,63 +13,118 @@ const QueueMonitor = () => {
   const messagesEndRef = useRef(null);
 
   // Fonction pour se connecter au WebSocket
-  const connectWebSocket = () => {
-    // Fermer la connexion existante si elle existe
-    if (webSocketRef.current) {
-      webSocketRef.current.close();
-      webSocketRef.current = null;
-    }
+  // Fonction connectWebSocket refactorisée avec async/await
+  const connectWebSocket = async () => {
+    // Nettoyer toute connexion existante
+    closeExistingConnection();
 
+    // Mettre à jour l'état de l'interface
     setStatus('connecting');
     setError(null);
 
     try {
-      // Abonner d'abord via l'API REST
-      api.subscribeToQueue(domainName, queueName)
-        .then(() => {
-          // Puis créer la connexion WebSocket
-          const monitor = api.createQueueMonitor(
-            domainName,
-            queueName,
-            // Gestionnaire de messages
-            (message) => {
-              setMessages((prevMessages) => {
-                // Limiter à 100 messages pour éviter les problèmes de performance
-                const newMessages = [...prevMessages, {
-                  ...message,
-                  receivedAt: new Date().toISOString()
-                }];
-                if (newMessages.length > 100) {
-                  newMessages.shift(); // Supprimer le message le plus ancien
-                }
-                return newMessages;
-              });
-            },
-            // Gestionnaire d'erreurs
-            (err) => {
-              console.error('WebSocket error:', err);
-              setStatus('error');
-              setError('Connection error. Try reconnecting.');
-            }
-          );
+      // Essayer d'abord de s'abonner via l'API si disponible
+      const subscription = await trySubscribeToQueue();
+      
+      // Créer et configurer la connexion WebSocket
+      const monitor = createMonitorConnection();
 
-          webSocketRef.current = monitor;
+      // Ajouter l'ID d'abonnement si disponible
+      if (subscription?.subscriptionId) {
+        monitor.subscriptionId = subscription.subscriptionId;
+      }
 
-          // Ajouter des gestionnaires d'événements supplémentaires
-          monitor.socket.onopen = () => {
-            setStatus('connected');
-            setError(null);
-          };
+      // Stocker la référence pour une utilisation ultérieure
+      webSocketRef.current = monitor;
 
-          monitor.socket.onclose = () => {
-            setStatus('disconnected');
-          };
-        })
+      // Configurer les gestionnaires d'événements WebSocket
+      setupWebSocketHandlers(monitor);
     } catch (err) {
-      console.error('Error creating WebSocket connection:', err);
-      setStatus('error');
-      setError(err.message || 'Failed to connect to queue monitor');
+      handleConnectionError(err);
     }
+  };
+
+  // Fonctions auxiliaires pour simplifier la logique
+  const closeExistingConnection = () => {
+    if (webSocketRef.current) {
+      webSocketRef.current.close();
+      webSocketRef.current = null;
+    }
+  };
+
+  const trySubscribeToQueue = async () => {
+    if (typeof api.subscribeToQueue === 'function') {
+      console.log('typeof api.subscribeToQueue === ' + typeof api.subscribeToQueue);
+      try {
+        const sub = await api.subscribeToQueue(domainName, queueName);
+        return sub;
+      } catch (err) {
+        console.warn('Subscription API not available:', err.message);
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const createMonitorConnection = () => {
+    return api.createQueueMonitor(
+      domainName,
+      queueName,
+      handleIncomingMessage,
+      handleWebSocketError
+    );
+  };
+
+  const handleIncomingMessage = (message) => {
+    setMessages((prevMessages) => {
+      // Éviter les doublons si le message a un ID
+      if (message.id && prevMessages.some(m => m.id === message.id)) {
+        return prevMessages;
+      }
+
+      // Ajouter le message avec l'horodatage de réception
+      const newMessage = {
+        ...message,
+        receivedAt: new Date().toISOString()
+      };
+
+      // Maintenir une liste limitée pour les performances
+      const updatedMessages = [...prevMessages, newMessage];
+      if (updatedMessages.length > 100) {
+        return updatedMessages.slice(-100); // Garder les 100 plus récents
+      }
+
+      return updatedMessages;
+    });
+  };
+
+  const handleWebSocketError = (err) => {
+    console.error('WebSocket error:', err);
+    setStatus('error');
+    setError('Connection error. Try reconnecting.');
+  };
+
+  const setupWebSocketHandlers = (monitor) => {
+    if (!monitor.socket) {
+      setStatus('error');
+      setError('WebSocket connection failed');
+      return;
+    }
+
+    monitor.socket.onopen = () => {
+      setStatus('connected');
+      setError(null);
+    };
+
+    monitor.socket.onclose = () => {
+      setStatus('disconnected');
+    };
+  };
+
+  const handleConnectionError = (err) => {
+    console.error('Error creating WebSocket connection:', err);
+    setStatus('error');
+    setError(`Failed to connect: ${err.message || 'Unknown error'}`);
   };
 
   // Se connecter au WebSocket lors du montage du composant
