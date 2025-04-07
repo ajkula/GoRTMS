@@ -72,7 +72,7 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 	router.HandleFunc("/api/domains/{domain}/routes/{source}/{destination}", h.removeRoutingRule).Methods("DELETE")
 
 	// Route pour les stats
-	router.HandleFunc("/api/stats", h.handleGetStats).Methods("GET")
+	router.HandleFunc("/api/stats", h.getStats).Methods("GET")
 
 	// Route pour la santé
 	router.HandleFunc("/health", h.healthCheck).Methods("GET")
@@ -394,17 +394,30 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 	domainName := vars["domain"]
 	queueName := vars["queue"]
 
+	log.Printf("Publishing message to domain '%s', queue '%s'", domainName, queueName)
+
 	// Lire le corps de la requête
 	var payload map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		log.Printf("Error decoding request body: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	log.Printf("Message payload: %+v", payload)
+
 	// Convertir le payload en JSON
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
+		log.Printf("Error marshalling payload: %v", err)
 		http.Error(w, "Failed to encode payload", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = h.queueService.GetQueue(r.Context(), domainName, queueName)
+	if err != nil {
+		log.Printf("Error retrieving queue '%s': %v", queueName, err)
+		http.Error(w, fmt.Sprintf("Queue not found: %s", err), http.StatusNotFound)
 		return
 	}
 
@@ -418,9 +431,12 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Publier le message
 	if err := h.messageService.PublishMessage(r.Context(), domainName, queueName, message); err != nil {
+		log.Printf("Error publishing message: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	log.Printf("Message published successfully!")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -614,6 +630,24 @@ func (h *Handler) removeRoutingRule(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "success",
 	})
+}
+
+func (h *Handler) getStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Récupérer les statistiques
+	stats, err := h.statsService.GetStats(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Écrire la réponse JSON
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(stats); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 // extractHeaders extrait les en-têtes pertinents de la requête

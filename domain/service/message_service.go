@@ -24,6 +24,7 @@ type MessageServiceImpl struct {
 	domainRepo      outbound.DomainRepository
 	messageRepo     outbound.MessageRepository
 	subscriptionReg outbound.SubscriptionRegistry
+	statsService    inbound.StatsService
 }
 
 // NewMessageService crée un nouveau service de messages
@@ -31,12 +32,19 @@ func NewMessageService(
 	domainRepo outbound.DomainRepository,
 	messageRepo outbound.MessageRepository,
 	subscriptionReg outbound.SubscriptionRegistry,
+	statsService ...inbound.StatsService,
 ) inbound.MessageService {
-	return &MessageServiceImpl{
+	impl := &MessageServiceImpl{
 		domainRepo:      domainRepo,
 		messageRepo:     messageRepo,
 		subscriptionReg: subscriptionReg,
 	}
+
+	if len(statsService) > 0 {
+		impl.statsService = statsService[0]
+	}
+
+	return impl
 }
 
 // PublishMessage publie un message dans une file d'attente
@@ -111,6 +119,11 @@ func (s *MessageServiceImpl) PublishMessage(
 		return err
 	}
 
+	// Collecter des statistiques
+	if s.statsService != nil {
+		s.statsService.TrackMessagePublished(domainName, queueName)
+	}
+
 	// Mettre à jour le compteur de messages
 	queue.MessageCount++
 
@@ -172,6 +185,11 @@ func (s *MessageServiceImpl) ConsumeMessage(
 
 	if len(messages) == 0 {
 		return nil, nil // Pas de message disponible
+	}
+
+	// Collecter des statistiques
+	if s.statsService != nil {
+		s.statsService.TrackMessageConsumed(domainName, queueName)
 	}
 
 	message := messages[0]

@@ -3,7 +3,7 @@ import { Send, AlertTriangle, Loader, Plus, X, Check } from 'lucide-react';
 import api from '../api';
 
 const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
-  const [messageContent, setMessageContent] = useState('{\n  "type": "notification",\n  "message": "Hello world!"\n}');
+  const [messageContent, setMessageContent] = useState('{\n  "type": "notification",\n  "content": "Hello world!"\n}');
   const [isJsonValid, setIsJsonValid] = useState(true);
   const [jsonError, setJsonError] = useState(null);
   const [publishing, setPublishing] = useState(false);
@@ -56,11 +56,12 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
       {
         type: "notification",
         priority: "high",
-        message: "This is an urgent notification",
+        content: "This is an urgent notification",
         timestamp: new Date().toISOString()
       },
       {
         type: "data",
+        content: "Title name",
         user: {
           id: 123,
           name: "John Doe",
@@ -74,11 +75,10 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
       {
         type: "event",
         name: "user.login",
-        data: {
-          userId: "user_" + Math.floor(Math.random() * 1000),
-          loginTime: new Date().toISOString(),
-          ipAddress: "192.168.1." + Math.floor(Math.random() * 255)
-        }
+        content: "user event",
+        userId: "user_" + Math.floor(Math.random() * 1000),
+        loginTime: new Date().toISOString(),
+        ipAddress: "192.168.1." + Math.floor(Math.random() * 255)
       }
     ];
 

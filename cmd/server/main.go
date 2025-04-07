@@ -84,11 +84,16 @@ func main() {
 	subscriptionReg := memory.NewSubscriptionRegistry()
 
 	// Créer les services (implémentations du domaine)
-	messageService := service.NewMessageService(domainRepo, messageRepo, subscriptionReg)
+	statsService := service.NewStatsService(domainRepo, messageRepo)
+	messageService := service.NewMessageService(
+		domainRepo,
+		messageRepo,
+		subscriptionReg,
+		statsService,
+	)
 	domainService := service.NewDomainService(domainRepo)
 	queueService := service.NewQueueService(domainRepo)
 	routingService := service.NewRoutingService(domainRepo)
-	statsService := service.NewStatsService(domainRepo)
 
 	// Créer le routeur HTTP
 	router := mux.NewRouter()

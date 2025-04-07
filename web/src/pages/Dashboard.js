@@ -6,7 +6,7 @@ import api from '../api';
 const StatCard = ({ title, value, icon, trend, trendValue }) => {
   const Icon = icon;
   const isTrendUp = trend === 'up';
-  
+
   return (
     <div className="bg-white rounded-lg shadow p-6 flex flex-col">
       <div className="flex justify-between items-center mb-4">
@@ -34,7 +34,7 @@ const AlertItem = ({ alert }) => {
     warning: 'bg-yellow-100 text-yellow-800',
     error: 'bg-red-100 text-red-800'
   };
-  
+
   return (
     <div className="border-b border-gray-200 py-3 last:border-0">
       <div className="flex items-start">
@@ -57,17 +57,22 @@ const Dashboard = () => {
   const [recentEvents, setRecentEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
+
   // Fonction pour charger les données du dashboard
   const loadDashboardData = async () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       // Charger les statistiques générales
       const statsData = await api.getStats();
+      // DEBUG
+      console.log("API response:", statsData);
       setStats(statsData);
-      
+
+      // Log spécifiquement les messageRates
+      console.log("Message rates from API:", statsData.messageRates);
+
       // Transformer les données de domaines pour le graphique
       if (statsData.activeDomains && statsData.activeDomains.length > 0) {
         const colors = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088fe'];
@@ -78,23 +83,46 @@ const Dashboard = () => {
         }));
         setDomainsData(domainChartData);
       }
-      
+
       // Créer des données d'activité à partir des taux de messages
       if (statsData.messageRates && statsData.messageRates.length > 0) {
+        console.log("Found message rates:", statsData.messageRates);
+        
         const activityData = statsData.messageRates.map(rate => {
-          const date = new Date(rate.timestamp);
+          const date = new Date(rate.timestamp * 1000);
+          const timeString = `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+          
+          console.log("Converting rate:", rate, "to time:", timeString);
+          
           return {
-            time: `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`,
-            published: Math.round(rate.published || rate.rate * 0.55), // Estimation si pas de détail
-            consumed: Math.round(rate.consumed || rate.rate * 0.45)    // Estimation si pas de détail
+            time: timeString,
+            published: Math.max(0, parseFloat((rate.published || 0).toFixed(1))),
+            consumed: Math.max(0, parseFloat((rate.consumed || 0).toFixed(1)))
           };
         });
+        
+        console.log("Activity data processed:", activityData);
         setMessageActivity(activityData);
+      } else {
+        console.log("No message rates available");
+        // Créer des données vides pour éviter un graphique complètement vide
+        const emptyData = [];
+        for (let i = 0; i < 5; i++) {
+          const now = new Date();
+          now.setMinutes(now.getMinutes() - i * 10);
+          emptyData.unshift({
+            time: `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`,
+            published: 0,
+            consumed: 0
+          });
+        }
+        console.log("Using empty placeholder data:", emptyData);
+        setMessageActivity(emptyData);
       }
-      
+
       // Créer des alertes/événements à partir des données disponibles
       const events = [];
-      
+
       // Ajouter les domaines récemment créés comme événements
       if (statsData.activeDomains) {
         statsData.activeDomains.slice(0, 2).forEach((domain, index) => {
@@ -106,7 +134,7 @@ const Dashboard = () => {
           });
         });
       }
-      
+
       // Ajouter des alertes pour les files d'attente approchant leur capacité
       if (statsData.queueAlerts && statsData.queueAlerts.length > 0) {
         statsData.queueAlerts.forEach((alert, index) => {
@@ -127,7 +155,7 @@ const Dashboard = () => {
           time: '15 min ago'
         });
       }
-      
+
       // Ajouter une alerte d'erreur d'exemple si peu d'événements
       if (events.length < 3) {
         events.push({
@@ -137,13 +165,13 @@ const Dashboard = () => {
           time: '1 hour ago'
         });
       }
-      
+
       setRecentEvents(events);
-      
+
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
       setError(err.message || 'Failed to load dashboard data');
-      
+
       // En cas d'erreur, configurer des données par défaut pour l'UI
       setStats({
         domains: 0,
@@ -165,17 +193,17 @@ const Dashboard = () => {
       setLoading(false);
     }
   };
-  
+
   // Charger les données au montage
   useEffect(() => {
     loadDashboardData();
-    
+
     // Actualiser les données toutes les 30 secondes
     const interval = setInterval(loadDashboardData, 30000);
-    
+
     return () => clearInterval(interval);
   }, []);
-  
+
   if (loading && !stats) {
     return (
       <div className="flex items-center justify-center h-64 p-6">
@@ -184,7 +212,7 @@ const Dashboard = () => {
       </div>
     );
   }
-  
+
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="flex justify-between items-center mb-6">
@@ -192,8 +220,8 @@ const Dashboard = () => {
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-600">Monitor and manage your GoRTMS instance</p>
         </div>
-        
-        <button 
+
+        <button
           onClick={loadDashboardData}
           className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           disabled={loading}
@@ -206,7 +234,7 @@ const Dashboard = () => {
           Refresh
         </button>
       </div>
-      
+
       {error && (
         <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded">
           <div className="flex">
@@ -218,44 +246,44 @@ const Dashboard = () => {
           </div>
         </div>
       )}
-      
+
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <StatCard 
-          title="Total Domains" 
-          value={stats?.domains} 
-          icon={Database} 
-          trend={stats?.domainTrend?.direction} 
+        <StatCard
+          title="Total Domains"
+          value={stats?.domains}
+          icon={Database}
+          trend={stats?.domainTrend?.direction}
           trendValue={stats?.domainTrend?.value}
         />
-        <StatCard 
-          title="Total Queues" 
-          value={stats?.queues} 
-          icon={MessageSquare} 
+        <StatCard
+          title="Total Queues"
+          value={stats?.queues}
+          icon={MessageSquare}
           trend={stats?.queueTrend?.direction}
           trendValue={stats?.queueTrend?.value}
         />
-        <StatCard 
-          title="Total Messages" 
-          value={stats?.messages} 
-          icon={Activity} 
+        <StatCard
+          title="Total Messages"
+          value={stats?.messages}
+          icon={Activity}
           trend={stats?.messageTrend?.direction}
           trendValue={stats?.messageTrend?.value}
         />
-        <StatCard 
-          title="Routing Rules" 
-          value={stats?.routes} 
-          icon={GitBranch} 
+        <StatCard
+          title="Routing Rules"
+          value={stats?.routes}
+          icon={GitBranch}
           trend={stats?.routeTrend?.direction}
           trendValue={stats?.routeTrend?.value}
         />
       </div>
-      
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Message Activity Chart */}
         <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Message Activity</h2>
-          
+
           {messageActivity.length > 0 ? (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
@@ -279,11 +307,11 @@ const Dashboard = () => {
             </div>
           )}
         </div>
-        
+
         {/* Domain Distribution */}
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Messages by Domain</h2>
-          
+
           {domainsData.length > 0 ? (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
@@ -312,13 +340,13 @@ const Dashboard = () => {
             </div>
           )}
         </div>
-        
+
         {/* Recent Alerts */}
         <div className="lg:col-span-3 bg-white rounded-lg shadow overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200">
             <h3 className="text-lg font-medium text-gray-900">Recent Events</h3>
           </div>
-          
+
           {recentEvents.length > 0 ? (
             <div className="px-6 divide-y divide-gray-200">
               {recentEvents.map(alert => (
@@ -330,7 +358,7 @@ const Dashboard = () => {
               <p>No recent events to display.</p>
             </div>
           )}
-          
+
           <div className="px-6 py-3 bg-gray-50 text-right">
             <button className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
               View all events
