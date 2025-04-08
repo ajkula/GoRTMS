@@ -90,18 +90,17 @@ const Dashboard = () => {
         
         const activityData = statsData.messageRates.map(rate => {
           const date = new Date(rate.timestamp * 1000);
-          const timeString = `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+          const timeString = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
           
           console.log("Converting rate:", rate, "to time:", timeString);
           
           return {
             time: timeString,
-            published: Math.max(0, parseFloat((rate.published || 0).toFixed(1))),
-            consumed: Math.max(0, parseFloat((rate.consumed || 0).toFixed(1)))
+            published: rate.publishedTotal || 0,
+            consumed: rate.consumedTotal || 0,
           };
         });
         
-        console.log("Activity data processed:", activityData);
         setMessageActivity(activityData);
       } else {
         console.log("No message rates available");

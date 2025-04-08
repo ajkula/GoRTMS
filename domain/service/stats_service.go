@@ -36,10 +36,12 @@ type Trend struct {
 
 // MessageRate représente un taux de messages à un moment donné
 type MessageRate struct {
-	Timestamp int64   `json:"timestamp"`
-	Rate      float64 `json:"rate"`
-	Published float64 `json:"published"`
-	Consumed  float64 `json:"consumed"`
+	Timestamp      int64   `json:"timestamp"`
+	Rate           float64 `json:"rate"`
+	Published      float64 `json:"published"`
+	Consumed       float64 `json:"consumed"`
+	PublishedTotal int     `json:"publishedTotal"`
+	ConsumedTotal  int     `json:"consumedTotal"`
 }
 
 // DomainStats représente les statistiques d'un domaine
@@ -122,7 +124,7 @@ func NewStatsService(
 		domainRepo:      domainRepo,
 		messageRepo:     messageRepo,
 		metrics:         metrics,
-		collectInterval: 5 * time.Minute, // Collecter toutes les 5 minutes
+		collectInterval: 1 * time.Minute, // Collecter toutes les 5 minutes
 		stopCollect:     make(chan struct{}),
 	}
 
@@ -205,12 +207,14 @@ func (s *StatsServiceImpl) collectMetrics() {
 	consumeRate := float64(totalConsumed) / elapsed
 	totalRate := publishRate + consumeRate
 
-	// Ajouter au tableau des taux
+	// Ajouter au tableau des taux, maintenant avec les totaux
 	s.metrics.messageRates = append(s.metrics.messageRates, MessageRate{
-		Timestamp: now.Unix(),
-		Rate:      totalRate,
-		Published: publishRate,
-		Consumed:  consumeRate,
+		Timestamp:      now.Unix(),
+		Rate:           totalRate,
+		Published:      publishRate,
+		Consumed:       consumeRate,
+		PublishedTotal: totalPublished, // Ajouter le total des messages publiés
+		ConsumedTotal:  totalConsumed,  // Ajouter le total des messages consommés
 	})
 
 	// Limiter la taille de l'historique (garder 24 derniers points)
