@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"sync"
 
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
@@ -16,16 +17,105 @@ var (
 
 // QueueServiceImpl implémente le service des files d'attente
 type QueueServiceImpl struct {
-	domainRepo outbound.DomainRepository
+	domainRepo    outbound.DomainRepository
+	channelQueues map[string]map[string]*model.ChannelQueue // domainName -> queueName -> ChannelQueue
+	rootCtx       context.Context
+	mu            sync.RWMutex
 }
 
 // NewQueueService crée un nouveau service de files d'attente
 func NewQueueService(
 	domainRepo outbound.DomainRepository,
+	rootCtx context.Context,
 ) inbound.QueueService {
-	return &QueueServiceImpl{
-		domainRepo: domainRepo,
+	svc := &QueueServiceImpl{
+		domainRepo:    domainRepo,
+		channelQueues: make(map[string]map[string]*model.ChannelQueue),
+		rootCtx:       rootCtx,
 	}
+
+	// init les queues existantes
+	go svc.initializeExistingQueues()
+
+	return svc
+}
+
+// initializeExistingQueues initialise les channel queues pour les queues existantes
+func (s *QueueServiceImpl) initializeExistingQueues() {
+	ctx := context.Background()
+	domains, err := s.domainRepo.ListDomains(ctx)
+	if err != nil {
+		log.Printf("Failed to list domains for queue initialization: %v", err)
+		return
+	}
+
+	for _, domain := range domains {
+		if domain.Queues == nil {
+			continue
+		}
+
+		for _, queue := range domain.Queues {
+			s.GetChannelQueue(ctx, domain.Name, queue.Name)
+		}
+	}
+}
+
+// GetChannelQueue récupère ou crée une ChannelQueue pour une file d'attente
+func (s *QueueServiceImpl) GetChannelQueue(ctx context.Context, domainName, queueName string) (model.QueueHandler, error) {
+	// Récupérer le domaine
+	domain, err := s.domainRepo.GetDomain(ctx, domainName)
+	if err != nil {
+		return nil, ErrDomainNotFound
+	}
+
+	// Vérifier si la file d'attente existe
+	queue, exists := domain.Queues[queueName]
+	if !exists {
+		return nil, ErrQueueNotFound
+	}
+
+	// Obtenir ou créer la channel queue
+	return s.getOrCreateChannelQueue(domainName, queue)
+}
+
+// GetChannelQueue récupère ou créé une channel queue
+func (s *QueueServiceImpl) getOrCreateChannelQueue(domainName string, queue *model.Queue) (*model.ChannelQueue, error) {
+	s.mu.RLock()
+	if domainQueues, exists := s.channelQueues[domainName]; exists {
+		if cq, exists := domainQueues[queue.Name]; exists {
+			s.mu.RUnlock()
+			return cq, nil
+		}
+	}
+	s.mu.RUnlock()
+
+	// Créer une nouvelle channel queue
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Vérifier à nouveau au cas où une autre goroutine l'aurait créée entre-temps
+	if domainQueues, exists := s.channelQueues[domainName]; exists {
+		if cq, exists := domainQueues[queue.Name]; exists {
+			return cq, nil
+		}
+	} else {
+		// Initialiser la map si elle n'existe pas
+		s.channelQueues[domainName] = make(map[string]*model.ChannelQueue)
+	}
+
+	bufferSize := 100 // default
+	if queue.Config.MaxSize > 0 {
+		bufferSize = queue.Config.MaxSize
+	}
+
+	// Créer et démarrer la nouvelle queue
+	cq := model.NewChannelQueue(queue, s.rootCtx, bufferSize)
+	s.channelQueues[domainName][queue.Name] = cq
+
+	// Démarrer les workers
+	cq.Start(s.rootCtx)
+
+	return cq, nil
 }
 
 // CreateQueue crée une nouvelle file d'attente dans un domaine
@@ -71,7 +161,23 @@ func (s *QueueServiceImpl) CreateQueue(ctx context.Context, domainName, queueNam
 		return err
 	}
 
+	s.getOrCreateChannelQueue(domainName, queue)
+
 	return nil
+}
+
+// graceful close les channel queues
+func (s *QueueServiceImpl) Cleanup() {
+	log.Println("Cleaning up queue service resources...")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, domainQueues := range s.channelQueues {
+		for _, cq := range domainQueues {
+			cq.Stop()
+		}
+	}
 }
 
 // GetQueue récupère une file d'attente

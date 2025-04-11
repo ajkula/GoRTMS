@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"time"
 )
 
@@ -38,6 +39,24 @@ type QueueConfig struct {
 
 	// DeliveryMode définit le mode de livraison des messages
 	DeliveryMode DeliveryMode
+}
+
+// QueueHandler définit les opérations pour une implémentation de queue concurrente
+type QueueHandler interface {
+	// Enqueue ajoute un message à la queue de manière thread-safe
+	Enqueue(ctx context.Context, message *Message) error
+
+	// Dequeue récupère un message de la queue de manière thread-safe
+	Dequeue(ctx context.Context) (*Message, error)
+
+	// GetQueue retourne la structure Queue associée
+	GetQueue() *Queue
+
+	// Start démarre les workers pour traiter les messages
+	Start(ctx context.Context)
+
+	// Stop arrête les workers et libère les ressources
+	Stop()
 }
 
 // DeliveryMode définit comment les messages sont distribués aux consommateurs

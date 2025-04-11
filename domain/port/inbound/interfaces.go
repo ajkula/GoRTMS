@@ -49,6 +49,12 @@ type QueueService interface {
 
 	// ListQueues liste toutes les files d'attente d'un domaine
 	ListQueues(ctx context.Context, domainName string) ([]*model.Queue, error)
+
+	// GetChannelQueue récupère ou crée une ChannelQueue pour une file d'attente existante
+	GetChannelQueue(ctx context.Context, domainName, queueName string) (model.QueueHandler, error)
+
+	// Cleanup nettoie les ressources utilisées par le service
+	Cleanup()
 }
 
 // RoutingService définit les opérations sur les règles de routage

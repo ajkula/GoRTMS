@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ type MessageServiceImpl struct {
 	domainRepo      outbound.DomainRepository
 	messageRepo     outbound.MessageRepository
 	subscriptionReg outbound.SubscriptionRegistry
+	queueService    inbound.QueueService
 	statsService    inbound.StatsService
 }
 
@@ -32,12 +34,14 @@ func NewMessageService(
 	domainRepo outbound.DomainRepository,
 	messageRepo outbound.MessageRepository,
 	subscriptionReg outbound.SubscriptionRegistry,
+	queueService inbound.QueueService,
 	statsService ...inbound.StatsService,
 ) inbound.MessageService {
 	impl := &MessageServiceImpl{
 		domainRepo:      domainRepo,
 		messageRepo:     messageRepo,
 		subscriptionReg: subscriptionReg,
+		queueService:    queueService,
 	}
 
 	if len(statsService) > 0 {
@@ -60,8 +64,8 @@ func (s *MessageServiceImpl) PublishMessage(
 	}
 
 	// Vérifier si la file d'attente existe
-	queue, exists := domain.Queues[queueName]
-	if !exists {
+	channelQueue, err := s.queueService.GetChannelQueue(ctx, domainName, queueName)
+	if err != nil {
 		return ErrQueueNotFound
 	}
 
@@ -114,7 +118,7 @@ func (s *MessageServiceImpl) PublishMessage(
 		message.Timestamp = time.Now()
 	}
 
-	// Stocker le message
+	// Stocker le message dans le repository pour persistance/historique
 	if err := s.messageRepo.StoreMessage(ctx, domainName, queueName, message); err != nil {
 		return err
 	}
@@ -124,10 +128,12 @@ func (s *MessageServiceImpl) PublishMessage(
 		s.statsService.TrackMessagePublished(domainName, queueName)
 	}
 
-	// Mettre à jour le compteur de messages
-	queue.MessageCount++
+	// Enqueue le message dans la chan queue
+	if err := channelQueue.Enqueue(ctx, message); err != nil {
+		return err
+	}
 
-	// Notifier les abonnés
+	// Notifier les abonnés via le registry existant
 	if err := s.subscriptionReg.NotifySubscribers(ctx, domainName, queueName, message); err != nil {
 		return err
 	}
@@ -165,41 +171,43 @@ func (s *MessageServiceImpl) ConsumeMessage(
 	ctx context.Context,
 	domainName, queueName string,
 ) (*model.Message, error) {
-	// Récupérer le domaine
-	domain, err := s.domainRepo.GetDomain(ctx, domainName)
+	// Récupérer la channelQueue
+	channelQueue, err := s.queueService.GetChannelQueue(ctx, domainName, queueName)
 	if err != nil {
 		return nil, ErrDomainNotFound
 	}
 
-	// Vérifier si la file d'attente existe
-	queue, exists := domain.Queues[queueName]
-	if !exists {
-		return nil, ErrQueueNotFound
-	}
-
-	// Récupérer un message
-	messages, err := s.messageRepo.GetMessages(ctx, domainName, queueName, 1)
+	// Tenter de consommer un message via la channelQueue
+	message, err := channelQueue.Dequeue(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(messages) == 0 {
-		return nil, nil // Pas de message disponible
-	}
-
-	// Collecter des statistiques
-	if s.statsService != nil {
-		s.statsService.TrackMessageConsumed(domainName, queueName)
-	}
-
-	message := messages[0]
-
-	// En mode non-persistant ou SingleConsumer, supprimer le message
-	if !queue.Config.IsPersistent || queue.Config.DeliveryMode == model.SingleConsumerMode {
-		if err := s.messageRepo.DeleteMessage(ctx, domainName, queueName, message.ID); err != nil {
+	// Si aucun message n'est dispo dans la channelQueue, essayer le repo
+	if message == nil {
+		messages, err := s.messageRepo.GetMessages(ctx, domainName, queueName, 1)
+		if err != nil {
 			return nil, err
 		}
-		queue.MessageCount--
+
+		if len(messages) == 0 {
+			return nil, nil // rien
+		}
+
+		message = messages[0]
+
+		// mode non persistent supprime le message du repo
+		queue := channelQueue.GetQueue()
+		if !queue.Config.IsPersistent || queue.Config.DeliveryMode == model.SingleConsumerMode {
+			if err := s.messageRepo.DeleteMessage(ctx, domainName, queueName, message.ID); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Collecter les stats
+	if s.statsService != nil {
+		s.statsService.TrackMessageConsumed(domainName, queueName)
 	}
 
 	return message, nil
@@ -285,4 +293,9 @@ func (s *MessageServiceImpl) evaluateJSONPredicate(predicate model.JSONPredicate
 	}
 
 	return false
+}
+
+func (s *MessageServiceImpl) Cleanup() {
+	log.Println("Cleaning up message service ressource...")
+	// géré dans le QueueService
 }

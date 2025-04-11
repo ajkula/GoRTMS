@@ -71,6 +71,9 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 	router.HandleFunc("/api/domains/{domain}/routes", h.addRoutingRule).Methods("POST")
 	router.HandleFunc("/api/domains/{domain}/routes/{source}/{destination}", h.removeRoutingRule).Methods("DELETE")
 
+	// Simulation de routing
+	router.HandleFunc("/api/domains/{domain}/routes/test", h.testRoutingRules).Methods("POST")
+
 	// Route pour les stats
 	router.HandleFunc("/api/stats", h.getStats).Methods("GET")
 

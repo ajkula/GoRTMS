@@ -85,14 +85,15 @@ func main() {
 
 	// Créer les services (implémentations du domaine)
 	statsService := service.NewStatsService(domainRepo, messageRepo)
+	queueService := service.NewQueueService(domainRepo, ctx)
 	messageService := service.NewMessageService(
 		domainRepo,
 		messageRepo,
 		subscriptionReg,
+		queueService,
 		statsService,
 	)
 	domainService := service.NewDomainService(domainRepo)
-	queueService := service.NewQueueService(domainRepo)
 	routingService := service.NewRoutingService(domainRepo)
 
 	// Créer le routeur HTTP
@@ -154,6 +155,13 @@ func main() {
 			defer shutdownCancel()
 			if err := server.Shutdown(shutdownCtx); err != nil {
 				log.Printf("HTTP server shutdown error: %v", err)
+			}
+			// Nettoyer les ressources des services
+			if cleanable, ok := queueService.(interface{ Cleanup() }); ok {
+				cleanable.Cleanup()
+			}
+			if cleanable, ok := messageService.(interface{ Cleanup() }); ok {
+				cleanable.Cleanup()
 			}
 		}()
 	}
