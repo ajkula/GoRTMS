@@ -1,11 +1,11 @@
 // web/src/components/queue/QueueMonitor.js
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+// import { useParams } from 'react-router-dom';
 import { Loader, AlertTriangle, RefreshCw } from 'lucide-react';
 import api from '../api';
 
-const QueueMonitor = () => {
-  const { domainName, queueName } = useParams();
+const QueueMonitor = ({ domainName, queueName }) => {
+  // const { domainName, queueName } = useParams();
   const [messages, setMessages] = useState([]);
   const [status, setStatus] = useState('disconnected'); // disconnected, connecting, connected, error
   const [error, setError] = useState(null);
@@ -47,14 +47,34 @@ const QueueMonitor = () => {
   // Fonctions auxiliaires pour simplifier la logique
   const closeExistingConnection = () => {
     if (webSocketRef.current) {
-      webSocketRef.current.close();
+      console.log('Fermeture connexion existante:', webSocketRef.current);
+      
+      try {
+        // Essayer de se désabonner avant de fermer
+        if (webSocketRef.current.subscriptionId) {
+          api.unsubscribeFromQueue(domainName, queueName, webSocketRef.current.subscriptionId)
+            .catch(err => console.error('Error unsubscribing:', err));
+        }
+        
+        // S'assurer que la socket est fermée
+        if (webSocketRef.current.socket && webSocketRef.current.socket.readyState < 2) {
+          webSocketRef.current.socket.close();
+        }
+        
+        // Appeler la méthode close
+        if (typeof webSocketRef.current.close === 'function') {
+          webSocketRef.current.close();
+        }
+      } catch (err) {
+        console.error('Error closing connection:', err);
+      }
+      
       webSocketRef.current = null;
     }
   };
 
   const trySubscribeToQueue = async () => {
     if (typeof api.subscribeToQueue === 'function') {
-      console.log('typeof api.subscribeToQueue === ' + typeof api.subscribeToQueue);
       try {
         const sub = await api.subscribeToQueue(domainName, queueName);
         return sub;
@@ -76,24 +96,27 @@ const QueueMonitor = () => {
   };
 
   const handleIncomingMessage = (message) => {
+    console.log('Message reçu:', message); // debug
+    
     setMessages((prevMessages) => {
-      // Éviter les doublons si le message a un ID
-      if (message.id && prevMessages.some(m => m.id === message.id)) {
-        return prevMessages;
-      }
-
-      // Ajouter le message avec l'horodatage de réception
-      const newMessage = {
-        ...message,
+      // Adapter le format du message reçu
+      const adaptedMessage = {
+        id: message.ID || message.id || 'N/A',
+        content: message.Payload || message.payload || message,
+        headers: message.Headers || message.headers || {},
         receivedAt: new Date().toISOString()
       };
-
-      // Maintenir une liste limitée pour les performances
-      const updatedMessages = [...prevMessages, newMessage];
-      if (updatedMessages.length > 100) {
-        return updatedMessages.slice(-100); // Garder les 100 plus récents
+      
+      // Éviter les doublons
+      if (adaptedMessage.id !== 'N/A' && prevMessages.some(m => m.id === adaptedMessage.id)) {
+        return prevMessages;
       }
-
+  
+      const updatedMessages = [...prevMessages, adaptedMessage];
+      if (updatedMessages.length > 100) {
+        return updatedMessages.slice(-100);
+      }
+  
       return updatedMessages;
     });
   };
@@ -146,6 +169,8 @@ const QueueMonitor = () => {
 
   // Faire défiler vers le dernier message quand de nouveaux messages arrivent
   useEffect(() => {
+    console.log({ messages });
+
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }

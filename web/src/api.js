@@ -71,6 +71,14 @@ const api = {
   },
 
   async subscribeToQueue(domainName, queueName) {
+    
+  
+  console.log({
+    domainName,
+    queueName
+  });
+
+
     try {
       // Cette API est juste pour l'enregistrement initial
       const response = await fetch(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/subscribe`, {
@@ -84,8 +92,10 @@ const api = {
       if (!response.ok) {
         throw new Error(`Error subscribing to queue: ${response.statusText}`);
       }
+      const data =  await response.json();
+      console.log({ data });
 
-      return await response.json();
+      return data;
     } catch (error) {
       console.error(`Error subscribing to queue ${domainName}/${queueName}:`, error);
       throw error;
