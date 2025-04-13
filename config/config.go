@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ajkula/GoRTMS/domain/model"
 	"gopkg.in/yaml.v3"
 )
 
@@ -190,7 +191,7 @@ type QueueConfig struct {
 	Name string `yaml:"name"`
 
 	// Config est la configuration de la file d'attente
-	Config map[string]interface{} `yaml:"config"`
+	Config model.QueueConfig `yaml:"config"`
 }
 
 // RoutingRule est une règle de routage

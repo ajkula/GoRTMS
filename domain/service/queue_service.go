@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
@@ -173,10 +174,32 @@ func (s *QueueServiceImpl) Cleanup() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, domainQueues := range s.channelQueues {
-		for _, cq := range domainQueues {
-			cq.Stop()
+	var wg sync.WaitGroup
+
+	for domainName, domainQueues := range s.channelQueues {
+		for queueName, cq := range domainQueues {
+			wg.Add(1)
+			go func(d, q string, queue *model.ChannelQueue) {
+				defer wg.Done()
+				log.Printf("Stopping queue: %s.%s", d, q)
+				queue.Stop()
+				log.Printf("Queue stopped: %s.%s", d, q)
+			}(domainName, queueName, cq)
 		}
+	}
+
+	// Attendre avectimeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("All queues cleanly stopped")
+	case <-time.After(10 * time.Second):
+		log.Println("Timeout waiting forqueues to stop, forcing shutdown")
 	}
 }
 

@@ -239,34 +239,6 @@ const Sidebar = ({ isOpen, toggleSidebar, setPage, currentPage }) => {
   );
 };
 
-// Placeholder pour la page de routage
-const RoutingRules = ({ domainName, onBack }) => {
-  return (
-    <div className="p-6">
-      <div className="flex items-center mb-6">
-        <button
-          onClick={onBack}
-          className="mr-3 inline-flex items-center justify-center p-2 rounded-md text-gray-500 hover:bg-gray-100"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <h1 className="text-2xl font-bold">
-          Routing Rules: <span className="text-indigo-600">{domainName}</span>
-        </h1>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-6">
-        <p className="text-gray-600">Routing configuration is coming soon.</p>
-        <ul className="mt-4 list-disc pl-5 text-gray-600">
-          <li>Create rules to forward messages from one queue to another</li>
-          <li>Set up conditional routing based on message content</li>
-          <li>Configure message transformation during routing</li>
-        </ul>
-      </div>
-    </div>
-  );
-};
-
 // Composant principal de l'application
 const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -363,8 +335,7 @@ const App = () => {
       case 'routes':
         return (
           <div className="p-6">
-            <h1 className="text-2xl font-bold">Routing Rules</h1>
-            <p className="mt-2 text-gray-600">Please select a domain first to view its routing rules.</p>
+            <Routing />
           </div>
         );
       case 'settings':
@@ -381,6 +352,7 @@ const App = () => {
               domainName={page.domainName}
               queueName={page.queueName}
               onBack={handleBackToQueues}
+              onMessagePublished={() => {}}
             />
           </div>
         );

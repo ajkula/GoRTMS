@@ -123,13 +123,13 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
       };
 
       // Publier le message
-      await api.publishMessage(domainName, queueName, message);
+      const result = await api.publishMessage(domainName, queueName, message);
 
       // Notifier le parent
       if (onMessagePublished) {
         onMessagePublished(message);
-        setSuccess(true);
       }
+      if (result.status === "success") setSuccess(true)
 
     } catch (err) {
       console.error('Error publishing message:', err);

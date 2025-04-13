@@ -1,17 +1,60 @@
 // web/src/pages/Routing.js
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { PlusCircle, ChevronRight, Trash2, Loader, AlertTriangle } from 'lucide-react';
+import { PlusCircle, ChevronRight, Trash2, Loader, AlertTriangle, Columns } from 'lucide-react';
 import api from '../api';
 import RoutingTester from '../components/RoutingTester';
 
 const Routing = () => {
-  const { domainName } = useParams();
+  const [domains, setDomains] = useState([]);
+  const [domainName, setDomainName] = useState('');
   const [rules, setRules] = useState([]);
   const [queues, setQueues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSourceQueue, setSelectedSourceQueue] = useState('');
   const [error, setError] = useState(null);
+
+  // Charger les domaines
+  const fetchDomains = async () => {
+    console.log('Fetching domains...');
+    try {
+      setLoading(true);
+      setError(null);
+      const domainsData = await api.getDomains();
+      console.log('Domains received:', domainsData);
+
+      // Si nous avons besoin de plus de détails pour chaque domaine
+      const detailedDomains = await Promise.all(
+        domainsData.map(async (domain) => {
+          try {
+            // Essayer de récupérer les détails du domaine si l'API le permet
+            const details = await api.getDomainDetails(domain.name);
+            return {
+              ...domain,
+              queueCount: details.queues ? details.queues.length : domain.queueCount || 0,
+              messageCount: details.queues
+                ? details.queues.reduce((total, q) => total + (q.messageCount || 0), 0)
+                : domain.messageCount || 0
+            };
+          } catch (err) {
+            console.log(`Couldn't fetch details for domain ${domain.name}`, err);
+            return domain; // Conserver le domaine tel quel si pas de détails
+          }
+        })
+      );
+
+      setDomains(detailedDomains);
+      if (detailedDomains.length > 0) setDomainName(detailedDomains[0].name);
+    } catch (err) {
+      console.error('Error fetching domains:', err);
+      setError(err.message || 'Failed to load domains');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDomains();
+  }, []);
 
   // État pour le formulaire de nouvelle règle
   const [newRule, setNewRule] = useState({
@@ -35,6 +78,8 @@ const Routing = () => {
       // Charger les règles de routage
       const routingRules = await api.getRoutingRules(domainName);
       setRules(routingRules);
+
+      console.log({ routingRules })
 
       // Charger les files d'attente pour pouvoir les sélectionner
       const queueList = await api.getQueues(domainName);
@@ -145,6 +190,29 @@ const Routing = () => {
         <h3 className="text-lg font-medium mb-4">Create New Routing Rule</h3>
 
         <form onSubmit={handleAddRule}>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label htmlFor="sourceQueue" className="block text-sm font-medium text-gray-700 mb-1">
+                Select domain
+              </label>
+              <select
+                id="domainName"
+                value={domainName}
+                onChange={(e) => {setDomainName( e.target.value ); console.log( e.target.value )}}
+                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                disabled={createLoading}
+              >
+                {domains.length === 0 ? (
+                  <option>No domain available</option>
+                ) : (
+                  domains.map(dom => (
+                    <option key={dom.name} value={dom.name}>{dom.name}</option>
+                  ))
+                )}
+              </select>
+            </div>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label htmlFor="sourceQueue" className="block text-sm font-medium text-gray-700 mb-1">
@@ -283,7 +351,7 @@ const Routing = () => {
             <Loader className="h-6 w-6 animate-spin text-indigo-600" />
             <span className="ml-2">Loading routing rules...</span>
           </div>
-        ) : error ? (
+        ) : !error ? (
           <div className="p-6 text-center">
             <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
             <h3 className="text-lg font-medium text-red-800">Failed to load routing rules</h3>
@@ -321,17 +389,17 @@ const Routing = () => {
                 <div className="mt-2 text-sm text-gray-700 bg-gray-50 rounded px-3 py-2">
                   <div className="flex flex-wrap gap-1">
                     <span className="font-medium">When</span>
-                    <span className="text-indigo-700">{rule.predicate.field}</span>
+                    <span className="text-indigo-700">{rule.Predicate.field}</span>
                     <span>
-                      {rule.predicate.type === 'eq' && '='}
-                      {rule.predicate.type === 'neq' && '!='}
-                      {rule.predicate.type === 'gt' && '>'}
-                      {rule.predicate.type === 'gte' && '>='}
-                      {rule.predicate.type === 'lt' && '<'}
-                      {rule.predicate.type === 'lte' && '<='}
-                      {rule.predicate.type === 'contains' && 'contains'}
+                      {rule.Predicate.type === 'eq' && '='}
+                      {rule.Predicate.type === 'neq' && '!='}
+                      {rule.Predicate.type === 'gt' && '>'}
+                      {rule.Predicate.type === 'gte' && '>='}
+                      {rule.Predicate.type === 'lt' && '<'}
+                      {rule.Predicate.type === 'lte' && '<='}
+                      {rule.Predicate.type === 'contains' && 'contains'}
                     </span>
-                    <span className="text-green-600">"{rule.predicate.value}"</span>
+                    <span className="text-green-600">"{rule.Predicate.value}"</span>
                   </div>
                 </div>
               </li>
@@ -339,7 +407,7 @@ const Routing = () => {
           </ul>
         )}
       </div>
-      {selectedSourceQueue && (
+      {newRule.sourceQueue && (
         <RoutingTester
           domainName={domainName}
           sourceQueue={selectedSourceQueue}

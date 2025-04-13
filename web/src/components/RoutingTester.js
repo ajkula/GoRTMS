@@ -9,7 +9,7 @@ const RoutingTester = ({ domainName, sourceQueue, rules }) => {
   const [testing, setTesting] = useState(false);
   const [testResults, setTestResults] = useState(null);
   const [error, setError] = useState(null);
-
+console.log({ domainName, sourceQueue, rules });
   // Valider le JSON
   const handleMessageChange = (content) => {
     setTestMessage(content);
@@ -49,6 +49,8 @@ const RoutingTester = ({ domainName, sourceQueue, rules }) => {
       // Cette API n'existe pas encore dans le backend, vous devrez peut-être l'implémenter
       const results = await api.testRouting(domainName, messageObj);
       setTestResults(results);
+
+      console.log({ results });
     } catch (err) {
       console.error('Error testing routing:', err);
       setError(err.message || 'Failed to test routing rules');

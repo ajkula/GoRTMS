@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -29,16 +30,37 @@ type Queue struct {
 // QueueConfig contient la configuration d'une file d'attente
 type QueueConfig struct {
 	// IsPersistent indique si les messages doivent être persistés
-	IsPersistent bool
+	IsPersistent bool `yaml:"isPersistent"`
 
 	// MaxSize définit la taille maximale de la file d'attente (0 = illimité)
-	MaxSize int
+	MaxSize int `yaml:"maxSize"`
 
 	// TTL définit la durée de vie des messages (0 = illimité)
-	TTL time.Duration
+	TTL time.Duration `yaml:"ttl"`
 
 	// DeliveryMode définit le mode de livraison des messages
-	DeliveryMode DeliveryMode
+	DeliveryMode DeliveryMode `yaml:"deliveryMode"`
+
+	// Nouveaux champs
+	WorkerCount int `yaml:"workerCount"`
+
+	// RetryEnabled active le mécanisme de retry
+	RetryEnabled bool `yaml:"retryEnabled"`
+
+	// RetryConfig définit la config. des retries
+	RetryConfig *RetryConfig `yaml:"retryConfig,omitempty"`
+
+	// CircuitBreakerEnabled active le circuit breaker
+	CircuitBreakerEnabled bool                  `yaml:"circuitBreakerEnabled"`
+	CircuitBreakerConfig  *CircuitBreakerConfig `yaml:"circuitBreakerConfig,omitempty"`
+}
+
+// CircuitBreakerConfig définit la configuration du circuit breaker
+type CircuitBreakerConfig struct {
+	ErrorThreshold   float64       `yaml:"errorThreshold"`
+	MinimumRequests  int           `yaml:"minimumRequests"`
+	OpenTimeout      time.Duration `yaml:"openTimeout"`
+	SuccessThreshold int           `yaml:"successThreshold"`
 }
 
 // QueueHandler définit les opérations pour une implémentation de queue concurrente
@@ -57,6 +79,56 @@ type QueueHandler interface {
 
 	// Stop arrête les workers et libère les ressources
 	Stop()
+}
+
+// RetryConfig définit laconfig desretentatives pour les messages échoués
+type RetryConfig struct {
+	MaxRetries int
+
+	// définit le délai avant la première tentative
+	InitialDelay time.Duration
+
+	// Delai max entre tentatives
+	MaxDelay time.Duration
+
+	// Factor définit lefacteurde multiplication pour le backoff exponentiel
+	Factor float64
+}
+
+// MessageWithRetry représente un message avec des informations de retry
+type MessageWithRetry struct {
+	Message     *Message
+	RetryCount  int
+	NextRetryAt time.Time
+	Handler     MessageHandler
+}
+
+type CircuitBreakerState int
+
+const (
+	// CircuitClosed= circuitfermé,lesmsg passentnormalement
+	CircuitClosed CircuitBreakerState = iota
+
+	// CircuitOpen = circuit ouvert, les msg sont rejetés
+	CircuitOpen
+
+	// CircuitHalfOpen = circuit en mode test
+	CircuitHalfOpen
+)
+
+// CircuitBreaker implémente lepatterndu même nom pour protéger contre les surcharges
+type CircuitBreaker struct {
+	ErrorThreshold   float64             // Seuil d'erreurs pour ouvrir
+	SuccessThreshold int                 // nbr de succès pour fermer
+	MinimumRequests  int                 // Nombre min de req avant d'appliquer
+	OpenTimeout      time.Duration       // Durée d'ouverture
+	State            CircuitBreakerState // Etat actuel
+	FailureCount     int                 // compteur d'échecs
+	SuccessCount     int                 // Compteur de succès
+	TotalCount       int                 // Compteur total
+	LastStateChange  time.Time           // Derniere modif. d'état
+	NextAttempt      time.Time           // Prochaine tentative après ouverture
+	mu               sync.RWMutex        // Mutex de thread-safety
 }
 
 // DeliveryMode définit comment les messages sont distribués aux consommateurs
@@ -129,4 +201,49 @@ type JSONPredicate struct {
 	Type  string      `json:"type"`  // Type d'opération: eq, ne, gt, lt, etc.
 	Field string      `json:"field"` // Champ à évaluer
 	Value interface{} `json:"value"` // Valeur à comparer
+}
+
+// Allow vérifie si une opération peut être exécutée
+func (cb *CircuitBreaker) Allow() bool {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+
+	now := time.Now()
+
+	switch cb.State {
+	case CircuitOpen:
+		// Si le timeout est passé, passer en mode semi-ouvert
+		if now.After(cb.NextAttempt) {
+			cb.mu.RUnlock()
+			cb.mu.Lock()
+			cb.State = CircuitHalfOpen
+			cb.FailureCount = 0
+			cb.SuccessCount = 0
+			cb.TotalCount = 0
+			cb.LastStateChange = now
+			cb.mu.Unlock()
+			cb.mu.RLock()
+			return true
+		}
+		return false
+
+	case CircuitHalfOpen:
+		// En mode semi-ouvert, limiter le nombre de requêtes
+		return cb.TotalCount < 5
+
+	default: // CircuitClosed
+		return true
+	}
+}
+
+// Reset réinitialise le circuit breaker
+func (cb *CircuitBreaker) Reset() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	cb.State = CircuitClosed
+	cb.FailureCount = 0
+	cb.SuccessCount = 0
+	cb.TotalCount = 0
+	cb.LastStateChange = time.Now()
 }

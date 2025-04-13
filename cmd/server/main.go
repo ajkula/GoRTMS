@@ -249,39 +249,38 @@ func createDomainFromConfig(
 
 	// Créer les files d'attente
 	for _, queueCfg := range config.Queues {
-		// Extraire les configurations de la file
-		isPersistent, _ := queueCfg.Config["isPersistent"].(bool)
-		maxSize, _ := queueCfg.Config["maxSize"].(int)
+		queueConfig := queueCfg.Config
 
-		var ttl time.Duration
-		if ttlVal, ok := queueCfg.Config["ttl"].(string); ok {
-			var err error
-			ttl, err = time.ParseDuration(ttlVal)
-			if err != nil {
-				log.Printf("Warning: invalid TTL in queue config: %v", err)
+		// Valeurs par défaut pour la config de retry
+		if queueConfig.RetryEnabled && queueConfig.RetryConfig != nil {
+			if queueConfig.RetryConfig.InitialDelay == 0 {
+				queueConfig.RetryConfig.InitialDelay = 1 * time.Second
+			}
+			if queueConfig.RetryConfig.MaxDelay == 0 {
+				queueConfig.RetryConfig.MaxDelay = 30 * time.Second
+			}
+			if queueConfig.RetryConfig.Factor <= 0 {
+				queueConfig.RetryConfig.Factor = 2.0
 			}
 		}
 
-		var deliveryMode model.DeliveryMode
-		if modeStr, ok := queueCfg.Config["deliveryMode"].(string); ok {
-			switch modeStr {
-			case "broadcast":
-				deliveryMode = model.BroadcastMode
-			case "roundRobin":
-				deliveryMode = model.RoundRobinMode
-			case "singleConsumer":
-				deliveryMode = model.SingleConsumerMode
+		// Valeurs par défaut pour circuit breaker
+		if queueConfig.CircuitBreakerEnabled && queueConfig.CircuitBreakerConfig != nil {
+			if queueConfig.CircuitBreakerConfig.ErrorThreshold <= 0 {
+				queueConfig.CircuitBreakerConfig.ErrorThreshold = 0.5
+			}
+			if queueConfig.CircuitBreakerConfig.MinimumRequests <= 0 {
+				queueConfig.CircuitBreakerConfig.MinimumRequests = 10
+			}
+			if queueConfig.CircuitBreakerConfig.OpenTimeout == 0 {
+				queueConfig.CircuitBreakerConfig.OpenTimeout = 30 * time.Second
+			}
+			if queueConfig.CircuitBreakerConfig.SuccessThreshold <= 0 {
+				queueConfig.CircuitBreakerConfig.SuccessThreshold = 5
 			}
 		}
 
-		queueConfig := &model.QueueConfig{
-			IsPersistent: isPersistent,
-			MaxSize:      maxSize,
-			TTL:          ttl,
-			DeliveryMode: deliveryMode,
-		}
-
-		if err := queueService.CreateQueue(ctx, config.Name, queueCfg.Name, queueConfig); err != nil {
+		if err := queueService.CreateQueue(ctx, config.Name, queueCfg.Name, &queueConfig); err != nil {
 			return fmt.Errorf("failed to create queue %s: %w", queueCfg.Name, err)
 		}
 	}

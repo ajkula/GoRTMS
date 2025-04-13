@@ -167,6 +167,7 @@ const api = {
   async getRoutingRules(domainName) {
     try {
       const data = await this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/routes`);
+      console.log({ data })
       return data.rules || [];
     } catch (error) {
       console.error(`Error fetching routing rules for domain ${domainName}:`, error);
