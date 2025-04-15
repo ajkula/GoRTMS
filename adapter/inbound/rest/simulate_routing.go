@@ -126,6 +126,7 @@ func evaluatePredicate(predicate interface{}, message *model.Message) bool {
 
 // evaluateJSONPredicate évalue un prédicat JSON sur un message
 func evaluateJSONPredicate(predicate model.JSONPredicate, message *model.Message) bool {
+
 	// Décoder le payload du message
 	var payload map[string]interface{}
 	if err := json.Unmarshal(message.Payload, &payload); err != nil {

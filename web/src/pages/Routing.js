@@ -20,7 +20,6 @@ const Routing = () => {
       setLoading(true);
       setError(null);
       const domainsData = await api.getDomains();
-      console.log('Domains received:', domainsData);
 
       // Si nous avons besoin de plus de détails pour chaque domaine
       const detailedDomains = await Promise.all(
@@ -83,9 +82,6 @@ const Routing = () => {
       // Charger les règles de routage
       const routingRules = await api.getRoutingRules(domainName);
       setRules(routingRules);
-
-      console.log("Routing rules raw:", JSON.stringify(routingRules, null, 2));
-      console.log("First rule properties:", routingRules.length > 0 ? Object.keys(routingRules[0]) : "no rules");
 
       // Charger les files d'attente pour pouvoir les sélectionner
       const queueList = await api.getQueues(domainName);
@@ -172,34 +168,6 @@ const Routing = () => {
       console.error('Error deleting routing rule:', err);
       alert(`Failed to delete routing rule: ${err.message || 'Unknown error'}`);
     }
-  };
-
-  const normalizePredicate = (pred) => {
-    // Si null ou undefined, utiliser un prédicat par défaut
-    if (!pred) {
-      return { type: "unknown", field: "unknown", value: "unknown" };
-    }
-
-    // Le prédicat semble déjà correctement formaté
-    if (pred.field !== undefined && pred.type !== undefined) {
-      return pred;
-    }
-
-    // Si c'est notre format spécial pour les fonctions non-sérialisables
-    if (pred.info && typeof pred.info === 'string') {
-      return {
-        type: "custom",
-        field: "custom predicate",
-        value: pred.info
-      };
-    }
-
-    // Format inconnu, créer une représentation générique
-    return {
-      type: "custom",
-      field: "predicate",
-      value: JSON.stringify(pred)
-    };
   };
 
   // Mettre à jour le prédicat dans le formulaire
@@ -409,13 +377,13 @@ const Routing = () => {
               <li key={index} className="px-6 py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center text-gray-900">
-                    <span className="font-medium">{rule.sourceQueue}</span>
+                    <span className="font-medium">{rule.SourceQueue}</span>
                     <ChevronRight className="h-5 w-5 mx-2 text-gray-400" />
-                    <span className="font-medium">{rule.destinationQueue}</span>
+                    <span className="font-medium">{rule.DestinationQueue}</span>
                   </div>
 
                   <button
-                    onClick={() => handleDeleteRule(rule.sourceQueue, rule.destinationQueue)}
+                    onClick={() => handleDeleteRule(rule.SourceQueue, rule.DestinationQueue)}
                     className="inline-flex items-center py-1 px-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   >
                     <Trash2 className="h-4 w-4 text-red-500" />
@@ -424,12 +392,12 @@ const Routing = () => {
 
                 <div className="mt-2 text-sm text-gray-700 bg-gray-50 rounded px-3 py-2">
                   {(() => {
-                    const pred = normalizePredicate(rule.predicate);
+                    const pred = rule.Predicate;
 
                     return (
                       <div className="flex flex-wrap gap-1">
                         <span className="font-medium">When</span>
-                        <span className="text-indigo-700">{pred.field}</span>
+                        <span className="text-indigo-700">{pred && pred.field}</span>
                         <span>
                           {pred.type === 'eq' && '='}
                           {pred.type === 'neq' && '!='}
@@ -453,7 +421,7 @@ const Routing = () => {
         <RoutingTester
           domainName={domainName}
           sourceQueue={selectedSourceQueue}
-          rules={rules.filter(rule => rule.sourceQueue === selectedSourceQueue)}
+          rules={rules.filter(rule => rule.SourceQueue === selectedSourceQueue)}
         />
       )}
     </div>

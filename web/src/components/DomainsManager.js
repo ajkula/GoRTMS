@@ -12,12 +12,10 @@ const DomainsManager = ({ onSelectDomain }) => {
 
   // Charger les domaines
   const fetchDomains = async () => {
-    console.log('Fetching domains...');
     try {
       setLoading(true);
       setError(null);
       const domainsData = await api.getDomains();
-      console.log('Domains received:', domainsData);
       
       // Si nous avons besoin de plus de détails pour chaque domaine
       const detailedDomains = await Promise.all(
@@ -25,7 +23,7 @@ const DomainsManager = ({ onSelectDomain }) => {
           try {
             // Essayer de récupérer les détails du domaine si l'API le permet
             const details = await api.getDomainDetails(domain.name);
-            console.log({ details })
+
             return {
               ...domain,
               queueCount: details.queues ? details.queues.length : domain.queueCount || 0,

@@ -463,8 +463,6 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 	domainName := vars["domain"]
 	queueName := vars["queue"]
 
-	log.Printf("Publishing message to domain '%s', queue '%s'", domainName, queueName)
-
 	// Lire le corps de la requête
 	var payload map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -504,8 +502,6 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	log.Printf("Message published successfully!")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{

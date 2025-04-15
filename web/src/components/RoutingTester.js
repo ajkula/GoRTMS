@@ -9,7 +9,7 @@ const RoutingTester = ({ domainName, sourceQueue, rules }) => {
   const [testing, setTesting] = useState(false);
   const [testResults, setTestResults] = useState(null);
   const [error, setError] = useState(null);
-console.log({ domainName, sourceQueue, rules });
+
   // Valider le JSON
   const handleMessageChange = (content) => {
     setTestMessage(content);
@@ -49,8 +49,6 @@ console.log({ domainName, sourceQueue, rules });
       // Cette API n'existe pas encore dans le backend, vous devrez peut-être l'implémenter
       const results = await api.testRouting(domainName, messageObj);
       setTestResults(results);
-
-      console.log(JSON.stringify(results, null, 2));
     } catch (err) {
       console.error('Error testing routing:', err);
       setError(err.message || 'Failed to test routing rules');
@@ -60,7 +58,7 @@ console.log({ domainName, sourceQueue, rules });
         matches: rules.map(rule => ({
           rule: rule,
           matches: Math.random() > 0.5, // Simulation aléatoire
-          destinationQueue: rule.destinationQueue
+          destinationQueue: rule.DestinationQueue
         }))
       });
     } finally {
@@ -80,12 +78,12 @@ console.log({ domainName, sourceQueue, rules });
     const rule = rules[0];
     let sampleMessage = {};
     
-    if (rule.predicate.field) {
-      let fieldParts = rule.predicate.field.split('.');
+    if (rule.Predicate.field) {
+      let fieldParts = rule.Predicate.field.split('.');
       
       if (fieldParts.length === 1) {
         // Champ simple
-        let value = rule.predicate.value;
+        let value = rule.Predicate.value;
         
         // Convertir la valeur si nécessaire
         if (!isNaN(value)) {
@@ -94,7 +92,7 @@ console.log({ domainName, sourceQueue, rules });
           value = value === 'true';
         }
         
-        sampleMessage[rule.predicate.field] = value;
+        sampleMessage[rule.Predicate.field] = value;
       } else {
         // Champ imbriqué (ex: user.name)
         let current = sampleMessage;
@@ -104,7 +102,7 @@ console.log({ domainName, sourceQueue, rules });
         }
         
         // Dernier niveau avec la valeur
-        let value = rule.predicate.value;
+        let value = rule.Predicate.value;
         if (!isNaN(value)) {
           value = parseFloat(value);
         }
@@ -204,20 +202,20 @@ console.log({ domainName, sourceQueue, rules });
                         )}
                         <div>
                           <div className="flex items-center text-sm">
-                            <span className="font-medium mr-1">{result.rule.sourceQueue}</span>
+                            <span className="font-medium mr-1">{result.rule.SourceQueue}</span>
                             <ArrowRight className="h-4 w-4 text-gray-400 mx-1" />
-                            <span className="font-medium">{result.rule.destinationQueue}</span>
+                            <span className="font-medium">{result.rule.DestinationQueue}</span>
                           </div>
                           <p className="text-xs text-gray-500 mt-1">
-                            {result.rule.predicate.field} {' '}
-                            {result.rule.predicate.type === 'eq' ? '=' : 
-                             result.rule.predicate.type === 'neq' ? '!=' : 
-                             result.rule.predicate.type === 'gt' ? '>' :
-                             result.rule.predicate.type === 'gte' ? '>=' :
-                             result.rule.predicate.type === 'lt' ? '<' :
-                             result.rule.predicate.type === 'lte' ? '<=' :
-                             result.rule.predicate.type === 'contains' ? 'contains' : '?'} {' '}
-                            "{result.rule.predicate.value}"
+                            {result.rule.Predicate.field} {' '}
+                            {result.rule.Predicate.type === 'eq' ? '=' : 
+                             result.rule.Predicate.type === 'neq' ? '!=' : 
+                             result.rule.Predicate.type === 'gt' ? '>' :
+                             result.rule.Predicate.type === 'gte' ? '>=' :
+                             result.rule.Predicate.type === 'lt' ? '<' :
+                             result.rule.Predicate.type === 'lte' ? '<=' :
+                             result.rule.Predicate.type === 'contains' ? 'contains' : '?'} {' '}
+                            "{result.rule.Predicate.value}"
                           </p>
                         </div>
                       </div>

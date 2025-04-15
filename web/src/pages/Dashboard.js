@@ -70,9 +70,6 @@ const Dashboard = () => {
       console.log("API response:", statsData);
       setStats(statsData);
 
-      // Log spécifiquement les messageRates
-      console.log("Message rates from API:", statsData.messageRates);
-
       // Transformer les données de domaines pour le graphique
       if (statsData.activeDomains && statsData.activeDomains.length > 0) {
         const colors = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088fe'];
@@ -86,13 +83,9 @@ const Dashboard = () => {
 
       // Créer des données d'activité à partir des taux de messages
       if (statsData.messageRates && statsData.messageRates.length > 0) {
-        console.log("Found message rates:", statsData.messageRates);
-        
         const activityData = statsData.messageRates.map(rate => {
           const date = new Date(rate.timestamp * 1000);
           const timeString = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-          
-          console.log("Converting rate:", rate, "to time:", timeString);
           
           return {
             time: timeString,

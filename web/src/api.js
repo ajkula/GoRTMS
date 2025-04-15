@@ -136,14 +136,12 @@ const api = {
       }
     }
 
-    console.log('On essaye de publishMessage');
     try {
       const result = await this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/messages`, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload)
       });
-      console.log({ result });
       return result;
     } catch (error) {
       console.error('Error publishing message:', error);
