@@ -25,6 +25,7 @@ const DomainsManager = ({ onSelectDomain }) => {
           try {
             // Essayer de récupérer les détails du domaine si l'API le permet
             const details = await api.getDomainDetails(domain.name);
+            console.log({ details })
             return {
               ...domain,
               queueCount: details.queues ? details.queues.length : domain.queueCount || 0,

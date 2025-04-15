@@ -351,7 +351,7 @@ const Routing = () => {
             <Loader className="h-6 w-6 animate-spin text-indigo-600" />
             <span className="ml-2">Loading routing rules...</span>
           </div>
-        ) : !error ? (
+        ) : error ? (
           <div className="p-6 text-center">
             <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
             <h3 className="text-lg font-medium text-red-800">Failed to load routing rules</h3>
@@ -373,13 +373,13 @@ const Routing = () => {
               <li key={index} className="px-6 py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center text-gray-900">
-                    <span className="font-medium">{rule.sourceQueue}</span>
+                    <span className="font-medium">{rule.SourceQueue}</span>
                     <ChevronRight className="h-5 w-5 mx-2 text-gray-400" />
-                    <span className="font-medium">{rule.destinationQueue}</span>
+                    <span className="font-medium">{rule.DestinationQueue}</span>
                   </div>
 
                   <button
-                    onClick={() => handleDeleteRule(rule.sourceQueue, rule.destinationQueue)}
+                    onClick={() => handleDeleteRule(rule.SourceQueue, rule.DestinationQueue)}
                     className="inline-flex items-center py-1 px-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   >
                     <Trash2 className="h-4 w-4 text-red-500" />
@@ -411,7 +411,7 @@ const Routing = () => {
         <RoutingTester
           domainName={domainName}
           sourceQueue={selectedSourceQueue}
-          rules={rules.filter(rule => rule.sourceQueue === selectedSourceQueue)}
+          rules={rules.filter(rule => rule.SourceQueue === selectedSourceQueue)}
         />
       )}
     </div>

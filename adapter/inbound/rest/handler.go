@@ -168,50 +168,116 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type RouteInfo struct {
-		SourceQueue      string      `json:"sourceQueue"`
-		DestinationQueue string      `json:"destinationQueue"`
-		Predicate        interface{} `json:"predicate"`
+		SourceQueue      string `json:"sourceQueue"`
+		DestinationQueue string `json:"destinationQueue"`
+		Predicate        any    `json:"predicate"`
 	}
 
 	type DomainResponse struct {
-		Name   string      `json:"name"`
-		Schema interface{} `json:"schema,omitempty"`
-		Queues []QueueInfo `json:"queues"`
-		Routes []RouteInfo `json:"routes"`
+		Name   string           `json:"name"`
+		Schema model.SchemaInfo `json:"schema,omitempty"`
+		Queues []QueueInfo      `json:"queues"`
+		Routes []RouteInfo      `json:"routes"`
 	}
 
 	// Remplir la réponse
 	response := DomainResponse{
 		Name:   domain.Name,
-		Schema: domain.Schema,
 		Queues: make([]QueueInfo, 0, len(domain.Queues)),
 		Routes: make([]RouteInfo, 0),
 	}
 
+	// Convertir le schema en version sérialisable
+	if domain.Schema != nil {
+		schemaInfo := model.SchemaInfo{
+			HasValidation: domain.Schema.Validation != nil,
+		}
+
+		// Copier les champs si disponibles
+		if domain.Schema.Fields != nil {
+			schemaInfo.Fields = make(map[string]string)
+			for fieldName, fieldType := range domain.Schema.Fields {
+				schemaInfo.Fields[fieldName] = string(fieldType)
+			}
+		}
+
+		response.Schema = schemaInfo
+	}
+
+	log.Printf("Domain Queues type: %T", domain.Queues)
+	log.Printf("Queue count: %d", len(domain.Queues))
+	for qName, q := range domain.Queues {
+		log.Printf("Queue %s: Implementation config: %T, MessageCount: %d",
+			qName, q.Config, q.MessageCount)
+	}
+
 	// Ajouter les queues
-	for _, queue := range domain.Queues {
+	for queueName, queue := range domain.Queues {
 		response.Queues = append(response.Queues, QueueInfo{
-			Name:         queue.Name,
+			Name:         queueName,
 			MessageCount: queue.MessageCount,
 		})
 	}
 
-	// Ajouter les routes
+	// Ajouter les routes avec un meilleur traitement des prédicats
 	for srcQueue, dstRoutes := range domain.Routes {
 		for dstQueue, rule := range dstRoutes {
+			var predicateInfo interface{} = nil
+
+			switch pred := rule.Predicate.(type) {
+			case model.JSONPredicate:
+				// Cas du JSONPredicate explicite
+				predicateInfo = pred
+
+			case model.PredicateFunc, func(*model.Message) bool:
+				// Cas d'une fonction - non sérialisable
+				predicateInfo = map[string]string{
+					"type": "function",
+					"info": "Predicate function (non-serializable)",
+				}
+
+			case map[string]interface{}:
+				// Cas d'un map existant - probablement déjà un prédicat structuré
+				// Vérifier s'il a la structure d'un JSONPredicate
+				if pred["type"] != nil && pred["field"] != nil {
+					// C'est probablement un JSONPredicate sous forme de map
+					predicateInfo = map[string]interface{}{
+						"type":  pred["type"],
+						"field": pred["field"],
+						"value": pred["value"],
+					}
+				} else {
+					// Map générique - conserver tel quel
+					predicateInfo = pred
+				}
+
+			default:
+				// Cas par défaut - fournir le type pour le débogage
+				predicateInfo = map[string]string{
+					"type": fmt.Sprintf("%T", rule.Predicate),
+					"info": "Unknown predicate type",
+				}
+			}
+
 			response.Routes = append(response.Routes, RouteInfo{
 				SourceQueue:      srcQueue,
 				DestinationQueue: dstQueue,
-				Predicate:        rule.Predicate,
+				Predicate:        predicateInfo,
 			})
 		}
 	}
 
 	// Log la réponse pour débogage
-	respBytes, _ := json.MarshalIndent(response, "", "  ")
+	respBytes, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		log.Printf("Error marshaling response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 	log.Printf("Domain response: %s", string(respBytes))
 
 	w.Header().Set("Content-Type", "application/json")
+	log.Printf("lareponse: %v", response)
 	json.NewEncoder(w).Encode(response)
 }
 

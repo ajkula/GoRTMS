@@ -161,6 +161,12 @@ type DomainConfig struct {
 	RoutingRules []*RoutingRule         // Règles de routage
 }
 
+type SchemaInfo struct {
+	Fields map[string]string `json:"fields,omitempty"`
+	// Pas de champ Validation car c'est une fonction
+	HasValidation bool `json:"hasValidation,omitempty"` // Optionnel, juste pour information
+}
+
 // Schema définit la structure des messages pour un domaine
 type Schema struct {
 	// Fields définit les champs obligatoires dans le payload
