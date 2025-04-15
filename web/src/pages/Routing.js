@@ -43,7 +43,12 @@ const Routing = () => {
       );
 
       setDomains(detailedDomains);
-      if (detailedDomains.length > 0) setDomainName(detailedDomains[0].name);
+      if (detailedDomains.length > 0) {
+        setDomainName(detailedDomains[0].name);
+      } else {
+        console.log("No domains available");
+        setDomainName('');
+      }
     } catch (err) {
       console.error('Error fetching domains:', err);
       setError(err.message || 'Failed to load domains');
@@ -79,7 +84,8 @@ const Routing = () => {
       const routingRules = await api.getRoutingRules(domainName);
       setRules(routingRules);
 
-      console.log({ routingRules })
+      console.log("Routing rules raw:", JSON.stringify(routingRules, null, 2));
+      console.log("First rule properties:", routingRules.length > 0 ? Object.keys(routingRules[0]) : "no rules");
 
       // Charger les files d'attente pour pouvoir les sélectionner
       const queueList = await api.getQueues(domainName);
@@ -93,13 +99,6 @@ const Routing = () => {
         }));
       }
 
-      // Lors du chargement des queues, première queue par défaut
-      useEffect(() => {
-        if (queues.length > 0 && !selectedSourceQueue) {
-          setSelectedSourceQueue(queues[0].name);
-        }
-      }, [queues]);
-
     } catch (err) {
       console.error('Error fetching routing data:', err);
       setError(err.message || 'Failed to load routing information');
@@ -108,8 +107,17 @@ const Routing = () => {
     }
   };
 
+  // Lors du chargement des queues, première queue par défaut
   useEffect(() => {
-    fetchData();
+    if (queues.length > 0 && !selectedSourceQueue) {
+      setSelectedSourceQueue(queues[0].name);
+    }
+  }, [queues, selectedSourceQueue]);
+
+  useEffect(() => {
+    if (domainName) {
+      fetchData();
+    }
   }, [domainName]);
 
   // Ajouter une nouvelle règle de routage
@@ -166,6 +174,34 @@ const Routing = () => {
     }
   };
 
+  const normalizePredicate = (pred) => {
+    // Si null ou undefined, utiliser un prédicat par défaut
+    if (!pred) {
+      return { type: "unknown", field: "unknown", value: "unknown" };
+    }
+
+    // Le prédicat semble déjà correctement formaté
+    if (pred.field !== undefined && pred.type !== undefined) {
+      return pred;
+    }
+
+    // Si c'est notre format spécial pour les fonctions non-sérialisables
+    if (pred.info && typeof pred.info === 'string') {
+      return {
+        type: "custom",
+        field: "custom predicate",
+        value: pred.info
+      };
+    }
+
+    // Format inconnu, créer une représentation générique
+    return {
+      type: "custom",
+      field: "predicate",
+      value: JSON.stringify(pred)
+    };
+  };
+
   // Mettre à jour le prédicat dans le formulaire
   const handlePredicateChange = (field, value) => {
     setNewRule(prev => ({
@@ -199,7 +235,7 @@ const Routing = () => {
               <select
                 id="domainName"
                 value={domainName}
-                onChange={(e) => {setDomainName( e.target.value ); console.log( e.target.value )}}
+                onChange={(e) => { setDomainName(e.target.value); console.log(e.target.value) }}
                 className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 disabled={createLoading}
               >
@@ -373,13 +409,13 @@ const Routing = () => {
               <li key={index} className="px-6 py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center text-gray-900">
-                    <span className="font-medium">{rule.SourceQueue}</span>
+                    <span className="font-medium">{rule.sourceQueue}</span>
                     <ChevronRight className="h-5 w-5 mx-2 text-gray-400" />
-                    <span className="font-medium">{rule.DestinationQueue}</span>
+                    <span className="font-medium">{rule.destinationQueue}</span>
                   </div>
 
                   <button
-                    onClick={() => handleDeleteRule(rule.SourceQueue, rule.DestinationQueue)}
+                    onClick={() => handleDeleteRule(rule.sourceQueue, rule.destinationQueue)}
                     className="inline-flex items-center py-1 px-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   >
                     <Trash2 className="h-4 w-4 text-red-500" />
@@ -387,20 +423,26 @@ const Routing = () => {
                 </div>
 
                 <div className="mt-2 text-sm text-gray-700 bg-gray-50 rounded px-3 py-2">
-                  <div className="flex flex-wrap gap-1">
-                    <span className="font-medium">When</span>
-                    <span className="text-indigo-700">{rule.Predicate.field}</span>
-                    <span>
-                      {rule.Predicate.type === 'eq' && '='}
-                      {rule.Predicate.type === 'neq' && '!='}
-                      {rule.Predicate.type === 'gt' && '>'}
-                      {rule.Predicate.type === 'gte' && '>='}
-                      {rule.Predicate.type === 'lt' && '<'}
-                      {rule.Predicate.type === 'lte' && '<='}
-                      {rule.Predicate.type === 'contains' && 'contains'}
-                    </span>
-                    <span className="text-green-600">"{rule.Predicate.value}"</span>
-                  </div>
+                  {(() => {
+                    const pred = normalizePredicate(rule.predicate);
+
+                    return (
+                      <div className="flex flex-wrap gap-1">
+                        <span className="font-medium">When</span>
+                        <span className="text-indigo-700">{pred.field}</span>
+                        <span>
+                          {pred.type === 'eq' && '='}
+                          {pred.type === 'neq' && '!='}
+                          {pred.type === 'gt' && '>'}
+                          {pred.type === 'gte' && '>='}
+                          {pred.type === 'lt' && '<'}
+                          {pred.type === 'lte' && '<='}
+                          {pred.type === 'contains' && 'contains'}
+                        </span>
+                        <span className="text-green-600">"{pred.value}"</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </li>
             ))}
@@ -411,7 +453,7 @@ const Routing = () => {
         <RoutingTester
           domainName={domainName}
           sourceQueue={selectedSourceQueue}
-          rules={rules.filter(rule => rule.SourceQueue === selectedSourceQueue)}
+          rules={rules.filter(rule => rule.sourceQueue === selectedSourceQueue)}
         />
       )}
     </div>

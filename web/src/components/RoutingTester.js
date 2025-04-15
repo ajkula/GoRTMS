@@ -50,7 +50,7 @@ console.log({ domainName, sourceQueue, rules });
       const results = await api.testRouting(domainName, messageObj);
       setTestResults(results);
 
-      console.log({ results });
+      console.log(JSON.stringify(results, null, 2));
     } catch (err) {
       console.error('Error testing routing:', err);
       setError(err.message || 'Failed to test routing rules');
