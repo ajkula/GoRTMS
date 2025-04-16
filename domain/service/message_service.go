@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -151,6 +152,16 @@ func (s *MessageServiceImpl) PublishMessage(
 			case model.JSONPredicate:
 				// Évaluer le prédicat JSON
 				match = s.evaluateJSONPredicate(pred, message)
+			case map[string]any:
+				// Convertir la map en JSONPredicate
+				jsonPred := model.JSONPredicate{
+					Type:  fmt.Sprintf("%v", pred["type"]),
+					Field: fmt.Sprintf("%v", pred["field"]),
+					Value: pred["value"],
+				}
+				match = s.evaluateJSONPredicate(jsonPred, message)
+			default:
+				log.Printf("Unknown predicate type: %T", rule.Predicate)
 			}
 
 			if match {
@@ -161,6 +172,8 @@ func (s *MessageServiceImpl) PublishMessage(
 				}
 			}
 		}
+	} else {
+		log.Printf("No routes found for queue %s", queueName)
 	}
 
 	return nil
@@ -266,7 +279,7 @@ func (s *MessageServiceImpl) evaluateJSONPredicate(predicate model.JSONPredicate
 	// Évaluer selon le type d'opération
 	switch predicate.Type {
 	case "eq": // Égalité
-		return fieldValue == predicate.Value
+		return fmt.Sprintf("%v", fieldValue) == fmt.Sprintf("%v", predicate.Value)
 	case "ne": // Inégalité
 		return fieldValue != predicate.Value
 	case "gt": // Supérieur
