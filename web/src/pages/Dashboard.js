@@ -17,10 +17,14 @@ const StatCard = ({ title, value, icon, trend, trendValue }) => {
       </div>
       <div className="flex items-baseline">
         <span className="text-3xl font-bold text-gray-900">{value !== undefined ? value.toLocaleString() : '-'}</span>
-        {trendValue && (
+        {trendValue ? (
           <span className={`ml-2 flex items-center text-sm ${isTrendUp ? 'text-green-500' : 'text-red-500'}`}>
             {isTrendUp ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
-            {trendValue}%
+            {Math.floor(trendValue)}%
+          </span>
+        ) : (
+          <span className={`ml-2 flex items-center text-sm`}>
+            {0}
           </span>
         )}
       </div>
@@ -67,7 +71,7 @@ const Dashboard = () => {
       // Charger les statistiques générales
       const statsData = await api.getStats();
       // DEBUG
-      console.log("API response:", statsData);
+      console.log("API response:", JSON.stringify(statsData, null, 2));
       setStats(statsData);
 
       // Transformer les données de domaines pour le graphique
@@ -95,7 +99,7 @@ const Dashboard = () => {
         });
         
         setMessageActivity(activityData);
-      } else {
+      } /* else {
         console.log("No message rates available");
         // Créer des données vides pour éviter un graphique complètement vide
         const emptyData = [];
@@ -110,7 +114,7 @@ const Dashboard = () => {
         }
         console.log("Using empty placeholder data:", emptyData);
         setMessageActivity(emptyData);
-      }
+      } */
 
       // Créer des alertes/événements à partir des données disponibles
       const events = [];
