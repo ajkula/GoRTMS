@@ -2,30 +2,34 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
 
+	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
 )
 
 // StatsData représente les statistiques du système
 type StatsData struct {
-	Domains       int            `json:"domains"`
-	Queues        int            `json:"queues"`
-	Messages      int            `json:"messages"`
-	Routes        int            `json:"routes"`
-	MessageRates  []MessageRate  `json:"messageRates"`
-	ActiveDomains []DomainStats  `json:"activeDomains"`
-	QueueAlerts   []QueueAlert   `json:"queueAlerts"`
-	DomainTrend   *Trend         `json:"domainTrend"`
-	QueueTrend    *Trend         `json:"queueTrend"`
-	MessageTrend  *Trend         `json:"messageTrend"`
-	RouteTrend    *Trend         `json:"routeTrend"`
-	TopQueues     []QueueStats   `json:"topQueues"`
-	PublishCounts map[string]int `json:"publishCounts"`
-	ConsumeCounts map[string]int `json:"consumeCounts"`
+	Domains       int              `json:"domains"`
+	Queues        int              `json:"queues"`
+	Messages      int              `json:"messages"`
+	Routes        int              `json:"routes"`
+	MessageRates  []MessageRate    `json:"messageRates"`
+	ActiveDomains []DomainStats    `json:"activeDomains"`
+	QueueAlerts   []QueueAlert     `json:"queueAlerts"`
+	DomainTrend   *Trend           `json:"domainTrend"`
+	QueueTrend    *Trend           `json:"queueTrend"`
+	MessageTrend  *Trend           `json:"messageTrend"`
+	RouteTrend    *Trend           `json:"routeTrend"`
+	TopQueues     []QueueStats     `json:"topQueues"`
+	PublishCounts map[string]int   `json:"publishCounts"`
+	ConsumeCounts map[string]int   `json:"consumeCounts"`
+	RecentEvents  []map[string]any `json:"recentEvents"`
 }
 
 // Trend représente une tendance avec une direction et une valeur
@@ -90,6 +94,12 @@ type MetricsStore struct {
 	// Horodatage de la dernière collecte
 	lastCollected time.Time
 
+	// Événements système récents
+	systemEvents []model.SystemEvent
+
+	// récupérer le context
+	rootCtx context.Context
+
 	// Mutex pour les accès concurrents
 	mu sync.RWMutex
 }
@@ -111,6 +121,7 @@ type StatsServiceImpl struct {
 func NewStatsService(
 	domainRepo outbound.DomainRepository,
 	messageRepo outbound.MessageRepository,
+	rootCtx context.Context,
 ) inbound.StatsService {
 	metrics := &MetricsStore{
 		messageRates:    make([]MessageRate, 0, 24), // Garder 24 points de données
@@ -118,6 +129,7 @@ func NewStatsService(
 		consumeCounters: make(map[string]map[string]int),
 		queueAlerts:     make(map[string]map[string]QueueAlert),
 		lastCollected:   time.Now(),
+		rootCtx:         rootCtx,
 	}
 
 	service := &StatsServiceImpl{
@@ -179,8 +191,29 @@ func (s *StatsServiceImpl) startMetricsCollection() {
 
 // collectMetrics collecte les métriques du système
 func (s *StatsServiceImpl) collectMetrics() {
+	// Récupérer les domaines avant de verrouiller le mutex, en utilisant le contexte racine
+	domains, err := s.domainRepo.ListDomains(s.metrics.rootCtx)
+
+	// Préparer une liste des domaines actifs pour enregistrer les événements plus tard
+	var activeDomainsToRecord []struct {
+		name       string
+		queueCount int
+	}
+
+	if err == nil {
+		for _, domain := range domains {
+			queueCount := len(domain.Queues)
+			if queueCount > 0 {
+				activeDomainsToRecord = append(activeDomainsToRecord, struct {
+					name       string
+					queueCount int
+				}{domain.Name, queueCount})
+			}
+		}
+	}
+
+	// Maintenant verrouiller pour mettre à jour les métriques
 	s.metrics.mu.Lock()
-	defer s.metrics.mu.Unlock()
 
 	now := time.Now()
 	elapsed := now.Sub(s.metrics.lastCollected).Seconds()
@@ -207,14 +240,14 @@ func (s *StatsServiceImpl) collectMetrics() {
 	consumeRate := float64(totalConsumed) / elapsed
 	totalRate := publishRate + consumeRate
 
-	// Ajouter au tableau des taux, maintenant avec les totaux
+	// Ajouter au tableau des taux
 	s.metrics.messageRates = append(s.metrics.messageRates, MessageRate{
 		Timestamp:      now.Unix(),
 		Rate:           totalRate,
 		Published:      publishRate,
 		Consumed:       consumeRate,
-		PublishedTotal: totalPublished, // Ajouter le total des messages publiés
-		ConsumedTotal:  totalConsumed,  // Ajouter le total des messages consommés
+		PublishedTotal: totalPublished,
+		ConsumedTotal:  totalConsumed,
 	})
 
 	// Limiter la taille de l'historique (garder 24 derniers points)
@@ -229,24 +262,113 @@ func (s *StatsServiceImpl) collectMetrics() {
 	// Mettre à jour l'horodatage
 	s.metrics.lastCollected = now
 
-	// Vérifier les alertes de files d'attente pleines
+	// IMPORTANT: Déverrouiller le mutex avant d'enregistrer les événements
+	s.metrics.mu.Unlock()
+
+	// Maintenant enregistrer les événements sans tenir le mutex
+	for _, domain := range activeDomainsToRecord {
+		s.RecordDomainActive(domain.name, domain.queueCount)
+	}
+
+	// Vérifier les alertes de files d'attente pleines dans une goroutine séparée
 	go s.checkQueueAlerts()
+}
+
+// RecordEvent enregistre un événement système
+func (s *StatsServiceImpl) RecordEvent(eventType, eventSeverity, resource string, data any) {
+	// Générer un ID unique
+	id := fmt.Sprintf("event-%d-%d", time.Now().UnixNano(), rand.Intn(10000))
+	now := time.Now()
+
+	// Créer l'événement
+	event := model.SystemEvent{
+		ID:        id,
+		Type:      eventSeverity, // "info", "warning", "error"
+		EventType: eventType,     // "domain_created", "queue_capacity", etc.
+		Resource:  resource,
+		Data:      data,
+		Timestamp: now,
+		UnixTime:  now.Unix(),
+	}
+
+	// Ajouter à la liste
+	s.metrics.systemEvents = append(s.metrics.systemEvents, event)
+
+	// Limiter la taille (garder les 50 derniers événements)
+	if len(s.metrics.systemEvents) > 50 {
+		s.metrics.systemEvents = s.metrics.systemEvents[len(s.metrics.systemEvents)-50:]
+	}
+}
+
+// RecordDomainActive enregistre un événement indiquant qu'un domaine est actif avec un certain nombre de queues
+func (s *StatsServiceImpl) RecordDomainActive(name string, queueCount int) {
+	s.RecordEvent("domain_active", "info", name, map[string]any{
+		"queueCount": queueCount,
+	})
+}
+
+// Mettre à jour les méthodes spécialisées
+func (s *StatsServiceImpl) RecordDomainCreated(name string) {
+	s.RecordEvent("domain_created", "info", name, nil)
+}
+
+func (s *StatsServiceImpl) RecordDomainDeleted(name string) {
+	s.RecordEvent("domain_deleted", "info", name, nil)
+}
+
+func (s *StatsServiceImpl) RecordQueueCreated(domain, queue string) {
+	resource := fmt.Sprintf("%s.%s", domain, queue)
+	s.RecordEvent("queue_created", "info", resource, nil)
+}
+
+func (s *StatsServiceImpl) RecordQueueDeleted(domain, queue string) {
+	resource := fmt.Sprintf("%s.%s", domain, queue)
+	s.RecordEvent("queue_deleted", "info", resource, nil)
+}
+
+func (s *StatsServiceImpl) RecordRoutingRuleCreated(domain, source, dest string) {
+	s.RecordEvent("routing_rule_created", "info", domain, map[string]string{
+		"source":      source,
+		"destination": dest,
+	})
+}
+
+// méthodes pour les événements de capacité et connexion
+func (s *StatsServiceImpl) RecordQueueCapacity(domain, queue string, usage float64) {
+	resource := fmt.Sprintf("%s.%s", domain, queue)
+	severity := "warning"
+	if usage >= 90 {
+		severity = "error"
+	}
+	s.RecordEvent("queue_capacity", severity, resource, usage)
+}
+
+func (s *StatsServiceImpl) RecordConnectionLost(domain, queue, consumerId string) {
+	resource := fmt.Sprintf("%s.%s", domain, queue)
+	s.RecordEvent("connection_lost", "error", resource, map[string]string{
+		"consumerId": consumerId,
+	})
 }
 
 // checkQueueAlerts vérifie les alertes sur les files d'attente
 func (s *StatsServiceImpl) checkQueueAlerts() {
-	ctx := context.Background()
 
 	// Récupérer tous les domaines
-	domains, err := s.domainRepo.ListDomains(ctx)
+	domains, err := s.domainRepo.ListDomains(s.metrics.rootCtx)
 	if err != nil {
 		log.Printf("Error fetching domains for alerts: %v", err)
 		return
 	}
 
+	// Préparer une liste d'alertes à enregistrer plus tard
+	var alertsToRecord []struct {
+		domain string
+		queue  string
+		usage  float64
+	}
+
 	// Verrouiller les métriques pour la mise à jour
 	s.metrics.mu.Lock()
-	defer s.metrics.mu.Unlock()
 
 	// Réinitialiser les alertes après 1 heure
 	expireBefore := time.Now().Add(-1 * time.Hour).Unix()
@@ -274,6 +396,14 @@ func (s *StatsServiceImpl) checkQueueAlerts() {
 						Severity:   "critical",
 						DetectedAt: time.Now().Unix(),
 					}
+
+					// Ajouter à la liste d'alertes à enregistrer plus tard
+					alertsToRecord = append(alertsToRecord, struct {
+						domain string
+						queue  string
+						usage  float64
+					}{domain.Name, queueName, usage})
+
 				} else if usage >= 75 {
 					// Alerte d'avertissement
 					s.metrics.queueAlerts[domain.Name][queueName] = QueueAlert{
@@ -283,6 +413,14 @@ func (s *StatsServiceImpl) checkQueueAlerts() {
 						Severity:   "warning",
 						DetectedAt: time.Now().Unix(),
 					}
+
+					// Ajouter à la liste d'alertes à enregistrer plus tard
+					alertsToRecord = append(alertsToRecord, struct {
+						domain string
+						queue  string
+						usage  float64
+					}{domain.Name, queueName, usage})
+
 				} else {
 					// Supprimer l'alerte existante si l'utilisation est revenue à la normale
 					delete(s.metrics.queueAlerts[domain.Name], queueName)
@@ -302,10 +440,18 @@ func (s *StatsServiceImpl) checkQueueAlerts() {
 			delete(s.metrics.queueAlerts, domain.Name)
 		}
 	}
+
+	// Déverrouiller le mutex avant d'enregistrer les événements
+	s.metrics.mu.Unlock()
+
+	// Maintenant enregistrer les événements sans tenir le mutex
+	for _, alert := range alertsToRecord {
+		s.RecordQueueCapacity(alert.domain, alert.queue, alert.usage)
+	}
 }
 
 // GetStats récupère les statistiques du système
-func (s *StatsServiceImpl) GetStats(ctx context.Context) (interface{}, error) {
+func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 	log.Println("Getting system statistics")
 
 	// Récupérer les domaines
@@ -417,6 +563,39 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (interface{}, error) {
 	s.metrics.previousStats = stats
 	s.metrics.mu.Unlock()
 
+	// Récupérer et formater les événements système récents
+	s.metrics.mu.RLock()
+	events := make([]map[string]any, 0, len(s.metrics.systemEvents))
+	for _, event := range s.metrics.systemEvents {
+		eventMap := map[string]any{
+			"id":        event.ID,
+			"type":      event.Type,
+			"eventType": event.EventType,
+			"resource":  event.Resource,
+			"timestamp": event.UnixTime,
+		}
+
+		if event.Data != nil {
+			eventMap["data"] = event.Data
+		}
+
+		events = append(events, eventMap)
+	}
+	s.metrics.mu.RUnlock()
+
+	// Inverser l'ordre pour avoir les plus récents en premier
+	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
+		events[i], events[j] = events[j], events[i]
+	}
+
+	// Limiter aux 10 événements les plus récents
+	if len(events) > 10 {
+		events = events[:10]
+	}
+
+	// Ajouter au résultat final
+	stats.RecentEvents = events
+
 	return stats, nil
 }
 
@@ -460,4 +639,25 @@ func sortQueuesByUsage(queues []QueueStats) {
 			}
 		}
 	}
+}
+
+func (s *StatsServiceImpl) Cleanup() {
+	log.Println("Stats service cleanup starting")
+
+	// Signaler l'arrêt de la collecte
+	close(s.stopCollect)
+
+	// Attendre un court instant pour que les goroutines puissent terminer
+	time.Sleep(500 * time.Millisecond)
+
+	// Faire un nettoyage final des ressources si nécessaire
+	s.metrics.mu.Lock()
+	s.metrics.messageRates = nil
+	s.metrics.systemEvents = nil
+	s.metrics.publishCounters = nil
+	s.metrics.consumeCounters = nil
+	s.metrics.queueAlerts = nil
+	s.metrics.mu.Unlock()
+
+	log.Println("Stats service cleanup complete")
 }

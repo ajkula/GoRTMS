@@ -8,12 +8,12 @@ import (
 
 // Message représente un message dans le système
 type Message struct {
-	ID        string                 // Identifiant unique du message
-	Topic     string                 // Sujet du message
-	Payload   []byte                 // Contenu du message
-	Headers   map[string]string      // En-têtes du message
-	Metadata  map[string]interface{} // Métadonnées pour le routage et le traitement
-	Timestamp time.Time              // Horodatage de création du message
+	ID        string            // Identifiant unique du message
+	Topic     string            // Sujet du message
+	Payload   []byte            // Contenu du message
+	Headers   map[string]string // En-têtes du message
+	Metadata  map[string]any    // Métadonnées pour le routage et le traitement
+	Timestamp time.Time         // Horodatage de création du message
 }
 
 // MessageHandler est une fonction de rappel pour traiter les messages
@@ -167,6 +167,17 @@ type SchemaInfo struct {
 	HasValidation bool `json:"hasValidation,omitempty"` // Optionnel, juste pour information
 }
 
+// SystemEvent représente un événement système
+type SystemEvent struct {
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`      // "info", "warning", "error"
+	EventType string    `json:"eventType"` // "domain_active", "queue_capacity", "connection_lost"
+	Resource  string    `json:"resource"`  // Le nom de la ressource concernée
+	Data      any       `json:"data"`      // Données supplémentaires (comme le pourcentage de capacité)
+	Timestamp time.Time `json:"-"`         // Pour usage interne
+	UnixTime  int64     `json:"timestamp"` // Timestamp Unix pour le client
+}
+
 // Schema définit la structure des messages pour un domaine
 type Schema struct {
 	// Fields définit les champs obligatoires dans le payload
@@ -196,7 +207,7 @@ type RoutingRule struct {
 	DestinationQueue string
 
 	// Predicate est une fonction ou un objet qui détermine si un message doit être routé
-	Predicate interface{}
+	Predicate any
 }
 
 // PredicateFunc est une fonction qui détermine si un message doit être routé
@@ -204,9 +215,9 @@ type PredicateFunc func(*Message) bool
 
 // JSONPredicate représente un prédicat sous forme de JSON pour faciliter la configuration
 type JSONPredicate struct {
-	Type  string      `json:"type"`  // Type d'opération: eq, ne, gt, lt, etc.
-	Field string      `json:"field"` // Champ à évaluer
-	Value interface{} `json:"value"` // Valeur à comparer
+	Type  string `json:"type"`  // Type d'opération: eq, ne, gt, lt, etc.
+	Field string `json:"field"` // Champ à évaluer
+	Value any    `json:"value"` // Valeur à comparer
 }
 
 // Allow vérifie si une opération peut être exécutée

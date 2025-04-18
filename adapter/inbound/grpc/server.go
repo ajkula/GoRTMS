@@ -23,6 +23,7 @@ type Server struct {
 	queueService   inbound.QueueService
 	routingService inbound.RoutingService
 	grpcServer     *grpc.Server
+	rootCtx        context.Context
 }
 
 // NewServer crée un nouveau serveur gRPC
@@ -31,12 +32,14 @@ func NewServer(
 	domainService inbound.DomainService,
 	queueService inbound.QueueService,
 	routingService inbound.RoutingService,
+	rootCtx context.Context,
 ) *Server {
 	return &Server{
 		messageService: messageService,
 		domainService:  domainService,
 		queueService:   queueService,
 		routingService: routingService,
+		rootCtx:        rootCtx,
 	}
 }
 
@@ -326,7 +329,7 @@ func (s *Server) PublishMessage(
 
 	// Convertir les métadonnées
 	if req.Message.Metadata != nil {
-		message.Metadata = make(map[string]interface{})
+		message.Metadata = make(map[string]any)
 		for key, value := range req.Message.Metadata {
 			message.Metadata[key] = value
 		}
@@ -424,7 +427,7 @@ func (s *Server) SubscribeToQueue(
 
 	// Se désinscrire à la fin
 	defer s.messageService.UnsubscribeFromQueue(
-		context.Background(),
+		s.rootCtx,
 		req.DomainName,
 		req.QueueName,
 		subscriptionID,
@@ -467,7 +470,7 @@ func (s *Server) AddRoutingRule(
 	req *proto.AddRoutingRuleRequest,
 ) (*proto.StatusResponse, error) {
 	// Convertir le prédicat
-	var predicate interface{}
+	var predicate any
 	if req.Rule.Predicate != nil {
 		// Pour simplifier, on utilise un JSONPredicate
 		predicate = model.JSONPredicate{

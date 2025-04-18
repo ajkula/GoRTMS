@@ -124,7 +124,7 @@ func (h *Handler) listDomains(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"domains": response,
 	})
 }
@@ -141,6 +141,9 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Enregistrer l'événement
+	h.statsService.RecordDomainCreated(config.Name)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -222,7 +225,7 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 	// Ajouter les routes avec un meilleur traitement des prédicats
 	for srcQueue, dstRoutes := range domain.Routes {
 		for dstQueue, rule := range dstRoutes {
-			var predicateInfo interface{} = nil
+			var predicateInfo any = nil
 
 			switch pred := rule.Predicate.(type) {
 			case model.JSONPredicate:
@@ -236,12 +239,12 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 					"info": "Predicate function (non-serializable)",
 				}
 
-			case map[string]interface{}:
+			case map[string]any:
 				// Cas d'un map existant - probablement déjà un prédicat structuré
 				// Vérifier s'il a la structure d'un JSONPredicate
 				if pred["type"] != nil && pred["field"] != nil {
 					// C'est probablement un JSONPredicate sous forme de map
-					predicateInfo = map[string]interface{}{
+					predicateInfo = map[string]any{
 						"type":  pred["type"],
 						"field": pred["field"],
 						"value": pred["value"],
@@ -323,7 +326,7 @@ func (h *Handler) listQueues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"queues": response,
 	})
 }
@@ -360,7 +363,7 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Parsed queue name: %s", request.Name)
 
 	// Maintenant, décodez la configuration manuellement
-	var configMap map[string]interface{}
+	var configMap map[string]any
 	if err := json.Unmarshal(request.Config, &configMap); err != nil {
 		log.Printf("Error decoding config: %v", err)
 		http.Error(w, "Invalid config format", http.StatusBadRequest)
@@ -464,7 +467,7 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 	queueName := vars["queue"]
 
 	// Lire le corps de la requête
-	var payload map[string]interface{}
+	var payload map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		log.Printf("Error decoding request body: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -555,16 +558,16 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convertir les messages pour la réponse
-	responseMessages := make([]map[string]interface{}, len(messages))
+	responseMessages := make([]map[string]any, len(messages))
 	for i, msg := range messages {
 		// Décoder le payload
-		var payload map[string]interface{}
+		var payload map[string]any
 		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-			payload = map[string]interface{}{"data": string(msg.Payload)}
+			payload = map[string]any{"data": string(msg.Payload)}
 		}
 
 		// Ajouter les métadonnées
-		responseMsg := map[string]interface{}{
+		responseMsg := map[string]any{
 			"id":        msg.ID,
 			"timestamp": msg.Timestamp,
 			"headers":   msg.Headers,
@@ -579,7 +582,7 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"messages": responseMessages,
 		"count":    len(messages),
 	})
@@ -651,7 +654,7 @@ func (h *Handler) listRoutingRules(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"rules": rules,
 	})
 }

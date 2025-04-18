@@ -71,7 +71,7 @@ const Dashboard = () => {
       // Charger les statistiques générales
       const statsData = await api.getStats();
       // DEBUG
-      console.log("API response:", JSON.stringify(statsData, null, 2));
+      console.log("API response:", statsData);
       setStats(statsData);
 
       // Transformer les données de domaines pour le graphique
@@ -90,79 +90,36 @@ const Dashboard = () => {
         const activityData = statsData.messageRates.map(rate => {
           const date = new Date(rate.timestamp * 1000);
           const timeString = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-          
+
           return {
             time: timeString,
             published: rate.publishedTotal || 0,
             consumed: rate.consumedTotal || 0,
           };
         });
-        
+
         setMessageActivity(activityData);
-      } /* else {
-        console.log("No message rates available");
-        // Créer des données vides pour éviter un graphique complètement vide
-        const emptyData = [];
-        for (let i = 0; i < 5; i++) {
-          const now = new Date();
-          now.setMinutes(now.getMinutes() - i * 10);
-          emptyData.unshift({
-            time: `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`,
-            published: 0,
-            consumed: 0
-          });
-        }
-        console.log("Using empty placeholder data:", emptyData);
-        setMessageActivity(emptyData);
-      } */
-
-      // Créer des alertes/événements à partir des données disponibles
-      const events = [];
-
-      // Ajouter les domaines récemment créés comme événements
-      if (statsData.activeDomains) {
-        statsData.activeDomains.slice(0, 2).forEach((domain, index) => {
-          events.push({
-            id: `domain-${index}`,
-            type: 'info',
-            message: `Domain "${domain.name}" is active with ${domain.queueCount} queues`,
-            time: index === 0 ? '10 min ago' : '25 min ago'
-          });
-        });
       }
 
-      // Ajouter des alertes pour les files d'attente approchant leur capacité
-      if (statsData.queueAlerts && statsData.queueAlerts.length > 0) {
-        statsData.queueAlerts.forEach((alert, index) => {
-          events.push({
-            id: `queue-alert-${index}`,
-            type: 'warning',
-            message: `Queue "${alert.domain}.${alert.queue}" is ${alert.usage}% full`,
-            time: `${5 + index * 10} min ago`
-          });
-        });
-      } else if (statsData.activeDomains && statsData.activeDomains.length > 0) {
-        // Si pas d'alertes réelles, créer des exemples basés sur les données disponibles
-        const domain = statsData.activeDomains[0];
-        events.push({
-          id: 'queue-example',
-          type: 'warning',
-          message: `Queue "${domain.name}.processing" approaching capacity (85%)`,
-          time: '15 min ago'
-        });
+      if (statsData.recentEvents && statsData.recentEvents.length > 0) {
+        const formattedEvents = statsData.recentEvents.map(event => ({
+          id: event.id,
+          type: event.type,
+          message: formatEventMessage(event),
+          time: formatRelativeTime(event.timestamp),
+          // Conserver les données brutes pour les références futures
+          rawEvent: event
+        }));
+        setRecentEvents(formattedEvents);
+      } else {
+        // Toujours avoir des événements d'exemple si aucun n'est disponible
+        setRecentEvents([{
+          id: 'example-event',
+          type: 'info',
+          message: 'No recent events available',
+          time: 'Just now'
+        }]);
       }
-
-      // Ajouter une alerte d'erreur d'exemple si peu d'événements
-      if (events.length < 3) {
-        events.push({
-          id: 'error-example',
-          type: 'error',
-          message: 'Connection lost to consumer on "notifications.push"',
-          time: '1 hour ago'
-        });
-      }
-
-      setRecentEvents(events);
 
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
@@ -177,16 +134,52 @@ const Dashboard = () => {
       });
       setDomainsData([]);
       setMessageActivity([]);
-      setRecentEvents([
-        {
-          id: 'error-connection',
-          type: 'error',
-          message: 'Failed to connect to backend API',
-          time: 'Just now'
-        }
-      ]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fonction pour formater un message d'événement basé sur son type
+  const formatEventMessage = (event) => {
+    switch (event.eventType) {
+      case 'domain_created':
+        return `Domain "${event.resource}" created`;
+      case 'domain_deleted':
+        return `Domain "${event.resource}" deleted`;
+      case 'queue_created':
+        return `Queue "${event.resource}" created`;
+      case 'queue_deleted':
+        return `Queue "${event.resource}" deleted`;
+      case 'queue_capacity':
+        return `Queue "${event.resource}" approaching capacity (${Math.round(event.data)}%)`;
+      case 'connection_lost':
+        return `Connection lost to consumer on "${event.resource}"`;
+      case 'domain_active':
+        let queueCount = event.data?.queueCount || 0;
+        return `Domain "${event.resource}" is active with ${queueCount} queues`;
+      case 'routing_rule_created':
+        return `Routing rule created from "${event.data.source}" to "${event.data.destination}" in ${event.resource}`;
+      default:
+        return `Event on "${event.resource}": ${JSON.stringify(event.data)}`;
+    }
+  };
+
+  // Fonction pour calculer le temps relatif
+  const formatRelativeTime = (timestamp) => {
+    const now = Math.floor(Date.now() / 1000);
+    const diff = now - timestamp;
+
+    if (diff < 60) {
+      return 'Just now';
+    } else if (diff < 3600) {
+      const minutes = Math.floor(diff / 60);
+      return `${minutes} min ago`;
+    } else if (diff < 86400) {
+      const hours = Math.floor(diff / 3600);
+      return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    } else {
+      const days = Math.floor(diff / 86400);
+      return `${days} day${days > 1 ? 's' : ''} ago`;
     }
   };
 
@@ -196,6 +189,14 @@ const Dashboard = () => {
 
     // Actualiser les données toutes les 30 secondes
     const interval = setInterval(loadDashboardData, 30000);
+    if (stats?.recentEvents?.length > 0) {
+      setRecentEvents(prevEvents => 
+        prevEvents.map(event => ({
+          ...event,
+          time: event.rawEvent ? formatRelativeTime(event.rawEvent.timestamp) : event.time
+        }))
+      );
+    }
 
     return () => clearInterval(interval);
   }, []);

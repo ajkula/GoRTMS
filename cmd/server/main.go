@@ -84,8 +84,8 @@ func main() {
 	subscriptionReg := memory.NewSubscriptionRegistry()
 
 	// Créer les services (implémentations du domaine)
-	statsService := service.NewStatsService(domainRepo, messageRepo)
-	queueService := service.NewQueueService(domainRepo, ctx)
+	statsService := service.NewStatsService(domainRepo, messageRepo, ctx)
+	queueService := service.NewQueueService(domainRepo, statsService, ctx)
 	messageService := service.NewMessageService(
 		domainRepo,
 		messageRepo,
@@ -112,7 +112,7 @@ func main() {
 		restHandler.SetupRoutes(router)
 
 		// Adaptateur WebSocket
-		wsHandler := websocket.NewHandler(messageService)
+		wsHandler := websocket.NewHandler(messageService, ctx)
 		router.HandleFunc(
 			"/api/ws/domains/{domain}/queues/{queue}",
 			func(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +151,7 @@ func main() {
 
 		// Arrêter le serveur HTTP à la fin
 		defer func() {
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 10*time.Second)
 			defer shutdownCancel()
 			if err := server.Shutdown(shutdownCtx); err != nil {
 				log.Printf("HTTP server shutdown error: %v", err)
@@ -181,6 +181,7 @@ func main() {
 			domainService,
 			queueService,
 			routingService,
+			ctx,
 		)
 		grpcAddr := fmt.Sprintf("%s:%d", cfg.GRPC.Address, cfg.GRPC.Port)
 		if err := grpcServer.Start(grpcAddr); err != nil {
@@ -235,7 +236,7 @@ func createDomainFromConfig(
 	}
 
 	// Si un schéma est défini, convertir les champs
-	if schema, ok := config.Schema["fields"].(map[string]interface{}); ok {
+	if schema, ok := config.Schema["fields"].(map[string]any); ok {
 		for field, typeVal := range schema {
 			if typeStr, ok := typeVal.(string); ok {
 				domainConfig.Schema.Fields[field] = model.FieldType(typeStr)

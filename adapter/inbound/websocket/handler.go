@@ -21,6 +21,7 @@ type Handler struct {
 	upgrader       websocket.Upgrader
 	connections    map[string][]*websocketConnection
 	mu             sync.RWMutex
+	rootCtx        context.Context
 }
 
 // websocketConnection représente une connexion WebSocket active
@@ -32,7 +33,7 @@ type websocketConnection struct {
 }
 
 // NewHandler crée un nouveau gestionnaire WebSocket
-func NewHandler(messageService inbound.MessageService) *Handler {
+func NewHandler(messageService inbound.MessageService, rootCtx context.Context) *Handler {
 	return &Handler{
 		messageService: messageService,
 		upgrader: websocket.Upgrader{
@@ -43,6 +44,7 @@ func NewHandler(messageService inbound.MessageService) *Handler {
 			},
 		},
 		connections: make(map[string][]*websocketConnection),
+		rootCtx:     rootCtx,
 	}
 }
 
@@ -108,9 +110,8 @@ func (h *Handler) HandleConnection(w http.ResponseWriter, r *http.Request, domai
 func (h *Handler) handleWebSocketSession(wsConn *websocketConnection) {
 	defer func() {
 		// Se désinscrire de la file d'attente
-		ctx := context.Background()
 		err := h.messageService.UnsubscribeFromQueue(
-			ctx,
+			h.rootCtx,
 			wsConn.domainName,
 			wsConn.queueName,
 			wsConn.subscriptionID,
@@ -163,7 +164,7 @@ func (h *Handler) handleClientMessage(wsConn *websocketConnection, messageType i
 	}
 
 	// Parser le message JSON
-	var message map[string]interface{}
+	var message map[string]any
 	if err := json.Unmarshal(data, &message); err != nil {
 		log.Printf("Error parsing client message: %v", err)
 		return
@@ -204,9 +205,8 @@ func (h *Handler) handleClientMessage(wsConn *websocketConnection, messageType i
 		}
 
 		// Publier le message
-		ctx := context.Background()
 		err = h.messageService.PublishMessage(
-			ctx,
+			h.rootCtx,
 			wsConn.domainName,
 			wsConn.queueName,
 			msg,
@@ -232,15 +232,15 @@ func (h *Handler) handleClientMessage(wsConn *websocketConnection, messageType i
 // sendMessageToClient envoie un message à un client WebSocket
 func (h *Handler) sendMessageToClient(wsConn *websocketConnection, msg *model.Message) error {
 	// Décoder le payload
-	var payload map[string]interface{}
+	var payload map[string]any
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		payload = map[string]interface{}{
+		payload = map[string]any{
 			"data": string(msg.Payload),
 		}
 	}
 
 	// Créer le message à envoyer
-	message := map[string]interface{}{
+	message := map[string]any{
 		"type":      "message",
 		"id":        msg.ID,
 		"timestamp": msg.Timestamp,
