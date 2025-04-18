@@ -77,7 +77,6 @@ func (h *Handler) HandleConnection(w http.ResponseWriter, r *http.Request, domai
 
 	// Configurer l'abonnement à la file d'attente
 	subID, err := h.messageService.SubscribeToQueue(
-		r.Context(),
 		domainName,
 		queueName,
 		func(msg *model.Message) error {
@@ -111,7 +110,6 @@ func (h *Handler) handleWebSocketSession(wsConn *websocketConnection) {
 	defer func() {
 		// Se désinscrire de la file d'attente
 		err := h.messageService.UnsubscribeFromQueue(
-			h.rootCtx,
 			wsConn.domainName,
 			wsConn.queueName,
 			wsConn.subscriptionID,
@@ -206,7 +204,6 @@ func (h *Handler) handleClientMessage(wsConn *websocketConnection, messageType i
 
 		// Publier le message
 		err = h.messageService.PublishMessage(
-			h.rootCtx,
 			wsConn.domainName,
 			wsConn.queueName,
 			msg,
@@ -256,4 +253,36 @@ func (h *Handler) sendMessageToClient(wsConn *websocketConnection, msg *model.Me
 func GenerateID() string {
 	// Implémentation simple basée sur le timestamp et un nombre aléatoire
 	return fmt.Sprintf("msg-%d-%d", time.Now().UnixNano(), rand.Intn(10000))
+}
+
+func (h *Handler) Cleanup() {
+	log.Println("Cleaning up WebSocket handler resources...")
+
+	// Utiliser un verrou pour éviter les modificaitons concurrentes
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// Fermer proprement toutes les connexions WebSocket
+	for queueKey, connections := range h.connections {
+		for _, conn := range connections {
+			// Envoyer un message de fermeture
+			conn.conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Server shutting down"))
+
+			// Fermer la connexion
+			conn.conn.Close()
+
+			// Se désabonner
+			if conn.subscriptionID != "" {
+				h.messageService.UnsubscribeFromQueue(
+					conn.domainName,
+					conn.queueName,
+					conn.subscriptionID,
+				)
+			}
+		}
+		delete(h.connections, queueKey)
+	}
+
+	log.Println("WebSocket handler cleanup complete")
 }

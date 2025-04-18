@@ -91,10 +91,11 @@ func main() {
 		messageRepo,
 		subscriptionReg,
 		queueService,
+		ctx,
 		statsService,
 	)
-	domainService := service.NewDomainService(domainRepo)
-	routingService := service.NewRoutingService(domainRepo)
+	domainService := service.NewDomainService(domainRepo, ctx)
+	routingService := service.NewRoutingService(domainRepo, ctx)
 
 	// Créer le routeur HTTP
 	router := mux.NewRouter()
@@ -145,24 +146,57 @@ func main() {
 		go func() {
 			log.Printf("HTTP server listening on %s", httpAddr)
 			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				_, shutdownCancel := context.WithTimeout(ctx, 1*time.Second)
+				defer shutdownCancel()
 				log.Fatalf("HTTP server error: %v", err)
 			}
 		}()
 
 		// Arrêter le serveur HTTP à la fin
 		defer func() {
-			shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 10*time.Second)
-			defer shutdownCancel()
-			if err := server.Shutdown(shutdownCtx); err != nil {
-				log.Printf("HTTP server shutdown error: %v", err)
+			// Ordre de nettoyage important : commencer par les services qui dépendent d'autres
+			log.Println("Cleaning up services...")
+
+			// Ordre suggéré de nettoyage (des plus dépendants aux moins dépendants)
+			if wsHandler != nil {
+				wsHandler.Cleanup()
 			}
-			// Nettoyer les ressources des services
-			if cleanable, ok := queueService.(interface{ Cleanup() }); ok {
-				cleanable.Cleanup()
+
+			// if grpcServer != nil {
+			// 	grpcServer.Stop()
+			// }
+
+			if statsService != nil {
+				if cleanable, ok := statsService.(interface{ Cleanup() }); ok {
+					cleanable.Cleanup()
+				}
 			}
-			if cleanable, ok := messageService.(interface{ Cleanup() }); ok {
-				cleanable.Cleanup()
+
+			if messageService != nil {
+				if cleanable, ok := messageService.(interface{ Cleanup() }); ok {
+					cleanable.Cleanup()
+				}
 			}
+
+			if queueService != nil {
+				if cleanable, ok := queueService.(interface{ Cleanup() }); ok {
+					cleanable.Cleanup()
+				}
+			}
+
+			if domainService != nil {
+				if cleanable, ok := domainService.(interface{ Cleanup() }); ok {
+					cleanable.Cleanup()
+				}
+			}
+
+			if routingService != nil {
+				if cleanable, ok := routingService.(interface{ Cleanup() }); ok {
+					cleanable.Cleanup()
+				}
+			}
+
+			log.Println("All services cleaned up")
 		}()
 	}
 

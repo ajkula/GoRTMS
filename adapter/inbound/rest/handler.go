@@ -500,7 +500,7 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Publier le message
-	if err := h.messageService.PublishMessage(r.Context(), domainName, queueName, message); err != nil {
+	if err := h.messageService.PublishMessage(domainName, queueName, message); err != nil {
 		log.Printf("Error publishing message: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -544,7 +544,7 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 	// Récupérer les messages
 	messages := make([]*model.Message, 0, maxCount)
 	for i := 0; i < maxCount; i++ {
-		message, err := h.messageService.ConsumeMessage(ctx, domainName, queueName)
+		message, err := h.messageService.ConsumeMessage(domainName, queueName)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -631,7 +631,7 @@ func (h *Handler) unsubscribeFromQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.messageService.UnsubscribeFromQueue(r.Context(), domainName, queueName, request.SubscriptionID); err != nil {
+	if err := h.messageService.UnsubscribeFromQueue(domainName, queueName, request.SubscriptionID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

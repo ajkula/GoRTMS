@@ -18,14 +18,17 @@ var (
 // RoutingServiceImpl implémente le service de routage
 type RoutingServiceImpl struct {
 	domainRepo outbound.DomainRepository
+	rootCtx    context.Context
 }
 
 // NewRoutingService crée un nouveau service de routage
 func NewRoutingService(
 	domainRepo outbound.DomainRepository,
+	rootCtx context.Context,
 ) inbound.RoutingService {
 	return &RoutingServiceImpl{
 		domainRepo: domainRepo,
+		rootCtx:    rootCtx,
 	}
 }
 
@@ -117,4 +120,9 @@ func (s *RoutingServiceImpl) ListRoutingRules(ctx context.Context, domainName st
 	}
 
 	return rules, nil
+}
+
+func (s *RoutingServiceImpl) Cleanup() {
+	log.Println("Cleaning up routing service resources...")
+	// Pas de ressources spécifiques à nettoyer
 }

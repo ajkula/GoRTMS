@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"time"
 
@@ -65,9 +66,27 @@ func (s *Server) Start(address string) error {
 
 // Stop arrête le serveur gRPC
 func (s *Server) Stop() {
+	log.Println("Stopping gRPC server...")
+
 	if s.grpcServer != nil {
-		s.grpcServer.GracefulStop()
+		// Utiliser un timeout pour GracefulStop
+		stopped := make(chan struct{})
+		go func() {
+			s.grpcServer.GracefulStop()
+			close(stopped)
+		}()
+
+		// Attendre avec timeout
+		select {
+		case <-stopped:
+			log.Println("gRPC server stopped gracefully")
+		case <-time.After(10 * time.Second):
+			log.Println("gRPC server stop timed out, forcing shutdown")
+			s.grpcServer.Stop()
+		}
 	}
+
+	log.Println("gRPC server shutdown complete")
 }
 
 // ListDomains liste tous les domaines
@@ -336,7 +355,7 @@ func (s *Server) PublishMessage(
 	}
 
 	// Publier le message
-	if err := s.messageService.PublishMessage(ctx, req.DomainName, req.QueueName, message); err != nil {
+	if err := s.messageService.PublishMessage(req.DomainName, req.QueueName, message); err != nil {
 		return nil, status.Errorf(codes.Internal, "Failed to publish message: %v", err)
 	}
 
@@ -353,14 +372,14 @@ func (s *Server) ConsumeMessages(
 	// Créer un contexte avec timeout si nécessaire
 	if req.TimeoutSeconds > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(req.TimeoutSeconds)*time.Second)
+		_, cancel = context.WithTimeout(ctx, time.Duration(req.TimeoutSeconds)*time.Second)
 		defer cancel()
 	}
 
 	// Récupérer les messages
 	var messages []*model.Message
 	for i := 0; i < int(req.MaxMessages); i++ {
-		message, err := s.messageService.ConsumeMessage(ctx, req.DomainName, req.QueueName)
+		message, err := s.messageService.ConsumeMessage(req.DomainName, req.QueueName)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "Failed to consume message: %v", err)
 		}
@@ -415,7 +434,6 @@ func (s *Server) SubscribeToQueue(
 
 	// S'abonner à la file d'attente
 	subscriptionID, err := s.messageService.SubscribeToQueue(
-		stream.Context(),
 		req.DomainName,
 		req.QueueName,
 		handler,
@@ -427,7 +445,6 @@ func (s *Server) SubscribeToQueue(
 
 	// Se désinscrire à la fin
 	defer s.messageService.UnsubscribeFromQueue(
-		s.rootCtx,
 		req.DomainName,
 		req.QueueName,
 		subscriptionID,

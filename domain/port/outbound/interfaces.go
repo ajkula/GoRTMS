@@ -54,11 +54,11 @@ type QueueRepository interface {
 // SubscriptionRegistry définit les opérations pour gérer les abonnements
 type SubscriptionRegistry interface {
 	// RegisterSubscription enregistre un nouvel abonnement
-	RegisterSubscription(ctx context.Context, domainName, queueName string, handler model.MessageHandler) (string, error)
+	RegisterSubscription(domainName, queueName string, handler model.MessageHandler) (string, error)
 
 	// UnregisterSubscription supprime un abonnement
-	UnregisterSubscription(ctx context.Context, subscriptionID string) error
+	UnregisterSubscription(subscriptionID string) error
 
 	// NotifySubscribers notifie tous les abonnés d'un message
-	NotifySubscribers(ctx context.Context, domainName, queueName string, message *model.Message) error
+	NotifySubscribers(domainName, queueName string, message *model.Message) error
 }

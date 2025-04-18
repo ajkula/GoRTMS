@@ -9,16 +9,16 @@ import (
 // MessageService définit les opérations sur les messages
 type MessageService interface {
 	// PublishMessage publie un message dans une file d'attente
-	PublishMessage(ctx context.Context, domainName, queueName string, message *model.Message) error
+	PublishMessage(domainName, queueName string, message *model.Message) error
 
 	// ConsumeMessage consomme un message d'une file d'attente
-	ConsumeMessage(ctx context.Context, domainName, queueName string) (*model.Message, error)
+	ConsumeMessage(domainName, queueName string) (*model.Message, error)
 
 	// SubscribeToQueue s'abonne à une file d'attente
-	SubscribeToQueue(ctx context.Context, domainName, queueName string, handler model.MessageHandler) (string, error)
+	SubscribeToQueue(domainName, queueName string, handler model.MessageHandler) (string, error)
 
 	// UnsubscribeFromQueue se désinscrit d'une file d'attente
-	UnsubscribeFromQueue(ctx context.Context, domainName, queueName string, subscriptionID string) error
+	UnsubscribeFromQueue(domainName, queueName string, subscriptionID string) error
 }
 
 // DomainService définit les opérations sur les domaines

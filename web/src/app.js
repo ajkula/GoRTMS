@@ -23,6 +23,7 @@ import QueuesManager from './components/QueuesManager';
 import QueueMonitor from './components/QueueMonitor';
 import MessagePublisher from './components/MessagePublisher';
 import Routing from './pages/Routing';
+import Events from './pages/Events';
 import api from './api';
 
 // Composant Header
@@ -289,6 +290,8 @@ const App = () => {
     setPage({ type: 'queues', domainName: page.domainName });
   };
 
+  const handleBackToDashboard = () => setPage({ type: 'dashboard' });
+
   const handlePublishMessage = (queueName) => {
     setPage({
       type: 'message-publisher',
@@ -352,7 +355,7 @@ const App = () => {
               domainName={page.domainName}
               queueName={page.queueName}
               onBack={handleBackToQueues}
-              onMessagePublished={() => {}}
+              onMessagePublished={() => { }}
             />
           </div>
         );
@@ -365,10 +368,16 @@ const App = () => {
             />
           </div>
         );
+      case 'events':
+        return (
+          <div className="p-6">
+            <Events onBack={handleBackToDashboard} />
+          </div>
+        );
       case 'dashboard':
       default:
         return (
-          <Dashboard />
+          <Dashboard setPage={setPage} />
         );
     }
   };

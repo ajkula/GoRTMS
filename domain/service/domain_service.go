@@ -17,14 +17,17 @@ var (
 // DomainServiceImpl implémente le service des domaines
 type DomainServiceImpl struct {
 	domainRepo outbound.DomainRepository
+	rootCtx    context.Context
 }
 
 // NewDomainService crée un nouveau service de domaines
 func NewDomainService(
 	domainRepo outbound.DomainRepository,
+	rootCtx context.Context,
 ) inbound.DomainService {
 	return &DomainServiceImpl{
 		domainRepo: domainRepo,
+		rootCtx:    rootCtx,
 	}
 }
 
@@ -97,4 +100,9 @@ func (s *DomainServiceImpl) DeleteDomain(ctx context.Context, name string) error
 func (s *DomainServiceImpl) ListDomains(ctx context.Context) ([]*model.Domain, error) {
 	log.Println("Listing domains")
 	return s.domainRepo.ListDomains(ctx)
+}
+
+func (s *DomainServiceImpl) Cleanup() {
+	log.Println("Cleaning up domain service resources...")
+	// Pas de ressources spécifiques à nettoyer
 }

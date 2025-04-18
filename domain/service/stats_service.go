@@ -644,20 +644,31 @@ func sortQueuesByUsage(queues []QueueStats) {
 func (s *StatsServiceImpl) Cleanup() {
 	log.Println("Stats service cleanup starting")
 
-	// Signaler l'arrêt de la collecte
+	// Signaler l'arrêt de la collecte et attendre sa fin
 	close(s.stopCollect)
 
-	// Attendre un court instant pour que les goroutines puissent terminer
-	time.Sleep(500 * time.Millisecond)
+	// Utiliser un timeout pour éviter de bloquer indéfiniment
+	cleanupDone := make(chan struct{})
+	go func() {
+		// Nettoyer les ressources en toute sécurité
+		s.metrics.mu.Lock()
+		s.metrics.messageRates = nil
+		s.metrics.systemEvents = nil
+		s.metrics.publishCounters = nil
+		s.metrics.consumeCounters = nil
+		s.metrics.queueAlerts = nil
+		s.metrics.mu.Unlock()
 
-	// Faire un nettoyage final des ressources si nécessaire
-	s.metrics.mu.Lock()
-	s.metrics.messageRates = nil
-	s.metrics.systemEvents = nil
-	s.metrics.publishCounters = nil
-	s.metrics.consumeCounters = nil
-	s.metrics.queueAlerts = nil
-	s.metrics.mu.Unlock()
+		close(cleanupDone)
+	}()
+
+	// Attendre avec timeout
+	select {
+	case <-cleanupDone:
+		log.Println("Stats service resources cleaned up")
+	case <-time.After(5 * time.Second):
+		log.Println("Stats service cleanup timed out, forcing shutdown")
+	}
 
 	log.Println("Stats service cleanup complete")
 }

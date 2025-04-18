@@ -28,6 +28,7 @@ type MessageServiceImpl struct {
 	subscriptionReg outbound.SubscriptionRegistry
 	queueService    inbound.QueueService
 	statsService    inbound.StatsService
+	rootCtx         context.Context
 }
 
 // NewMessageService crée un nouveau service de messages
@@ -36,6 +37,7 @@ func NewMessageService(
 	messageRepo outbound.MessageRepository,
 	subscriptionReg outbound.SubscriptionRegistry,
 	queueService inbound.QueueService,
+	rootCtx context.Context,
 	statsService ...inbound.StatsService,
 ) inbound.MessageService {
 	impl := &MessageServiceImpl{
@@ -43,6 +45,7 @@ func NewMessageService(
 		messageRepo:     messageRepo,
 		subscriptionReg: subscriptionReg,
 		queueService:    queueService,
+		rootCtx:         rootCtx,
 	}
 
 	if len(statsService) > 0 {
@@ -54,18 +57,17 @@ func NewMessageService(
 
 // PublishMessage publie un message dans une file d'attente
 func (s *MessageServiceImpl) PublishMessage(
-	ctx context.Context,
 	domainName, queueName string,
 	message *model.Message,
 ) error {
 	// Récupérer le domaine
-	domain, err := s.domainRepo.GetDomain(ctx, domainName)
+	domain, err := s.domainRepo.GetDomain(s.rootCtx, domainName)
 	if err != nil {
 		return ErrDomainNotFound
 	}
 
 	// Vérifier si la file d'attente existe
-	channelQueue, err := s.queueService.GetChannelQueue(ctx, domainName, queueName)
+	channelQueue, err := s.queueService.GetChannelQueue(s.rootCtx, domainName, queueName)
 	if err != nil {
 		return ErrQueueNotFound
 	}
@@ -120,7 +122,7 @@ func (s *MessageServiceImpl) PublishMessage(
 	}
 
 	// Stocker le message dans le repository pour persistance/historique
-	if err := s.messageRepo.StoreMessage(ctx, domainName, queueName, message); err != nil {
+	if err := s.messageRepo.StoreMessage(s.rootCtx, domainName, queueName, message); err != nil {
 		return err
 	}
 
@@ -130,12 +132,12 @@ func (s *MessageServiceImpl) PublishMessage(
 	}
 
 	// Enqueue le message dans la chan queue
-	if err := channelQueue.Enqueue(ctx, message); err != nil {
+	if err := channelQueue.Enqueue(s.rootCtx, message); err != nil {
 		return err
 	}
 
 	// Notifier les abonnés via le registry existant
-	if err := s.subscriptionReg.NotifySubscribers(ctx, domainName, queueName, message); err != nil {
+	if err := s.subscriptionReg.NotifySubscribers(domainName, queueName, message); err != nil {
 		return err
 	}
 
@@ -167,7 +169,7 @@ func (s *MessageServiceImpl) PublishMessage(
 			if match {
 				// Publier le message dans la file de destination
 				destMsg := *message // Copie du message
-				if err := s.PublishMessage(ctx, domainName, destQueue, &destMsg); err != nil {
+				if err := s.PublishMessage(domainName, destQueue, &destMsg); err != nil {
 					return err
 				}
 			}
@@ -181,24 +183,23 @@ func (s *MessageServiceImpl) PublishMessage(
 
 // ConsumeMessage consomme un message d'une file d'attente
 func (s *MessageServiceImpl) ConsumeMessage(
-	ctx context.Context,
 	domainName, queueName string,
 ) (*model.Message, error) {
 	// Récupérer la channelQueue
-	channelQueue, err := s.queueService.GetChannelQueue(ctx, domainName, queueName)
+	channelQueue, err := s.queueService.GetChannelQueue(s.rootCtx, domainName, queueName)
 	if err != nil {
 		return nil, ErrDomainNotFound
 	}
 
 	// Tenter de consommer un message via la channelQueue
-	message, err := channelQueue.Dequeue(ctx)
+	message, err := channelQueue.Dequeue(s.rootCtx)
 	if err != nil {
 		return nil, err
 	}
 
 	// Si aucun message n'est dispo dans la channelQueue, essayer le repo
 	if message == nil {
-		messages, err := s.messageRepo.GetMessages(ctx, domainName, queueName, 1)
+		messages, err := s.messageRepo.GetMessages(s.rootCtx, domainName, queueName, 1)
 		if err != nil {
 			return nil, err
 		}
@@ -212,7 +213,7 @@ func (s *MessageServiceImpl) ConsumeMessage(
 		// mode non persistent supprime le message du repo
 		queue := channelQueue.GetQueue()
 		if !queue.Config.IsPersistent || queue.Config.DeliveryMode == model.SingleConsumerMode {
-			if err := s.messageRepo.DeleteMessage(ctx, domainName, queueName, message.ID); err != nil {
+			if err := s.messageRepo.DeleteMessage(s.rootCtx, domainName, queueName, message.ID); err != nil {
 				return nil, err
 			}
 		}
@@ -228,12 +229,11 @@ func (s *MessageServiceImpl) ConsumeMessage(
 
 // SubscribeToQueue s'abonne à une file d'attente
 func (s *MessageServiceImpl) SubscribeToQueue(
-	ctx context.Context,
 	domainName, queueName string,
 	handler model.MessageHandler,
 ) (string, error) {
 	// Récupérer le domaine
-	domain, err := s.domainRepo.GetDomain(ctx, domainName)
+	domain, err := s.domainRepo.GetDomain(s.rootCtx, domainName)
 	if err != nil {
 		return "", ErrDomainNotFound
 	}
@@ -244,7 +244,7 @@ func (s *MessageServiceImpl) SubscribeToQueue(
 	}
 
 	// Enregistrer l'abonnement
-	subscriptionID, err := s.subscriptionReg.RegisterSubscription(ctx, domainName, queueName, handler)
+	subscriptionID, err := s.subscriptionReg.RegisterSubscription(domainName, queueName, handler)
 	if err != nil {
 		return "", ErrSubscriptionFailed
 	}
@@ -254,12 +254,11 @@ func (s *MessageServiceImpl) SubscribeToQueue(
 
 // UnsubscribeFromQueue se désinscrit d'une file d'attente
 func (s *MessageServiceImpl) UnsubscribeFromQueue(
-	ctx context.Context,
 	domainName, queueName string,
 	subscriptionID string,
 ) error {
 	// Supprimer l'abonnement
-	return s.subscriptionReg.UnregisterSubscription(ctx, subscriptionID)
+	return s.subscriptionReg.UnregisterSubscription(subscriptionID)
 }
 
 // evaluateJSONPredicate évalue un prédicat JSON sur un message

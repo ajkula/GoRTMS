@@ -184,42 +184,6 @@ func (s *QueueServiceImpl) CreateQueue(ctx context.Context, domainName, queueNam
 	return nil
 }
 
-// graceful close les channel queues
-func (s *QueueServiceImpl) Cleanup() {
-	log.Println("Cleaning up queue service resources...")
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var wg sync.WaitGroup
-
-	for domainName, domainQueues := range s.channelQueues {
-		for queueName, cq := range domainQueues {
-			wg.Add(1)
-			go func(d, q string, queue *model.ChannelQueue) {
-				defer wg.Done()
-				log.Printf("Stopping queue: %s.%s", d, q)
-				queue.Stop()
-				log.Printf("Queue stopped: %s.%s", d, q)
-			}(domainName, queueName, cq)
-		}
-	}
-
-	// Attendre avectimeout
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		log.Println("All queues cleanly stopped")
-	case <-time.After(10 * time.Second):
-		log.Println("Timeout waiting forqueues to stop, forcing shutdown")
-	}
-}
-
 // GetQueue récupère une file d'attente
 func (s *QueueServiceImpl) GetQueue(ctx context.Context, domainName, queueName string) (*model.Queue, error) {
 	log.Printf("Getting queue: %s.%s", domainName, queueName)
@@ -301,4 +265,60 @@ func (s *QueueServiceImpl) ListQueues(ctx context.Context, domainName string) ([
 	}
 
 	return queues, nil
+}
+
+// graceful close les channel queues
+func (s *QueueServiceImpl) Cleanup() {
+	log.Println("Cleaning up queue service resources...")
+
+	s.mu.Lock()
+	// Copier les clés pour éviter de modifier la map pendant l'itération
+	domainKeys := make([]string, 0, len(s.channelQueues))
+	for domainName := range s.channelQueues {
+		domainKeys = append(domainKeys, domainName)
+	}
+	s.mu.Unlock()
+
+	var wg sync.WaitGroup
+
+	// Arrêter chaque queue en parallèle
+	for _, domainName := range domainKeys {
+		s.mu.RLock()
+		queueMap := s.channelQueues[domainName]
+		queueKeys := make([]string, 0, len(queueMap))
+		for queueName := range queueMap {
+			queueKeys = append(queueKeys, queueName)
+		}
+		s.mu.RUnlock()
+
+		for _, queueName := range queueKeys {
+			s.mu.RLock()
+			queue, exists := s.channelQueues[domainName][queueName]
+			s.mu.RUnlock()
+
+			if exists {
+				wg.Add(1)
+				go func(d, q string, cq *model.ChannelQueue) {
+					defer wg.Done()
+					log.Printf("Stopping queue: %s.%s", d, q)
+					cq.Stop()
+					log.Printf("Queue stopped: %s.%s", d, q)
+				}(domainName, queueName, queue)
+			}
+		}
+	}
+
+	// Attendre avec timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("All queues cleanly stopped")
+	case <-time.After(10 * time.Second):
+		log.Println("Timeout waiting for queues to stop, forcing shutdown")
+	}
 }

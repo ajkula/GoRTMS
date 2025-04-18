@@ -1,7 +1,6 @@
 package memory
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -45,7 +44,6 @@ func NewSubscriptionRegistry() outbound.SubscriptionRegistry {
 
 // RegisterSubscription enregistre un nouvel abonnement
 func (r *SubscriptionRegistry) RegisterSubscription(
-	ctx context.Context,
 	domainName, queueName string,
 	handler model.MessageHandler,
 ) (string, error) {
@@ -82,7 +80,6 @@ func (r *SubscriptionRegistry) RegisterSubscription(
 
 // UnregisterSubscription supprime un abonnement
 func (r *SubscriptionRegistry) UnregisterSubscription(
-	ctx context.Context,
 	subscriptionID string,
 ) error {
 	r.mu.Lock()
@@ -113,7 +110,6 @@ func (r *SubscriptionRegistry) UnregisterSubscription(
 
 // NotifySubscribers notifie tous les abonnés d'un message
 func (r *SubscriptionRegistry) NotifySubscribers(
-	ctx context.Context,
 	domainName, queueName string,
 	message *model.Message,
 ) error {

@@ -262,7 +262,12 @@ func (cq *ChannelQueue) processMessages() {
 		select {
 		case <-cq.workerCtx.Done():
 			return // Sortir proprement si le contexte est annulé
-		case msg := <-cq.messages:
+		case msg, ok := <-cq.messages:
+			if !ok {
+				// Canal fermé, sortir proprement
+				return
+			}
+
 			// Acquérir le sémaphore (limiter la concurrence)
 			select {
 			case cq.workerSem <- struct{}{}:
@@ -314,6 +319,10 @@ func (cq *ChannelQueue) processMessages() {
 				}(msg)
 			case <-cq.workerCtx.Done():
 				return // Sortir si le contexte est annulé pendant l'attente du sémaphore
+			case <-time.After(1 * time.Second):
+				// Si le sémaphore est bloqué trop longtemps, loguer et réessayer
+				log.Printf("Worker semaphore acquisition timed out for queue %s", cq.queue.Name)
+				continue
 			}
 		}
 	}
@@ -455,22 +464,26 @@ func (cq *ChannelQueue) processRetries() {
 
 // Stop arrête tous les workers et ferme la queue
 func (cq *ChannelQueue) Stop() {
-	cq.workerCancel() // Propager à toutes les goroutines
+	// Annuler le contexte pour signaler l'arrêt à toutes les goroutines
+	cq.workerCancel()
 
-	// Attente de la fermeture avec timeout
+	// Utiliser un canal de notification plutôt qu'un timeout fixe
 	done := make(chan struct{})
 	go func() {
 		cq.wg.Wait()
 		close(done)
 	}()
 
+	// Attendre avec timeout
 	select {
 	case <-done:
-		// goroutines terminées
+		// Goroutines terminées correctement
+		log.Printf("Queue %s stopped cleanly", cq.queue.Name)
 	case <-time.After(5 * time.Second):
-		// Mêmesi le timeout est atteint, on continue
+		// Timeout atteint
+		log.Printf("Queue %s stop timed out", cq.queue.Name)
 	}
 
-	// Ne pas fermer le chan ici sinon panic
-	// le context Cancel arrêtera les goroutines
+	// Ne pas fermer les canaux car cela peut causer des panics
+	// cq.workerCancel() signalera aux goroutines de se terminer
 }
