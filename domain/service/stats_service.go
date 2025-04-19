@@ -191,27 +191,6 @@ func (s *StatsServiceImpl) startMetricsCollection() {
 
 // collectMetrics collecte les métriques du système
 func (s *StatsServiceImpl) collectMetrics() {
-	// Récupérer les domaines avant de verrouiller le mutex, en utilisant le contexte racine
-	domains, err := s.domainRepo.ListDomains(s.metrics.rootCtx)
-
-	// Préparer une liste des domaines actifs pour enregistrer les événements plus tard
-	var activeDomainsToRecord []struct {
-		name       string
-		queueCount int
-	}
-
-	if err == nil {
-		for _, domain := range domains {
-			queueCount := len(domain.Queues)
-			if queueCount > 0 {
-				activeDomainsToRecord = append(activeDomainsToRecord, struct {
-					name       string
-					queueCount int
-				}{domain.Name, queueCount})
-			}
-		}
-	}
-
 	// Maintenant verrouiller pour mettre à jour les métriques
 	s.metrics.mu.Lock()
 
@@ -265,26 +244,61 @@ func (s *StatsServiceImpl) collectMetrics() {
 	// IMPORTANT: Déverrouiller le mutex avant d'enregistrer les événements
 	s.metrics.mu.Unlock()
 
-	// Maintenant enregistrer les événements sans tenir le mutex
-	for _, domain := range activeDomainsToRecord {
-		s.RecordDomainActive(domain.name, domain.queueCount)
-	}
-
 	// Vérifier les alertes de files d'attente pleines dans une goroutine séparée
 	go s.checkQueueAlerts()
 }
 
 // RecordEvent enregistre un événement système
 func (s *StatsServiceImpl) RecordEvent(eventType, eventSeverity, resource string, data any) {
-	// Générer un ID unique
-	id := fmt.Sprintf("event-%d-%d", time.Now().UnixNano(), rand.Intn(10000))
+	// Verrouiller pour accéder à systemEvents
+	s.metrics.mu.Lock()
+	defer s.metrics.mu.Unlock()
+
 	now := time.Now()
+
+	// Gestion des événements par type
+	switch eventType {
+	case "domain_active":
+		// Pour domain_active, remplacer l'événement existant plutôt que d'en ajouter un nouveau
+		for i, evt := range s.metrics.systemEvents {
+			if evt.EventType == eventType && evt.Resource == resource {
+				// Mettre à jour l'événement existant
+				s.metrics.systemEvents[i].Data = data
+				s.metrics.systemEvents[i].Timestamp = now
+				s.metrics.systemEvents[i].UnixTime = now.Unix()
+				return // Sortir sans ajouter de nouvel événement
+			}
+		}
+		// Si on arrive ici, c'est qu'on n'a pas trouvé d'événement existant
+
+	case "queue_capacity":
+		// Logique similaire pour queue_capacity - ne conserver que le plus récent par ressource
+		for i, evt := range s.metrics.systemEvents {
+			if evt.EventType == eventType && evt.Resource == resource {
+				// Remplacer uniquement si le nouvel événement est plus critique
+				// ou si l'ancien est trop ancien (> 5 minutes)
+				oldSeverity := evt.Type
+				timeDiff := now.Unix() - evt.UnixTime
+
+				if eventSeverity == "error" || oldSeverity != "error" || timeDiff > 300 {
+					s.metrics.systemEvents[i].Data = data
+					s.metrics.systemEvents[i].Type = eventSeverity
+					s.metrics.systemEvents[i].Timestamp = now
+					s.metrics.systemEvents[i].UnixTime = now.Unix()
+				}
+				return
+			}
+		}
+	}
+
+	// Générer un ID unique pour le nouvel événement
+	id := fmt.Sprintf("event-%d-%d", now.UnixNano(), rand.Intn(10000))
 
 	// Créer l'événement
 	event := model.SystemEvent{
 		ID:        id,
-		Type:      eventSeverity, // "info", "warning", "error"
-		EventType: eventType,     // "domain_created", "queue_capacity", etc.
+		Type:      eventSeverity,
+		EventType: eventType,
 		Resource:  resource,
 		Data:      data,
 		Timestamp: now,

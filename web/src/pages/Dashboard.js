@@ -72,7 +72,7 @@ const Dashboard = ({ setPage }) => {
       // Charger les statistiques générales
       const statsData = await api.getStats();
       // DEBUG
-      console.log("API response:", statsData);
+      // console.log("API response:", statsData);
       setStats(statsData);
 
       // Transformer les données de domaines pour le graphique
@@ -103,14 +103,28 @@ const Dashboard = ({ setPage }) => {
       }
 
       if (statsData.recentEvents && statsData.recentEvents.length > 0) {
-        const formattedEvents = statsData.recentEvents.map(event => ({
-          id: event.id,
-          type: event.type,
-          message: formatEventMessage(event),
-          time: formatRelativeTime(event.timestamp),
-          // Conserver les données brutes pour les références futures
-          rawEvent: event
-        }));
+        const formattedEvents = statsData.recentEvents
+          .sort((a, b) => a.time - b.time)
+          .map(event => {
+            const existingEvent = recentEvents.find(e => e.id === event.id);
+
+            if (existingEvent && existingEvent.rawEvent &&
+              existingEvent.rawEvent.timestamp === event.timestamp
+            ) {
+              return {
+                ...existingEvent,
+                rawEvent: event,
+              };
+            }
+            return {
+              id: event.id,
+              type: event.type,
+              message: formatEventMessage(event),
+              time: formatRelativeTime(event.timestamp),
+              // Conserver les données brutes pour les références futures
+              rawEvent: event
+            }
+          });
         setRecentEvents(formattedEvents);
       } else {
         // Toujours avoir des événements d'exemple si aucun n'est disponible
