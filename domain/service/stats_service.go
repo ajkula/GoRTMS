@@ -262,10 +262,32 @@ func (s *StatsServiceImpl) RecordEvent(eventType, eventSeverity, resource string
 		// Pour domain_active, remplacer l'événement existant plutôt que d'en ajouter un nouveau
 		for i, evt := range s.metrics.systemEvents {
 			if evt.EventType == eventType && evt.Resource == resource {
-				// Mettre à jour l'événement existant
-				s.metrics.systemEvents[i].Data = data
-				s.metrics.systemEvents[i].Timestamp = now
-				s.metrics.systemEvents[i].UnixTime = now.Unix()
+				oldCount, newCount := 0, 0
+
+				// Extraire l'ancien compteur
+				if oldData, ok := evt.Data.(map[string]any); ok {
+					if count, ok := oldData["queueCount"]; ok {
+						oldCount, _ = count.(int)
+					}
+				}
+
+				// Extraire le nouveau compteur
+				if newData, ok := data.(map[string]any); ok {
+					if count, ok := newData["queueCount"]; ok {
+						newCount, _ = count.(int)
+					}
+				}
+
+				// Mettre à jour l'événement et rafraîchir le timestamp
+				// UNIQUEMENT si les données ont changé
+				if oldCount != newCount {
+					// Générer un nouvel ID pour que le frontend le détecte comme un nouvel événement
+					newID := fmt.Sprintf("event-%d-%d", now.UnixNano(), rand.Intn(10000))
+					s.metrics.systemEvents[i].ID = newID
+					s.metrics.systemEvents[i].Data = data
+					s.metrics.systemEvents[i].Timestamp = now
+					s.metrics.systemEvents[i].UnixTime = now.Unix()
+				}
 				return // Sortir sans ajouter de nouvel événement
 			}
 		}

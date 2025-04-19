@@ -104,7 +104,7 @@ const Dashboard = ({ setPage }) => {
 
       if (statsData.recentEvents && statsData.recentEvents.length > 0) {
         const formattedEvents = statsData.recentEvents
-          .sort((a, b) => a.time - b.time)
+          .sort((a, b) => b.timestamp - a.timestamp)
           .map(event => {
             const existingEvent = recentEvents.find(e => e.id === event.id);
 
