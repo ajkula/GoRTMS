@@ -166,12 +166,6 @@ func main() {
 			// 	grpcServer.Stop()
 			// }
 
-			if statsService != nil {
-				if cleanable, ok := statsService.(interface{ Cleanup() }); ok {
-					cleanable.Cleanup()
-				}
-			}
-
 			if messageService != nil {
 				if cleanable, ok := messageService.(interface{ Cleanup() }); ok {
 					cleanable.Cleanup()
@@ -184,14 +178,20 @@ func main() {
 				}
 			}
 
-			if domainService != nil {
-				if cleanable, ok := domainService.(interface{ Cleanup() }); ok {
+			if statsService != nil {
+				if cleanable, ok := statsService.(interface{ Cleanup() }); ok {
 					cleanable.Cleanup()
 				}
 			}
 
 			if routingService != nil {
 				if cleanable, ok := routingService.(interface{ Cleanup() }); ok {
+					cleanable.Cleanup()
+				}
+			}
+
+			if domainService != nil {
+				if cleanable, ok := domainService.(interface{ Cleanup() }); ok {
 					cleanable.Cleanup()
 				}
 			}
