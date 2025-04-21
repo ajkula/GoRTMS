@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PlusCircle, Trash2, Loader, AlertTriangle, Eye, ArrowLeft, Send, GitBranch } from 'lucide-react';
+import QueueConfigForm, { defaultQueueConfig } from './QueueConfigForm';
 import api from '../api';
 
 const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, onViewRouting }) => {
@@ -8,6 +9,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
   const [error, setError] = useState(null);
   const [newQueueName, setNewQueueName] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
+  const [queueConfig, setQueueConfig] = useState({ ...defaultQueueConfig });
   const [createError, setCreateError] = useState(null);
 
   // Charger les files d'attente pour le domaine spécifié
@@ -38,17 +40,36 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
       setCreateLoading(true);
       setCreateError(null);
 
-      await api.createQueue(domainName, {
+      // Préparation de la configuration complète
+      const completeConfig = {
         name: newQueueName,
         config: {
-          isPersistent: true,
-          maxSize: 1000,
-          ttl: "86400s", // 24 heures
-          deliveryMode: "broadcast"
+          isPersistent: queueConfig.isPersistent,
+          maxSize: queueConfig.maxSize,
+          ttl: queueConfig.ttl,
+          deliveryMode: queueConfig.deliveryMode,
+          workerCount: queueConfig.workerCount
         }
-      });
+      };
 
+      // Ajouter la configuration de retry si activée
+      if (queueConfig.retryEnabled) {
+        completeConfig.config.retryEnabled = true;
+        completeConfig.config.retryConfig = queueConfig.retryConfig;
+      }
+
+      // Ajouter la configuration du circuit breaker si activée
+      if (queueConfig.circuitBreakerEnabled) {
+        completeConfig.config.circuitBreakerEnabled = true;
+        completeConfig.config.circuitBreakerConfig = queueConfig.circuitBreakerConfig;
+      }
+
+      await api.createQueue(domainName, completeConfig);
+
+      // Réinitialiser le formulaire
       setNewQueueName('');
+      setQueueConfig({ ...defaultQueueConfig });
+
       await fetchQueues();
     } catch (err) {
       console.error('Error creating queue:', err);
@@ -98,14 +119,21 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
       <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
         <h2 className="text-lg font-medium mb-4">Create New Queue</h2>
 
-        <form onSubmit={handleCreateQueue} className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-          <input
-            type="text"
-            value={newQueueName}
-            onChange={(e) => setNewQueueName(e.target.value)}
-            placeholder="Queue name"
-            className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-2"
-            disabled={createLoading}
+        <form onSubmit={handleCreateQueue}>
+          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4">
+            <input
+              type="text"
+              value={newQueueName}
+              onChange={(e) => setNewQueueName(e.target.value)}
+              placeholder="Queue name"
+              className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-2"
+              disabled={createLoading}
+            />
+          </div>
+
+          <QueueConfigForm
+            queueConfig={queueConfig}
+            setQueueConfig={setQueueConfig}
           />
 
           <button

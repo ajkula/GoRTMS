@@ -49,11 +49,22 @@ const api = {
   async getQueues(domainName) {
     try {
       const data = await this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues`);
+      // Garantir que les données de configuration sont correctement extraites
       return data.queues || [];
     } catch (error) {
       console.error(`Error fetching queues for domain ${domainName}:`, error);
       return []; // Retourner un tableau vide en cas d'erreur
     }
+  },
+
+  async getQueue(domainName, queueName) {
+    const data = await this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}`);
+    // Assurez-vous que la config est correctement parsée
+    return {
+      name: data.name,
+      messageCount: data.messageCount,
+      config: data.config || {}
+    };
   },
 
   async createQueue(domainName, queue) {
@@ -71,12 +82,12 @@ const api = {
   },
 
   async subscribeToQueue(domainName, queueName) {
-    
-  
-  console.log({
-    domainName,
-    queueName
-  });
+
+
+    console.log({
+      domainName,
+      queueName
+    });
 
 
     try {
@@ -92,7 +103,7 @@ const api = {
       if (!response.ok) {
         throw new Error(`Error subscribing to queue: ${response.statusText}`);
       }
-      const data =  await response.json();
+      const data = await response.json();
       console.log({ data });
 
       return data;

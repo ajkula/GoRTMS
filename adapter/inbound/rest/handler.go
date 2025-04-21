@@ -166,8 +166,9 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 
 	// Créer une structure simplifiée sans références circulaires
 	type QueueInfo struct {
-		Name         string `json:"name"`
-		MessageCount int    `json:"messageCount"`
+		Name         string            `json:"name"`
+		MessageCount int               `json:"messageCount"`
+		Config       model.QueueConfig `json:"config"`
 	}
 
 	type RouteInfo struct {
@@ -219,6 +220,7 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 		response.Queues = append(response.Queues, QueueInfo{
 			Name:         queueName,
 			MessageCount: queue.MessageCount,
+			Config:       queue.Config,
 		})
 	}
 
@@ -313,8 +315,9 @@ func (h *Handler) listQueues(w http.ResponseWriter, r *http.Request) {
 
 	// Convertir en structure simple pour la réponse JSON
 	type queueResponse struct {
-		Name         string `json:"name"`
-		MessageCount int    `json:"messageCount"`
+		Name         string             `json:"name"`
+		MessageCount int                `json:"messageCount"`
+		Config       *model.QueueConfig `json:"config"`
 	}
 
 	response := make([]queueResponse, len(queues))
@@ -322,6 +325,7 @@ func (h *Handler) listQueues(w http.ResponseWriter, r *http.Request) {
 		response[i] = queueResponse{
 			Name:         queue.Name,
 			MessageCount: queue.MessageCount,
+			Config:       &queue.Config,
 		}
 	}
 
@@ -360,8 +364,6 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Parsed queue name: %s", request.Name)
-
 	// Maintenant, décodez la configuration manuellement
 	var configMap map[string]any
 	if err := json.Unmarshal(request.Config, &configMap); err != nil {
@@ -370,19 +372,16 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Construire la configuration
-	config := &model.QueueConfig{
-		IsPersistent: false, // Valeurs par défaut
-		MaxSize:      0,
-		TTL:          0,
-	}
+	// Construire la configuration de base
+	config := &model.QueueConfig{}
 
 	// Appliquer les valeurs de la requête
 	if isPersistent, ok := configMap["isPersistent"].(bool); ok {
 		config.IsPersistent = isPersistent
 	}
 
-	if maxSize, ok := configMap["maxSize"].(float64); ok { // JSON envoie les nombres comme float64
+	// JSON envoie les nombres comme float64
+	if maxSize, ok := configMap["maxSize"].(float64); ok {
 		config.MaxSize = int(maxSize)
 	}
 
@@ -413,10 +412,73 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Creating queue with config: %+v", config)
 
+	// Traiter la configuration de retry
+	if retryEnabled, ok := configMap["retryEnabled"].(bool); ok && retryEnabled {
+		config.RetryEnabled = true
+		if retryConfigMap, ok := configMap["retryConfig"].(map[string]interface{}); ok {
+			retryConfig := &model.RetryConfig{}
+
+			if v, ok := retryConfigMap["maxRetries"].(float64); ok {
+				retryConfig.MaxRetries = int(v)
+			}
+
+			if v, ok := retryConfigMap["factor"].(float64); ok {
+				retryConfig.Factor = v
+			}
+
+			if v, ok := retryConfigMap["initialDelay"].(string); ok {
+				if d, err := time.ParseDuration(v); err == nil {
+					retryConfig.InitialDelay = d
+				}
+			}
+
+			if v, ok := retryConfigMap["maxDelay"].(string); ok {
+				if d, err := time.ParseDuration(v); err == nil {
+					retryConfig.MaxDelay = d
+				}
+			}
+
+			config.RetryConfig = retryConfig
+		}
+	}
+
+	// Traiter la configuration du circuit breaker
+	if cbEnabled, ok := configMap["circuitBreakerEnabled"].(bool); ok && cbEnabled {
+		config.CircuitBreakerEnabled = true
+		if cbConfigMap, ok := configMap["circuitBreakerConfig"].(map[string]interface{}); ok {
+			cbConfig := &model.CircuitBreakerConfig{}
+
+			if v, ok := cbConfigMap["errorThreshold"].(float64); ok {
+				cbConfig.ErrorThreshold = v
+			}
+
+			if v, ok := cbConfigMap["minimumRequests"].(float64); ok {
+				cbConfig.MinimumRequests = int(v)
+			}
+
+			if v, ok := cbConfigMap["successThreshold"].(float64); ok {
+				cbConfig.SuccessThreshold = int(v)
+			}
+
+			if v, ok := cbConfigMap["openTimeout"].(string); ok {
+				if d, err := time.ParseDuration(v); err == nil {
+					cbConfig.OpenTimeout = d
+				}
+			}
+
+			config.CircuitBreakerConfig = cbConfig
+		}
+	}
+
 	if err := h.queueService.CreateQueue(r.Context(), domainName, request.Name, config); err != nil {
 		log.Printf("Error from service: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	resConfig, err := json.Marshal(config)
+	if err != nil {
+		log.Printf("Error with queue config %+v", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -424,6 +486,7 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "success",
 		"queue":  request.Name,
+		"config": string(resConfig),
 	})
 }
 
@@ -440,7 +503,11 @@ func (h *Handler) getQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(queue)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"name":         queue.Name,
+		"messageCount": queue.MessageCount,
+		"config":       queue.Config,
+	})
 }
 
 // deleteQueue supprime une file d'attente
@@ -537,7 +604,7 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		_, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 		defer cancel()
 	}
 
