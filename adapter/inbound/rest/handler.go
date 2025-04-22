@@ -476,18 +476,21 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resConfig, err := json.Marshal(config)
-	if err != nil {
-		log.Printf("Error with queue config %+v", err)
+	type CreateQueueResponse struct {
+		Status string             `json:"status"`
+		Queue  string             `json:"queue"`
+		Config *model.QueueConfig `json:"config"`
+	}
+
+	response := CreateQueueResponse{
+		Status: "success",
+		Queue:  request.Name,
+		Config: config,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "success",
-		"queue":  request.Name,
-		"config": string(resConfig),
-	})
+	json.NewEncoder(w).Encode(response)
 }
 
 // getQueue récupère les détails d'une file d'attente
