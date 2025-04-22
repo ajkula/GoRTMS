@@ -272,6 +272,69 @@ const api = {
       };
     }
   },
+  
+  // Récupérer les statistiques actuelles
+  async getCurrentStats() {
+    try {
+      return await api.fetchJSON('/api/resources/current');
+    } catch (error) {
+      console.error('Error fetching current resource stats:', error);
+      return {
+        timestamp: Date.now() / 1000,
+        memoryUsage: 0,
+        goroutines: 0,
+        gcCycles: 0,
+        gcPauseNs: 0,
+        heapObjects: 0,
+        domainStats: {}
+      };
+    }
+  },
+
+  // Récupérer l'historique des statistiques
+  async getStatsHistory(limit = 60) {
+    try {
+      return await api.fetchJSON(`/api/resources/history?limit=${limit}`);
+    } catch (error) {
+      console.error('Error fetching resource stats history:', error);
+      return [];
+    }
+  },
+
+  // Récupérer les statistiques pour un domaine spécifique
+  async getDomainStats(domainName) {
+    try {
+      return await api.fetchJSON(`/api/resources/domains/${domainName}`);
+    } catch (error) {
+      console.error(`Error fetching domain resource stats for ${domainName}:`, error);
+      return {
+        queueCount: 0,
+        messageCount: 0,
+        queueStats: {},
+        estimatedMemory: 0
+      };
+    }
+  },
+
+  // Formater les données pour les graphiques
+  formatHistoryForCharts(historyData) {
+    return historyData.map(stats => ({
+      time: new Date(stats.timestamp * 1000).toLocaleTimeString(),
+      timestamp: stats.timestamp,
+      memoryUsageMB: Math.round(stats.memoryUsage / (1024 * 1024)), // Convertir en MB
+      goroutines: stats.goroutines,
+      gcPauseMs: stats.gcPauseNs / 1000000, // Convertir en ms
+      heapObjects: stats.heapObjects
+    }));
+  },
+
+  // Formater la taille mémoire pour l'affichage
+  formatMemorySize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  },
 
   // Vérification de santé
   async healthCheck() {

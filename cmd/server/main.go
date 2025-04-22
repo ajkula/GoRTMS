@@ -97,6 +97,13 @@ func main() {
 	domainService := service.NewDomainService(domainRepo, ctx)
 	routingService := service.NewRoutingService(domainRepo, ctx)
 
+	// Initialiser le service de monitoring des ressources
+	resourceMonitorService := service.NewResourceMonitorService(
+		domainRepo,
+		queueService,
+		ctx,
+	)
+
 	// Créer le routeur HTTP
 	router := mux.NewRouter()
 
@@ -109,6 +116,7 @@ func main() {
 			queueService,
 			routingService,
 			statsService,
+			resourceMonitorService,
 		)
 		restHandler.SetupRoutes(router)
 

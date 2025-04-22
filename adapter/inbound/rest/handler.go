@@ -22,11 +22,12 @@ import (
 
 // Handler gère les requêtes HTTP pour l'API REST
 type Handler struct {
-	messageService inbound.MessageService
-	domainService  inbound.DomainService
-	queueService   inbound.QueueService
-	routingService inbound.RoutingService
-	statsService   inbound.StatsService
+	messageService  inbound.MessageService
+	domainService   inbound.DomainService
+	queueService    inbound.QueueService
+	routingService  inbound.RoutingService
+	statsService    inbound.StatsService
+	resourceMonitor inbound.ResourceMonitorService
 }
 
 // NewHandler crée un nouveau gestionnaire REST
@@ -36,13 +37,15 @@ func NewHandler(
 	queueService inbound.QueueService,
 	routingService inbound.RoutingService,
 	statsService inbound.StatsService,
+	resourceMonitor inbound.ResourceMonitorService,
 ) *Handler {
 	return &Handler{
-		messageService: messageService,
-		domainService:  domainService,
-		queueService:   queueService,
-		routingService: routingService,
-		statsService:   statsService,
+		messageService:  messageService,
+		domainService:   domainService,
+		queueService:    queueService,
+		routingService:  routingService,
+		statsService:    statsService,
+		resourceMonitor: resourceMonitor,
 	}
 }
 
@@ -76,6 +79,14 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 
 	// Route pour les stats
 	router.HandleFunc("/api/stats", h.getStats).Methods("GET")
+
+	// Routes pour les ressources système (nouvelles)
+	if h.resourceMonitor != nil {
+		log.Println("Setting up resource monitoring routes")
+		router.HandleFunc("/api/resources/current", h.getCurrentResourceStats).Methods("GET")
+		router.HandleFunc("/api/resources/history", h.getResourceStatsHistory).Methods("GET")
+		router.HandleFunc("/api/resources/domains/{domain}", h.getDomainResourceStats).Methods("GET")
+	}
 
 	// Route pour la santé
 	router.HandleFunc("/health", h.healthCheck).Methods("GET")
@@ -806,6 +817,83 @@ func extractHeaders(r *http.Request) map[string]string {
 	}
 
 	return headers
+}
+
+// getCurrentResourceStats retourne les statistiques actuelles d'utilisation des ressources
+func (h *Handler) getCurrentResourceStats(w http.ResponseWriter, r *http.Request) {
+	if h.resourceMonitor == nil {
+		http.Error(w, "Resource monitoring not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	stats, err := h.resourceMonitor.GetCurrentStats(r.Context())
+	if err != nil {
+		log.Printf("Error getting current resource stats: %v", err)
+		http.Error(w, "Failed to get resource statistics", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+// getResourceStatsHistory retourne l'historique des statistiques
+func (h *Handler) getResourceStatsHistory(w http.ResponseWriter, r *http.Request) {
+	if h.resourceMonitor == nil {
+		http.Error(w, "Resource monitoring not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Paramètre optionnel pour limiter le nombre de points retournés
+	limitStr := r.URL.Query().Get("limit")
+	limit := 0
+
+	if limitStr != "" {
+		var err error
+		limit, err = strconv.Atoi(limitStr)
+		if err != nil || limit < 0 {
+			http.Error(w, "Invalid limit parameter", http.StatusBadRequest)
+			return
+		}
+	}
+
+	stats, err := h.resourceMonitor.GetStatsHistory(r.Context(), limit)
+	if err != nil {
+		log.Printf("Error getting resource stats history: %v", err)
+		http.Error(w, "Failed to get resource statistics history", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+// getDomainResourceStats retourne les statistiques pour un domaine spécifique
+func (h *Handler) getDomainResourceStats(w http.ResponseWriter, r *http.Request) {
+	if h.resourceMonitor == nil {
+		http.Error(w, "Resource monitoring not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	vars := mux.Vars(r)
+	domainName := vars["domain"]
+
+	stats, err := h.resourceMonitor.GetCurrentStats(r.Context())
+	if err != nil {
+		log.Printf("Error getting current resource stats: %v", err)
+		http.Error(w, "Failed to get resource statistics", http.StatusInternalServerError)
+		return
+	}
+
+	// Vérifier si le domaine existe
+	domainStats, exists := stats.DomainStats[domainName]
+	if !exists {
+		http.Error(w, "Domain not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(domainStats)
 }
 
 // GenerateID génère un ID unique
