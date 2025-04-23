@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ResponsiveContainer, CartesianGrid, Tooltip, Legend, Area, AreaChart, Line, YAxis, XAxis } from 'recharts';
 import { RefreshCw, Database, Server, AlertTriangle, Loader } from 'lucide-react';
 import api from '../../api';
@@ -41,12 +41,32 @@ const ResourceMonitor = () => {
   }, []);
   
   // Utiliser les données réelles ou des données fictives si l'API n'est pas disponible
-  const chartData = statsHistory.length > 0 ? statsHistory : Array.from({ length: 10 }, (_, i) => ({
-    time: new Date(Date.now() - (9-i) * 60000).toLocaleTimeString(),
-    memoryUsageMB: Math.floor(100 + Math.random() * 50),
-    goroutines: Math.floor(20 + Math.random() * 30),
-    gcPauseMs: Math.random() * 5,
-  }));
+  const chartData = useMemo(() => {
+    if (statsHistory.length > 0) {
+      return statsHistory.map(stat => {
+        const timestamp = stat.timestamp || Date.now() / 1000;
+        return {
+          timestamp,
+          memoryUsageMB: stat.memoryUsage ? Math.round(stat.memoryUsage / (1024 * 1024) * 100) / 100 : 0,
+          goroutines: stat.goroutines || 0,
+          gcPauseMs: stat.gcPauseNs ? (stat.gcPauseNs / 1000000) : 0,
+          heapObjects: stat.heapObjects || 0
+        };
+      });
+    }
+    
+    // Données fictives en cas d'absence de données réelles
+    return Array.from({ length: 10 }, (_, i) => {
+      const timestamp = Date.now() / 1000 - (9-i) * 60;
+      return {
+        timestamp,
+        memoryUsageMB: Math.floor(100 + Math.random() * 50),
+        goroutines: Math.floor(20 + Math.random() * 30),
+        gcPauseMs: Math.random() * 5,
+        heapObjects: Math.floor(5000 + Math.random() * 3000)
+      };
+    });
+  }, [statsHistory]);
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -108,15 +128,31 @@ const ResourceMonitor = () => {
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" />
+                          <XAxis 
+                dataKey="timestamp" 
+                tickFormatter={(unixTime) => {
+                  if (!unixTime) return '';
+                  const date = new Date(unixTime * 1000);
+                  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+                }}
+                scale="time"
+                type="number"
+                domain={['dataMin', 'dataMax']}
+              />
             <YAxis yAxisId="left" orientation="left" stroke="#3b82f6" />
             <YAxis yAxisId="right" orientation="right" stroke="#22c55e" />
             <Tooltip 
               formatter={(value, name) => {
+                if (value === undefined || value === null) return [0, name];
+                
                 if (name === "Memory (MB)") return [value.toFixed(2), "Memory (MB)"];
                 if (name === "Goroutines") return [value, "Goroutines"];
                 if (name === "GC Pause") return [value.toFixed(2), "GC Pause (ms)"];
                 return [value, name];
+              }}
+              labelFormatter={(time) => {
+                if (!time) return "Unknown time";
+                return `Time: ${time}`;
               }}
             />
             <Legend />

@@ -1,21 +1,21 @@
-import React from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, ComposedChart } from 'recharts';
+import React, { useMemo } from 'react';
+import { XAxis, YAxis, CartesianGrid, Tooltip, Legend, Area, ComposedChart, Line, ResponsiveContainer } from 'recharts';
 
 const ConsumptionRateChart = ({ data }) => {
-  // Traiter les données pour le graphique
-  const chartData = data.map(item => {
-    const date = new Date(item.timestamp * 1000);
-    const timeString = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-    
-    return {
-      time: timeString,
-      timestamp: item.timestamp,
-      published: item.published || 0,
-      consumed: item.consumed || 0,
-      // Calculer le différentiel (positif = plus de messages publiés que consommés)
-      differential: (item.published || 0) - (item.consumed || 0)
-    };
-  });
+  // Prétraiter les données pour éviter les erreurs
+  const chartData = useMemo(() => {
+    return data.map(item => {
+      // S'assurer que chaque élément a un timestamp valide
+      return {
+        ...item,
+        timestamp: item.timestamp || Date.now() / 1000, // Utiliser l'heure actuelle si non défini
+        published: item.published || 0,
+        consumed: item.consumed || 0,
+        // Calculer le différentiel (positif = plus de messages publiés que consommés)
+        differential: (item.published || 0) - (item.consumed || 0)
+      };
+    });
+  }, [data]);
 
   return (
     <div>
@@ -30,21 +30,27 @@ const ConsumptionRateChart = ({ data }) => {
             >
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
-                dataKey="time" 
-                tickFormatter={(time) => time}
+                dataKey="timestamp" 
+                tickFormatter={(unixTime) => {
+                  const date = new Date(unixTime * 1000);
+                  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+                }}
+                scale="time"
+                type="number"
+                domain={['dataMin', 'dataMax']}
               />
               <YAxis />
               <Tooltip 
                 labelFormatter={(value) => {
-                  const item = chartData.find(d => d.time === value);
-                  const date = new Date(item.timestamp * 1000);
+                  // Vérifier si value est valide
+                  if (value === undefined || value === null) return 'Unknown time';
+                  const date = new Date(value * 1000);
                   return `Time: ${date.toLocaleTimeString()}`;
                 }}
                 formatter={(value, name) => {
-                  const label = name === 'published' ? 'Published' : 
-                                name === 'consumed' ? 'Consumed' : 
-                                'Differential';
-                  return [value.toFixed(2), label];
+                  // Valeur par défaut en cas de undefined/null
+                  const val = value || 0;
+                  return [val.toFixed(2), name];
                 }}
               />
               <Legend />
@@ -60,7 +66,6 @@ const ConsumptionRateChart = ({ data }) => {
                 type="monotone" 
                 dataKey="published" 
                 stroke="#ff7300" 
-                activeDot={{ r: 8 }}
                 strokeWidth={2}
                 name="Published"
                 dot={false}
@@ -69,7 +74,6 @@ const ConsumptionRateChart = ({ data }) => {
                 type="monotone" 
                 dataKey="consumed" 
                 stroke="#4CAF50" 
-                activeDot={{ r: 8 }}
                 strokeWidth={2}
                 name="Consumed"
                 dot={false}

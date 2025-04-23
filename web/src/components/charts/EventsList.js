@@ -27,7 +27,9 @@ const AlertItem = ({ alert }) => {
 
 const EventsList = ({ events, setPage }) => {
   // Formater les événements pour l'affichage
-  const formattedEvents = events.map(event => {
+  const formattedEvents = events
+    .slice(0, 5)
+    .map(event => {
     // Si l'événement est déjà formaté, l'utiliser tel quel
     if (event.message && event.time) {
       return event;

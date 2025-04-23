@@ -69,7 +69,7 @@ const QueueFillRatesChart = ({ data }) => {
               />
               <Legend />
               <ReferenceLine x={75} stroke="#f97316" strokeDasharray="3 3" label={{ value: 'Warning', position: 'insideBottomRight', fill: '#f97316' }} />
-              <ReferenceLine x={90} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'Critical', position: 'insideBottomRight', fill: '#ef4444' }} />
+              <ReferenceLine x={90} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'Critical', position: 'insideBottom', fill: '#ef4444' }} />
               <Bar 
                 dataKey="usage" 
                 name="Utilization %" 

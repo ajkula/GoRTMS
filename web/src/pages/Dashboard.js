@@ -103,11 +103,11 @@ const Dashboard = ({ setPage }) => {
       <div className="mb-6">
         <StatCards stats={stats} />
       </div>
-      
+
       {/* Resource Monitor et Domain Usage - Nouveau! */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div>
-          <ResourceMonitor />
+        <div className="bg-white rounded-lg shadow p-6">
+          <DomainPieChart data={stats?.activeDomains || []} />
         </div>
         <div className="bg-white rounded-lg shadow p-6">
           <DomainUsageChart />
@@ -123,8 +123,8 @@ const Dashboard = ({ setPage }) => {
 
       {/* Domain Pie Chart and Domain Queue TreeMap */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <DomainPieChart data={stats?.activeDomains || []} />
+        <div>
+          <ResourceMonitor />
         </div>
         <div className="bg-white rounded-lg shadow p-6">
           <DomainQueueTreeMap data={stats?.topQueues || []} />
@@ -143,9 +143,9 @@ const Dashboard = ({ setPage }) => {
 
       {/* Recent Events */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        <EventsList 
-          events={stats?.recentEvents || []} 
-          setPage={setPage} 
+        <EventsList
+          events={stats?.recentEvents || []}
+          setPage={setPage}
         />
       </div>
     </div>
