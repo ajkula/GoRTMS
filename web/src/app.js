@@ -13,7 +13,6 @@ import {
   Activity,
   LogOut,
   User,
-  ArrowLeft,
 } from 'lucide-react';
 
 // Importer les composants

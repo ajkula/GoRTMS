@@ -2,15 +2,17 @@ import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const MessageActivityChart = ({ data }) => {
-  // Prétraiter les données pour éviter les erreurs
+  // Convertir les données pour utiliser des chaînes de temps formatées comme clé
   const processedData = data.map(item => {
-    // S'assurer que chaque élément a un timestamp valide
+    const date = new Date(item.timestamp * 1000);
+    const timeString = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    
     return {
-      ...item,
-      // Conserver le timestamp brut pour l'axe X
-      timestamp: item.timestamp || Date.now() / 1000, // Utiliser l'heure actuelle si non défini
+      time: timeString, // Utiliser une chaîne de temps formatée au lieu du timestamp brut
       published: item.published || 0,
-      consumed: item.consumed || 0
+      consumed: item.consumed || 0,
+      // Conserver le timestamp original pour le tooltip
+      timestamp: item.timestamp
     };
   });
 
@@ -26,24 +28,16 @@ const MessageActivityChart = ({ data }) => {
               margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="timestamp" 
-                tickFormatter={(unixTime) => {
-                  const date = new Date(unixTime * 1000);
-                  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-                }}
-                scale="time"
-                type="number"
-                domain={['dataMin', 'dataMax']}
-              />
+              <XAxis dataKey="time" /> {/* Utiliser la chaîne de temps formatée */}
               <YAxis />
               <Tooltip 
                 labelFormatter={(value) => {
-                  if (value === undefined || value === null) {
-                    return 'Unknown time';
+                  const item = processedData.find(d => d.time === value);
+                  if (item && item.timestamp) {
+                    const date = new Date(item.timestamp * 1000);
+                    return `Time: ${date.toLocaleTimeString()}`;
                   }
-                  const date = new Date(value * 1000);
-                  return `Time: ${date.toLocaleTimeString()}`;
+                  return `Time: ${value}`;
                 }}
                 formatter={(value, name) => {
                   const val = value || 0;
