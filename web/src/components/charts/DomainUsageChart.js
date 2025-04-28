@@ -100,8 +100,8 @@ const DomainUsageChart = () => {
               <Bar 
                 yAxisId="left"
                 dataKey="messageCount" 
-                name="Messages" 
-                fill="#8884d8"
+                name="Messages"
+                fill={stringToColor("Messages")}
                 radius={[4, 4, 0, 0]}
               >
                 {domainData.map((entry, index) => (
@@ -111,15 +111,15 @@ const DomainUsageChart = () => {
               <Bar 
                 yAxisId="left"
                 dataKey="queueCount" 
-                name="Queues" 
-                fill="#82ca9d" 
+                name="Queues"
+                fill={stringToColor("Queues")}
                 radius={[4, 4, 0, 0]}
               />
               <Bar 
                 yAxisId="right"
                 dataKey="memoryUsage" 
-                name="Memory (MB)" 
-                fill="#ff7300" 
+                name="Memory (MB)"
+                fill={stringToColor("Memory")}
                 radius={[4, 4, 0, 0]}
               />
             </ComposedChart>

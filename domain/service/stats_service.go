@@ -302,7 +302,7 @@ func (s *StatsServiceImpl) RecordEvent(eventType, eventSeverity, resource string
 				oldSeverity := evt.Type
 				timeDiff := now.Unix() - evt.UnixTime
 
-				if eventSeverity == "error" || oldSeverity != "error" || timeDiff > 300 {
+				if eventSeverity == "warning" || oldSeverity != "warning" || timeDiff > 300 {
 					s.metrics.systemEvents[i].Data = data
 					s.metrics.systemEvents[i].Type = eventSeverity
 					s.metrics.systemEvents[i].Timestamp = now
@@ -622,11 +622,6 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 	// Inverser l'ordre pour avoir les plus récents en premier
 	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
 		events[i], events[j] = events[j], events[i]
-	}
-
-	// Limiter aux 10 événements les plus récents
-	if len(events) > 10 {
-		events = events[:10]
 	}
 
 	// Ajouter au résultat final

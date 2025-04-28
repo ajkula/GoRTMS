@@ -5,7 +5,9 @@ const DomainPieChart = ({ data }) => {
   const colors = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088fe', '#00C49F', '#FFBB28', '#FF8042'];
   
   // Transformer les données pour le pie chart
-  const chartData = data.map((domain, index) => ({
+  const chartData = data
+  .filter(domain => Boolean(Number(domain.messageCount)))
+  .map((domain, index) => ({
     name: domain.name,
     value: domain.messageCount || 0,
     color: colors[index % colors.length]

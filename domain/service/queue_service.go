@@ -222,6 +222,26 @@ func (s *QueueServiceImpl) DeleteQueue(ctx context.Context, domainName, queueNam
 		return ErrQueueNotFound
 	}
 
+	// Arrêter la ChannelQueue si elle existe
+	s.mu.Lock()
+	if domainQueues, exists := s.channelQueues[domainName]; exists {
+		if channelQueue, exists := domainQueues[queueName]; exists {
+			// On libère le mutex pendant l'opération potentiellement longue
+			s.mu.Unlock()
+			log.Printf("Stopping queue: %s.%s", domainName, queueName)
+			channelQueue.Stop()
+			log.Printf("Queue stopped: %s.%s", domainName, queueName)
+
+			// On le reprend pour mettre à jour la map
+			s.mu.Lock()
+			delete(domainQueues, queueName)
+			if len(domainQueues) == 0 {
+				delete(s.channelQueues, domainName)
+			}
+		}
+	}
+	s.mu.Unlock()
+
 	// Supprimer la file d'attente
 	delete(domain.Queues, queueName)
 
@@ -244,6 +264,42 @@ func (s *QueueServiceImpl) DeleteQueue(ctx context.Context, domainName, queueNam
 
 	// Mettre à jour le domaine
 	return s.domainRepo.StoreDomain(ctx, domain)
+}
+
+// StopDomainQueues arrête toutes les queues d'un domaine
+func (s *QueueServiceImpl) StopDomainQueues(ctx context.Context, domainName string) error {
+	s.mu.Lock()
+	queueMap, exists := s.channelQueues[domainName]
+	if !exists {
+		s.mu.Unlock()
+		return nil // Pas de queues pour ce domaine
+	}
+
+	// Copier les clés pour éviter de modifier la map pendant l'itération
+	queueNames := make([]string, 0, len(queueMap))
+	for qName := range queueMap {
+		queueNames = append(queueNames, qName)
+	}
+	s.mu.Unlock()
+
+	// Arrêter chaque queue
+	for _, qName := range queueNames {
+		s.mu.Lock()
+		cq, stillExists := queueMap[qName]
+		s.mu.Unlock()
+
+		if stillExists {
+			log.Printf("Stopping queue for domain deletion: %s.%s", domainName, qName)
+			cq.Stop()
+		}
+	}
+
+	// Supprimer toutes les références
+	s.mu.Lock()
+	delete(s.channelQueues, domainName)
+	s.mu.Unlock()
+
+	return nil
 }
 
 // ListQueues liste toutes les files d'attente d'un domaine

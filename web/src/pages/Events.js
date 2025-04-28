@@ -15,7 +15,7 @@ const Events = ({ onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Événements par page
-  const EVENTS_PER_PAGE = 20;
+  const EVENTS_PER_PAGE = 10;
   
   const fetchEvents = async () => {
     try {
@@ -46,7 +46,9 @@ const Events = ({ onBack }) => {
       }
       
       // Formater tous les événements
-      const formattedEvents = allEvents.map(event => ({
+      const formattedEvents = allEvents
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .map(event => ({
         id: event.id,
         type: event.type || 'info',
         message: formatEventMessage(event),

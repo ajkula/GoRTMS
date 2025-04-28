@@ -94,7 +94,7 @@ func main() {
 		ctx,
 		statsService,
 	)
-	domainService := service.NewDomainService(domainRepo, ctx)
+	domainService := service.NewDomainService(domainRepo, queueService, ctx)
 	routingService := service.NewRoutingService(domainRepo, ctx)
 
 	// Initialiser le service de monitoring des ressources

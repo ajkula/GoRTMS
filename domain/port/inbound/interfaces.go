@@ -53,6 +53,9 @@ type QueueService interface {
 	// GetChannelQueue récupère ou crée une ChannelQueue pour une file d'attente existante
 	GetChannelQueue(ctx context.Context, domainName, queueName string) (model.QueueHandler, error)
 
+	//StopDomainQueues arrête toutes les queues d'un domaine
+	StopDomainQueues(ctx context.Context, domainName string) error
+
 	// Cleanup nettoie les ressources utilisées par le service
 	Cleanup()
 }
