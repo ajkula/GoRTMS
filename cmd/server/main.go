@@ -147,8 +147,10 @@ func main() {
 		// Démarrer le serveur HTTP
 		httpAddr := fmt.Sprintf("%s:%d", cfg.HTTP.Address, cfg.HTTP.Port)
 		server := &http.Server{
-			Addr:    httpAddr,
-			Handler: router,
+			Addr:         httpAddr,
+			Handler:      router,
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 10 * time.Second,
 		}
 
 		go func() {
