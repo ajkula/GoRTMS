@@ -19,6 +19,12 @@ type MessageRepository interface {
 
 	// DeleteMessage supprime un message
 	DeleteMessage(ctx context.Context, domainName, queueName, messageID string) error
+
+	GetMessagesAfterID(
+		ctx context.Context,
+		domainName, queueName, startMessageID string,
+		limit int,
+	) ([]*model.Message, error)
 }
 
 // DomainRepository définit les opérations de stockage pour les domaines
@@ -61,4 +67,22 @@ type SubscriptionRegistry interface {
 
 	// NotifySubscribers notifie tous les abonnés d'un message
 	NotifySubscribers(domainName, queueName string, message *model.Message) error
+}
+
+// ConsumerGroupRepository définit les opérations pour les groupes
+type ConsumerGroupRepository interface {
+	//StoreOffset enregistre unoffset pour un groupe
+	StoreOffset(ctx context.Context, domainName, queueNamme, groupID, messageID string) error
+
+	// GetOffset récup. le dernier offset d'un group
+	GetOffset(ctx context.Context, domainName, queueName, groupID string) (string, error)
+
+	// RegisterConsumer enregistre unconsumer dans un groupe
+	RegisterConsumer(ctx context.Context, domainName, queueName, groupID, consumerID string) error
+
+	// RemoveConsumer supprime un consumerd'un groupe
+	RemoveConsumer(ctx context.Context, domainName, queueName, groupID, consumerID string) error
+
+	// ListGroups liste tous les groupes pour une queue
+	ListGroups(ctx context.Context, domainName, queueName string) ([]string, error)
 }

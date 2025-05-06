@@ -2,9 +2,18 @@ package inbound
 
 import (
 	"context"
+	"time"
 
 	"github.com/ajkula/GoRTMS/domain/model"
 )
+
+// ConsumeOptions définit les options pour la consommation
+type ConsumeOptions struct {
+	ResetOffset bool
+	StartFromID string
+	ConsumerID  string
+	Timeout     time.Duration
+}
 
 // MessageService définit les opérations sur les messages
 type MessageService interface {
@@ -19,6 +28,11 @@ type MessageService interface {
 
 	// UnsubscribeFromQueue se désinscrit d'une file d'attente
 	UnsubscribeFromQueue(domainName, queueName string, subscriptionID string) error
+
+	// ConsumeMessageWithGroup consomme un message avec gestion des offsets
+	ConsumeMessageWithGroup(ctx context.Context,
+		domainName, queueName, groupID string, options *ConsumeOptions,
+	) (*model.Message, error)
 }
 
 // DomainService définit les opérations sur les domaines

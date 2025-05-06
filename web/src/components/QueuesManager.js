@@ -18,6 +18,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
       setLoading(true);
       setError(null);
       const data = await api.getQueues(domainName);
+      console.log(data);
       setQueues(data);
     } catch (err) {
       console.error(`Error fetching queues for domain ${domainName}:`, err);
@@ -219,11 +220,11 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
                       <div className="text-xs text-gray-500">
                         {queue.config && (
                           <span className="space-x-2">
-                            <span className={`inline-flex px-2 py-1 rounded-full ${queue.config.isPersistent ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                              {queue.config.isPersistent ? 'Persistent' : 'Temporary'}
+                            <span className={`inline-flex px-2 py-1 rounded-full ${queue.config.IsPersistent ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                              {queue.config.IsPersistent ? 'Persistent' : 'Temporary'}
                             </span>
                             <span className="inline-flex px-2 py-1 rounded-full bg-blue-100 text-blue-800">
-                              {queue.config.deliveryMode || 'Broadcast'}
+                              {queue.config.DeliveryMode || 'Broadcast'}
                             </span>
                           </span>
                         )}

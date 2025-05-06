@@ -81,6 +81,7 @@ func main() {
 	// Initialiser les repositories (adaptateurs sortants)
 	messageRepo := memory.NewMessageRepository()
 	domainRepo := memory.NewDomainRepository()
+	consumerGroupRepo := memory.NewConsumerGroupRepository()
 	subscriptionReg := memory.NewSubscriptionRegistry()
 
 	// Créer les services (implémentations du domaine)
@@ -89,6 +90,7 @@ func main() {
 	messageService := service.NewMessageService(
 		domainRepo,
 		messageRepo,
+		consumerGroupRepo,
 		subscriptionReg,
 		queueService,
 		ctx,

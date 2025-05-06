@@ -9,8 +9,8 @@ const MessageActivityChart = ({ data }) => {
     
     return {
       time: timeString, // Utiliser une chaîne de temps formatée au lieu du timestamp brut
-      published: item.published || 0,
-      consumed: item.consumed || 0,
+      published: item.publishedTotal || 0,
+      consumed: item.consumedTotal || 0,
       // Conserver le timestamp original pour le tooltip
       timestamp: item.timestamp
     };
@@ -41,7 +41,7 @@ const MessageActivityChart = ({ data }) => {
                 }}
                 formatter={(value, name) => {
                   const val = value || 0;
-                  return [val.toFixed(2), name];
+                  return [val.toFixed(0), name];
                 }}
               />
               <Legend />

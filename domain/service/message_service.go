@@ -23,29 +23,32 @@ var (
 
 // MessageServiceImpl implémente le service des messages
 type MessageServiceImpl struct {
-	domainRepo      outbound.DomainRepository
-	messageRepo     outbound.MessageRepository
-	subscriptionReg outbound.SubscriptionRegistry
-	queueService    inbound.QueueService
-	statsService    inbound.StatsService
-	rootCtx         context.Context
+	domainRepo        outbound.DomainRepository
+	messageRepo       outbound.MessageRepository
+	consumerGroupRepo outbound.ConsumerGroupRepository
+	subscriptionReg   outbound.SubscriptionRegistry
+	queueService      inbound.QueueService
+	statsService      inbound.StatsService
+	rootCtx           context.Context
 }
 
 // NewMessageService crée un nouveau service de messages
 func NewMessageService(
 	domainRepo outbound.DomainRepository,
 	messageRepo outbound.MessageRepository,
+	consumerGroupRepo outbound.ConsumerGroupRepository,
 	subscriptionReg outbound.SubscriptionRegistry,
 	queueService inbound.QueueService,
 	rootCtx context.Context,
 	statsService ...inbound.StatsService,
 ) inbound.MessageService {
 	impl := &MessageServiceImpl{
-		domainRepo:      domainRepo,
-		messageRepo:     messageRepo,
-		subscriptionReg: subscriptionReg,
-		queueService:    queueService,
-		rootCtx:         rootCtx,
+		domainRepo:        domainRepo,
+		messageRepo:       messageRepo,
+		consumerGroupRepo: consumerGroupRepo,
+		subscriptionReg:   subscriptionReg,
+		queueService:      queueService,
+		rootCtx:           rootCtx,
 	}
 
 	if len(statsService) > 0 {
@@ -222,6 +225,85 @@ func (s *MessageServiceImpl) ConsumeMessage(
 	// Collecter les stats
 	if s.statsService != nil {
 		s.statsService.TrackMessageConsumed(domainName, queueName)
+	}
+
+	return message, nil
+}
+
+// ConsumeMessageWithGroup consomme avec gestion des groupes
+func (s *MessageServiceImpl) ConsumeMessageWithGroup(
+	ctx context.Context,
+	domainName, queueName, groupID string,
+	options *inbound.ConsumeOptions,
+) (*model.Message, error) {
+	if options == nil {
+		options = &inbound.ConsumeOptions{}
+	}
+
+	// Récupérer la channelQueue
+	channelQueue, err := s.queueService.GetChannelQueue(ctx, domainName, queueName)
+	if err != nil {
+		return nil, ErrQueueNotFound
+	}
+
+	// Déterminer l'offset de départ
+	var startMessageID string
+	if !options.ResetOffset && options.StartFromID == "" {
+		// Récupérer l'offset stocké pour ce groupe
+		startMessageID, _ = s.consumerGroupRepo.GetOffset(ctx, domainName, queueName, groupID)
+	} else if options.StartFromID != "" {
+		// Utiliser l'offset spécifié
+		startMessageID = options.StartFromID
+	}
+
+	// Enregistrer le consommateur si spécifié
+	if options.ConsumerID != "" {
+		_ = s.consumerGroupRepo.RegisterConsumer(ctx, domainName, queueName, groupID, options.ConsumerID)
+	}
+
+	var message *model.Message
+
+	// Si aucun offset spécifique, tenter de consommer depuis le canal
+	if startMessageID == "" {
+		message, err = channelQueue.Dequeue(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Si aucun message du canal ou offset spécifique, essayer le repository
+	if message == nil {
+		messages, err := s.messageRepo.GetMessagesAfterID(ctx, domainName, queueName, startMessageID, 1)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(messages) == 0 {
+			return nil, nil // Aucun message disponible
+		}
+
+		message = messages[0]
+
+		// Mode non-persistant: supprimer le message
+		queue := channelQueue.GetQueue()
+		if !queue.Config.IsPersistent || queue.Config.DeliveryMode == model.SingleConsumerMode {
+			_ = s.messageRepo.DeleteMessage(ctx, domainName, queueName, message.ID)
+
+			// Décrementer le compteur
+			if queue.MessageCount > 0 {
+				queue.MessageCount--
+			}
+		}
+	}
+
+	// Si un message a été trouvé, mettre à jour l'offset
+	if message != nil {
+		_ = s.consumerGroupRepo.StoreOffset(ctx, domainName, queueName, groupID, message.ID)
+
+		// Collecter les stats
+		if s.statsService != nil {
+			s.statsService.TrackMessageConsumed(domainName, queueName)
+		}
 	}
 
 	return message, nil

@@ -600,9 +600,14 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 	domainName := vars["domain"]
 	queueName := vars["queue"]
 
-	// Paramètres optionnels
-	timeoutStr := r.URL.Query().Get("timeout")
-	maxCountStr := r.URL.Query().Get("max")
+	// Extraction des paramètres
+	query := r.URL.Query()
+	timeoutStr := query.Get("timeout")
+	maxCountStr := query.Get("max")
+	groupID := query.Get("group")
+	resetStr := query.Get("reset")
+	startFromID := query.Get("start_from")
+	consumerID := query.Get("consumer")
 
 	timeout := 0
 	if timeoutStr != "" {
@@ -614,6 +619,11 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 		maxCount, _ = strconv.Atoi(maxCountStr)
 	}
 
+	resetOffset := false
+	if resetStr == "true" {
+		resetOffset = true
+	}
+
 	// Adapter pour le polling long si un timeout est spécifié
 	ctx := r.Context()
 	if timeout > 0 {
@@ -622,20 +632,46 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 	}
 
-	// Récupérer les messages
-	messages := make([]*model.Message, 0, maxCount)
-	for i := 0; i < maxCount; i++ {
-		message, err := h.messageService.ConsumeMessage(domainName, queueName)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+	var messages []*model.Message
+
+	// Utiliser les consumer groups si groupID est spécifié
+	if groupID != "" {
+		options := &inbound.ConsumeOptions{
+			ResetOffset: resetOffset,
+			StartFromID: startFromID,
+			ConsumerID:  consumerID,
+			Timeout:     time.Duration(timeout) * time.Second,
 		}
 
-		if message == nil {
-			break // Plus de messages disponibles
-		}
+		// Récupérer les messages avec gestion des groupes
+		for i := 0; i < maxCount; i++ {
+			message, err := h.messageService.ConsumeMessageWithGroup(ctx, domainName, queueName, groupID, options)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 
-		messages = append(messages, message)
+			if message == nil {
+				break // Plus de messages
+			}
+
+			messages = append(messages, message)
+		}
+	} else {
+		// Méthode originale sans groupe
+		for i := 0; i < maxCount; i++ {
+			message, err := h.messageService.ConsumeMessage(domainName, queueName)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			if message == nil {
+				break
+			}
+
+			messages = append(messages, message)
+		}
 	}
 
 	// Convertir les messages pour la réponse

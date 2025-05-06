@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -137,6 +138,73 @@ func (r *MessageRepository) GetMessages(
 	}
 
 	return messages, nil
+}
+
+// GetMessagesAfterID récupère les messages après un ID spécifique
+func (r *MessageRepository) GetMessagesAfterID(
+	ctx context.Context,
+	domainName, queueName, startMessageID string,
+	limit int,
+) ([]*model.Message, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Vérifier si le domaine et la queue existent
+	if _, exists := r.messages[domainName]; !exists {
+		return []*model.Message{}, nil
+	}
+	if _, exists := r.messages[domainName][queueName]; !exists {
+		return []*model.Message{}, nil
+	}
+
+	queue := r.messages[domainName][queueName]
+
+	// Récupérer tous les messages et les trier par timestamp
+	allMessages := make([]*model.Message, 0, len(queue))
+	for _, msg := range queue {
+		allMessages = append(allMessages, msg)
+	}
+
+	// Trier par timestamp (plus ancien en premier)
+	sort.Slice(allMessages, func(i, j int) bool {
+		return allMessages[i].Timestamp.Before(allMessages[j].Timestamp)
+	})
+
+	// Si pas d'ID de départ, retourner les premiers messages
+	if startMessageID == "" {
+		if len(allMessages) <= limit {
+			return allMessages, nil
+		}
+		return allMessages[:limit], nil
+	}
+
+	// Trouver la position du message de départ
+	startIndex := -1
+	for i, msg := range allMessages {
+		if msg.ID == startMessageID {
+			startIndex = i
+			break
+		}
+	}
+
+	// Si message de départ non trouvé, retourner vide
+	if startIndex == -1 {
+		return []*model.Message{}, nil
+	}
+
+	// Retourner les messages qui suivent
+	startIndex++ // Commencer après le message de départ
+
+	if startIndex >= len(allMessages) {
+		return []*model.Message{}, nil
+	}
+
+	endIndex := startIndex + limit
+	if endIndex > len(allMessages) {
+		endIndex = len(allMessages)
+	}
+
+	return allMessages[startIndex:endIndex], nil
 }
 
 // DeleteMessage supprime un message
