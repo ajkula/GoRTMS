@@ -217,6 +217,10 @@ func (s *MessageServiceImpl) ConsumeMessage(
 		queue := channelQueue.GetQueue()
 		if !queue.Config.IsPersistent || queue.Config.DeliveryMode == model.SingleConsumerMode {
 			if err := s.messageRepo.DeleteMessage(s.rootCtx, domainName, queueName, message.ID); err != nil {
+				// Décrementer le compteur
+				if queue.MessageCount > 0 {
+					queue.MessageCount--
+				}
 				return nil, err
 			}
 		}

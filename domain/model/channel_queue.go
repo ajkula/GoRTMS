@@ -185,10 +185,6 @@ func (cq *ChannelQueue) Dequeue(ctx context.Context) (*Message, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case msg := <-cq.messages:
-		// decrease MessageCount si mode non-persistant
-		if !cq.queue.Config.IsPersistent {
-			cq.queue.MessageCount--
-		}
 		return msg, nil
 	default:
 		// Essayer defaçon blocqunte
@@ -198,9 +194,6 @@ func (cq *ChannelQueue) Dequeue(ctx context.Context) (*Message, error) {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case msg := <-cq.messages:
-			if !cq.queue.Config.IsPersistent {
-				cq.queue.MessageCount--
-			}
 			return msg, nil
 		default:
 			return nil, nil // rien
@@ -277,11 +270,6 @@ func (cq *ChannelQueue) processMessages() {
 						// Libérer le sémaphore
 						<-cq.workerSem
 					}()
-
-					// Décrémenter le compteur si mode non-persistant
-					if !cq.queue.Config.IsPersistent {
-						cq.queue.MessageCount--
-					}
 
 					// Notifier les abonnés selon le mode de livraison
 					cq.mu.RLock()
