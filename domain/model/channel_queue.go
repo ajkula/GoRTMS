@@ -29,10 +29,23 @@ type ChannelQueue struct {
 	// Gestion des erreurs
 	retryQueue     chan *MessageWithRetry //File de msg à réessayer
 	circuitBreaker *CircuitBreaker
+
+	// Map des consumer groups
+	consumerGroups map[string]*ConsumerGroupState
+}
+
+type ConsumerGroupState struct {
+	GroupID      string
+	LastOffsetID string
+	Active       bool
 }
 
 // NewChannelQueue crée une nouvelle queue basée sur des channels
-func NewChannelQueue(queue *Queue, ctx context.Context, bufferSize int) *ChannelQueue {
+func NewChannelQueue(
+	queue *Queue,
+	ctx context.Context,
+	bufferSize int,
+) *ChannelQueue {
 	if bufferSize <= 0 {
 		bufferSize = 100 // default
 	}
@@ -94,6 +107,7 @@ func NewChannelQueue(queue *Queue, ctx context.Context, bufferSize int) *Channel
 		workerSem:      make(chan struct{}, workerCount),
 		retryQueue:     retryQueue,
 		circuitBreaker: cb,
+		consumerGroups: make(map[string]*ConsumerGroupState),
 	}
 }
 

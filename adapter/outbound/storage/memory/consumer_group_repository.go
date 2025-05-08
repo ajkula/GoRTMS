@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"slices"
+
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
 )
 
@@ -15,16 +17,18 @@ type ConsumerGroupRepository struct {
 	// Map Domain -> Queue -> GroupID -> LastTime
 	timestamps map[string]map[string]map[string]time.Time
 	// Map Domain -> Queue -> GroupID -> ConsumerIDs
-	consumers map[string]map[string]map[string][]string
-	mu        sync.RWMutex
+	consumers   map[string]map[string]map[string][]string
+	messageRepo outbound.MessageRepository
+	mu          sync.RWMutex
 }
 
 // NewConsumerGroupRepository crée un nouveau repository
-func NewConsumerGroupRepository() outbound.ConsumerGroupRepository {
+func NewConsumerGroupRepository(messageRepo outbound.MessageRepository) outbound.ConsumerGroupRepository {
 	return &ConsumerGroupRepository{
-		offsets:    make(map[string]map[string]map[string]string),
-		timestamps: make(map[string]map[string]map[string]time.Time),
-		consumers:  make(map[string]map[string]map[string][]string),
+		offsets:     make(map[string]map[string]map[string]string),
+		timestamps:  make(map[string]map[string]map[string]time.Time),
+		consumers:   make(map[string]map[string]map[string][]string),
+		messageRepo: messageRepo,
 	}
 }
 
@@ -102,10 +106,8 @@ func (r *ConsumerGroupRepository) RegisterConsumer(
 	}
 
 	// Vérifier si le consommateur est déjà enregistré
-	for _, id := range consumerList {
-		if id == consumerID {
-			return nil // Déjà enregistré
-		}
+	if slices.Contains(consumerList, consumerID) {
+		return nil // Déjà enregistré
 	}
 
 	// Ajouter le consommateur
@@ -119,6 +121,10 @@ func (r *ConsumerGroupRepository) RegisterConsumer(
 		r.timestamps[domainName][queueName] = make(map[string]time.Time)
 	}
 	r.timestamps[domainName][queueName][groupID] = time.Now()
+
+	// Enregistrer avec la matrice d'acquittement
+	matrix := r.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
+	matrix.RegisterGroup(groupID)
 
 	return nil
 }
@@ -160,6 +166,22 @@ func (r *ConsumerGroupRepository) RemoveConsumer(
 	if _, exists := r.timestamps[domainName]; exists {
 		if _, exists := r.timestamps[domainName][queueName]; exists {
 			r.timestamps[domainName][queueName][groupID] = time.Now()
+		}
+	}
+
+	// Si c'est le dernier consommateur du groupe, supprimer le groupe de la matrice
+	if _, exists := r.consumers[domainName]; exists {
+		if queueConsumers, exists := r.consumers[domainName][queueName]; exists {
+			if consumerList, exists := queueConsumers[groupID]; exists && len(consumerList) == 0 {
+				// Supprimer de la matrice d'acquittement
+				matrix := r.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
+				messagesToDelete := matrix.RemoveGroup(groupID)
+
+				// Supprimer les messages entièrement acquittés
+				for _, msgID := range messagesToDelete {
+					r.messageRepo.DeleteMessage(ctx, domainName, queueName, msgID)
+				}
+			}
 		}
 	}
 

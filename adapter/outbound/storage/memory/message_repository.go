@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -21,13 +22,40 @@ type MessageRepository struct {
 	// Map de domaines -> files d'attente -> messages
 	messages map[string]map[string]map[string]*model.Message
 	mu       sync.RWMutex
+
+	// Map des matrices d'acquittement par queue
+	ackMatrices map[string]*model.AckMatrix
+	ackMu       sync.RWMutex
 }
 
 // NewMessageRepository crée un nouveau repository de messages en mémoire
 func NewMessageRepository() outbound.MessageRepository {
 	return &MessageRepository{
-		messages: make(map[string]map[string]map[string]*model.Message),
+		messages:    make(map[string]map[string]map[string]*model.Message),
+		ackMatrices: make(map[string]*model.AckMatrix),
 	}
+}
+
+func (r *MessageRepository) GetOrCreateAckMatrix(domainName, queueName string) *model.AckMatrix {
+	r.ackMu.Lock()
+	defer r.ackMu.Unlock()
+
+	key := fmt.Sprintf("%s:%s", domainName, queueName)
+	matrix, exists := r.ackMatrices[key]
+	if !exists {
+		matrix = model.NewAckMatrix()
+		r.ackMatrices[key] = matrix
+	}
+
+	return matrix
+}
+
+func (r *MessageRepository) AcknowledgeMessage(
+	ctx context.Context,
+	domainName, queueName, groupID, messageID string,
+) (bool, error) {
+	matrix := r.GetOrCreateAckMatrix(domainName, queueName)
+	return matrix.Acknowledge(messageID, groupID), nil
 }
 
 // StoreMessage stocke un message

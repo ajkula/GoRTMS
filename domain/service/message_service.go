@@ -247,7 +247,7 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 	// Récupérer la channelQueue
 	channelQueue, err := s.queueService.GetChannelQueue(ctx, domainName, queueName)
 	if err != nil {
-		return nil, ErrQueueNotFound
+		return nil, err
 	}
 
 	// Déterminer l'offset de départ
@@ -287,22 +287,29 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 		}
 
 		message = messages[0]
+	}
 
-		// Mode non-persistant: supprimer le message
-		queue := channelQueue.GetQueue()
-		if !queue.Config.IsPersistent || queue.Config.DeliveryMode == model.SingleConsumerMode {
+	// Si un message a été trouvé, mettre à jour l'offset, acquitter automatiquement
+	if message != nil {
+		// Enregistrer l'offset comme avant
+		_ = s.consumerGroupRepo.StoreOffset(ctx, domainName, queueName, groupID, message.ID)
+
+		// Acquitter automatiquement le message
+		fullyAcked, err := s.messageRepo.AcknowledgeMessage(ctx, domainName, queueName, groupID, message.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Si le message est entièrement acquitté et que le mode n'est pas persistant, le supprimer
+		if fullyAcked {
 			_ = s.messageRepo.DeleteMessage(ctx, domainName, queueName, message.ID)
 
-			// Décrementer le compteur
+			// Mettre à jour le compteur
+			queue := channelQueue.GetQueue()
 			if queue.MessageCount > 0 {
 				queue.MessageCount--
 			}
 		}
-	}
-
-	// Si un message a été trouvé, mettre à jour l'offset
-	if message != nil {
-		_ = s.consumerGroupRepo.StoreOffset(ctx, domainName, queueName, groupID, message.ID)
 
 		// Collecter les stats
 		if s.statsService != nil {

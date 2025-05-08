@@ -25,6 +25,16 @@ type MessageRepository interface {
 		domainName, queueName, startMessageID string,
 		limit int,
 	) ([]*model.Message, error)
+
+	// GetOrCreateAckMatrix récupère ou crée une matrice d'acquittement pour une queue
+	GetOrCreateAckMatrix(domainName, queueName string) *model.AckMatrix
+
+	// AcknowledgeMessage marque un message comme acquitté par un groupe
+	// Retourne true si le message est entièrement acquitté par tous les groupes
+	AcknowledgeMessage(
+		ctx context.Context,
+		domainName, queueName, groupID, messageID string,
+	) (bool, error)
 }
 
 // DomainRepository définit les opérations de stockage pour les domaines

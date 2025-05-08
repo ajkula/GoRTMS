@@ -30,6 +30,7 @@ type Queue struct {
 // QueueConfig contient la configuration d'une file d'attente
 type QueueConfig struct {
 	// IsPersistent indique si les messages doivent être persistés
+	//  lorsqu'ils sont supprimés du repo via une dépendance
 	IsPersistent bool `yaml:"isPersistent"`
 
 	// MaxSize définit la taille maximale de la file d'attente (0 = illimité)
@@ -38,7 +39,7 @@ type QueueConfig struct {
 	// TTL définit la durée de vie des messages (0 = illimité)
 	TTL time.Duration `yaml:"ttl"`
 
-	// DeliveryMode définit le mode de livraison des messages
+	// DeliveryMode définit le mode de distribution des messages aux consommateurs
 	DeliveryMode DeliveryMode `yaml:"deliveryMode"`
 
 	// Nouveaux champs
