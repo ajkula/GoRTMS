@@ -55,6 +55,9 @@ func NewMessageService(
 		impl.statsService = statsService[0]
 	}
 
+	// Démarrer les tâches de nettoyage
+	impl.startCleanupTasks(rootCtx)
+
 	return impl
 }
 
@@ -135,14 +138,11 @@ func (s *MessageServiceImpl) PublishMessage(
 	}
 
 	// Enqueue le message dans la chan queue
-	if err := channelQueue.Enqueue(s.rootCtx, message); err != nil {
-		return err
-	}
+	// Essayer d'insérer sans bloquer, ignorer les erreurs de queue pleine
+	_ = channelQueue.Enqueue(s.rootCtx, message)
 
 	// Notifier les abonnés via le registry existant
-	if err := s.subscriptionReg.NotifySubscribers(domainName, queueName, message); err != nil {
-		return err
-	}
+	_ = s.subscriptionReg.NotifySubscribers(domainName, queueName, message)
 
 	// Appliquer les règles de routage si nécessaire
 	if routes, exists := domain.Routes[queueName]; exists {
@@ -185,53 +185,17 @@ func (s *MessageServiceImpl) PublishMessage(
 }
 
 // ConsumeMessage consomme un message d'une file d'attente
+// Simplifier ConsumeMessage pour utiliser la même logique que ConsumeMessageWithGroup
 func (s *MessageServiceImpl) ConsumeMessage(
 	domainName, queueName string,
 ) (*model.Message, error) {
-	// Récupérer la channelQueue
-	channelQueue, err := s.queueService.GetChannelQueue(s.rootCtx, domainName, queueName)
-	if err != nil {
-		return nil, ErrDomainNotFound
+	// Utiliser un ID de groupe temporaire pour compatibilité
+	tempGroupID := "temp-" + time.Now().Format("20060102-150405.999999999")
+	options := &inbound.ConsumeOptions{
+		ResetOffset: true, // Toujours lire depuis le début
 	}
 
-	// Tenter de consommer un message via la channelQueue
-	message, err := channelQueue.Dequeue(s.rootCtx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Si aucun message n'est dispo dans la channelQueue, essayer le repo
-	if message == nil {
-		messages, err := s.messageRepo.GetMessages(s.rootCtx, domainName, queueName, 1)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(messages) == 0 {
-			return nil, nil // rien
-		}
-
-		message = messages[0]
-
-		// mode non persistent supprime le message du repo
-		queue := channelQueue.GetQueue()
-		if !queue.Config.IsPersistent || queue.Config.DeliveryMode == model.SingleConsumerMode {
-			if err := s.messageRepo.DeleteMessage(s.rootCtx, domainName, queueName, message.ID); err != nil {
-				// Décrementer le compteur
-				if queue.MessageCount > 0 {
-					queue.MessageCount--
-				}
-				return nil, err
-			}
-		}
-	}
-
-	// Collecter les stats
-	if s.statsService != nil {
-		s.statsService.TrackMessageConsumed(domainName, queueName)
-	}
-
-	return message, nil
+	return s.ConsumeMessageWithGroup(s.rootCtx, domainName, queueName, tempGroupID, options)
 }
 
 // ConsumeMessageWithGroup consomme avec gestion des groupes
@@ -398,6 +362,45 @@ func (s *MessageServiceImpl) evaluateJSONPredicate(predicate model.JSONPredicate
 	}
 
 	return false
+}
+
+func (s *MessageServiceImpl) startCleanupTasks(ctx context.Context) {
+	// Nettoyer les messages orphelins périodiquement
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Parcourir les domaines et queues
+				domains, err := s.domainRepo.ListDomains(ctx)
+				if err != nil {
+					continue
+				}
+
+				for _, domain := range domains {
+					for queueName := range domain.Queues {
+						// Obtenir la matrice d'acquittement
+						matrix := s.messageRepo.GetOrCreateAckMatrix(domain.Name, queueName)
+
+						// Si aucun consumer group actif, supprimer tous les messages
+						// ou si la matrice a des messages sans groupes, les nettoyer
+						// (Ceci devrait être implémenté dans AckMatrix)
+						if matrix.GetActiveGroupCount() == 0 {
+							// Obtenir tous les messages et les supprimer
+							messages, _ := s.messageRepo.GetMessages(ctx, domain.Name, queueName, 1000)
+							for _, msg := range messages {
+								_ = s.messageRepo.DeleteMessage(ctx, domain.Name, queueName, msg.ID)
+							}
+						}
+					}
+				}
+			}
+		}
+	}()
 }
 
 func (s *MessageServiceImpl) Cleanup() {

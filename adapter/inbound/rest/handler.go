@@ -636,42 +636,28 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Utiliser les consumer groups si groupID est spécifié
 	if groupID != "" {
-		options := &inbound.ConsumeOptions{
-			ResetOffset: resetOffset,
-			StartFromID: startFromID,
-			ConsumerID:  consumerID,
-			Timeout:     time.Duration(timeout) * time.Second,
+		groupID = "temp-" + time.Now().Format("20060102-150405.999999999")
+	}
+	options := &inbound.ConsumeOptions{
+		ResetOffset: resetOffset,
+		StartFromID: startFromID,
+		ConsumerID:  consumerID,
+		Timeout:     time.Duration(timeout) * time.Second,
+	}
+
+	// Récupérer les messages avec gestion des groupes
+	for i := 0; i < maxCount; i++ {
+		message, err := h.messageService.ConsumeMessageWithGroup(ctx, domainName, queueName, groupID, options)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
-		// Récupérer les messages avec gestion des groupes
-		for i := 0; i < maxCount; i++ {
-			message, err := h.messageService.ConsumeMessageWithGroup(ctx, domainName, queueName, groupID, options)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			if message == nil {
-				break // Plus de messages
-			}
-
-			messages = append(messages, message)
+		if message == nil {
+			break // Plus de messages
 		}
-	} else {
-		// Méthode originale sans groupe
-		for i := 0; i < maxCount; i++ {
-			message, err := h.messageService.ConsumeMessage(domainName, queueName)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
 
-			if message == nil {
-				break
-			}
-
-			messages = append(messages, message)
-		}
+		messages = append(messages, message)
 	}
 
 	// Convertir les messages pour la réponse

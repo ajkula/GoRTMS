@@ -103,3 +103,10 @@ func (m *AckMatrix) Acknowledge(messageID, groupID string) bool {
 
 	return allAcked
 }
+
+// Exposer le nombre de groupes actifs
+func (m *AckMatrix) GetActiveGroupCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.groupCount
+}

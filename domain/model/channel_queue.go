@@ -118,57 +118,31 @@ func (cq *ChannelQueue) GetQueue() *Queue {
 
 // Enqueue ajoute un message à la queue
 func (cq *ChannelQueue) Enqueue(ctx context.Context, message *Message) error {
-	// Vérifier l'état du circuit breaker si activé
-	if cq.circuitBreaker != nil {
-		cq.circuitBreaker.mu.RLock()
-		state := cq.circuitBreaker.State
-		cq.circuitBreaker.mu.RUnlock()
-
-		if state == CircuitOpen {
-			return errors.New("circuit breaker open, message rejected")
-		}
+	// Vérifier l'état du circuit breaker
+	if cq.circuitBreaker != nil && cq.circuitBreaker.State == CircuitOpen {
+		return errors.New("circuit breaker open, message rejected")
 	}
 
+	// Tenter d'ajouter sans bloquer
 	select {
 	case <-cq.workerCtx.Done():
 		return ErrQueueClosed
 	case <-ctx.Done():
 		return ctx.Err()
 	case cq.messages <- message:
-		// Mettre à jour le compteur de messages
+		// Mettre à jour le compteur
 		cq.queue.MessageCount++
 
-		// Enregistrer un succès également ici
+		// Enregistrer un succès pour le circuit breaker
 		if cq.circuitBreaker != nil {
 			cq.recordSuccessInCircuitBreaker()
 		}
+
 		return nil
 	default:
-		// Si taille max et pleine
-		if cq.queue.Config.MaxSize > 0 && cq.queue.MessageCount >= cq.queue.Config.MaxSize {
-			return ErrQueueFull
-		}
-
-		// Sinon, essayer d'ajouter de manière bloquante avec timeout
-		timer := time.NewTimer(5000 * time.Millisecond)
-		defer timer.Stop()
-
-		select {
-		case <-cq.workerCtx.Done():
-			return ErrQueueClosed
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timer.C:
-			return ErrQueueFull
-		case cq.messages <- message:
-			cq.queue.MessageCount++
-
-			// Enregistrer un succès
-			if cq.circuitBreaker != nil {
-				cq.recordSuccessInCircuitBreaker()
-			}
-			return nil
-		}
+		// File pleine, mais ce n'est pas une erreur critique
+		// puisque le message est déjà dans le repository
+		return nil
 	}
 }
 
@@ -199,19 +173,15 @@ func (cq *ChannelQueue) Dequeue(ctx context.Context) (*Message, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case msg := <-cq.messages:
+		// Décrémenter le compteur car nous avons retiré un message du buffer
+		if cq.queue.MessageCount > 0 {
+			cq.queue.MessageCount--
+		}
 		return msg, nil
 	default:
-		// Essayer defaçon blocqunte
-		select {
-		case <-cq.workerCtx.Done():
-			return nil, ErrQueueClosed
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case msg := <-cq.messages:
-			return msg, nil
-		default:
-			return nil, nil // rien
-		}
+		// Si le channel est vide, retourner nil sans erreur
+		// Le service devra chercher dans le repository
+		return nil, nil // rien
 	}
 }
 
