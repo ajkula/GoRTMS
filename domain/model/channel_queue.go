@@ -15,13 +15,14 @@ var (
 )
 
 type ChannelQueue struct {
-	queue        *Queue
-	messages     chan *Message
-	subscribers  []MessageHandler
-	mu           sync.RWMutex
-	workerCtx    context.Context
-	workerCancel context.CancelFunc
-	bufferSize   int
+	queue           *Queue
+	messages        chan *Message
+	subscribers     []MessageHandler
+	workerCtx       context.Context
+	workerCancel    context.CancelFunc
+	bufferSize      int
+	messageProvider MessageProvider
+	domainName      string
 
 	wg        sync.WaitGroup //suivi des workers
 	workerSem chan struct{}  // Sémaphore pour limiter les goroutines concurrentes
@@ -32,10 +33,14 @@ type ChannelQueue struct {
 
 	// Map des consumer groups
 	consumerGroups map[string]*ConsumerGroupState
+	mu             sync.RWMutex
+	commandWorker  bool
 }
 
 type ConsumerGroupState struct {
 	GroupID      string
+	Messages     chan *Message // Canal spécifique au groupe pour les messages
+	Commands     chan int      // Canal pour les commandes (demandes de messages)
 	LastOffsetID string
 	Active       bool
 }
@@ -45,6 +50,7 @@ func NewChannelQueue(
 	queue *Queue,
 	ctx context.Context,
 	bufferSize int,
+	provider MessageProvider,
 ) *ChannelQueue {
 	if bufferSize <= 0 {
 		bufferSize = 100 // default
@@ -97,17 +103,19 @@ func NewChannelQueue(
 	}
 
 	return &ChannelQueue{
-		queue:          queue,
-		messages:       make(chan *Message, bufferSize),
-		subscribers:    make([]MessageHandler, 0),
-		workerCtx:      workerCtx,
-		workerCancel:   cancel,
-		bufferSize:     bufferSize,
-		wg:             sync.WaitGroup{},
-		workerSem:      make(chan struct{}, workerCount),
-		retryQueue:     retryQueue,
-		circuitBreaker: cb,
-		consumerGroups: make(map[string]*ConsumerGroupState),
+		queue:           queue,
+		messages:        make(chan *Message, bufferSize),
+		subscribers:     make([]MessageHandler, 0),
+		workerCtx:       workerCtx,
+		workerCancel:    cancel,
+		bufferSize:      bufferSize,
+		wg:              sync.WaitGroup{},
+		workerSem:       make(chan struct{}, workerCount),
+		retryQueue:      retryQueue,
+		circuitBreaker:  cb,
+		consumerGroups:  make(map[string]*ConsumerGroupState),
+		messageProvider: provider,
+		domainName:      queue.DomainName,
 	}
 }
 
@@ -182,6 +190,183 @@ func (cq *ChannelQueue) Dequeue(ctx context.Context) (*Message, error) {
 		// Si le channel est vide, retourner nil sans erreur
 		// Le service devra chercher dans le repository
 		return nil, nil // rien
+	}
+}
+
+// AddConsumerGroup ajoute un nouveau groupe de consommateurs
+func (cq *ChannelQueue) AddConsumerGroup(groupID string, lastOffset string) error {
+	cq.mu.Lock()
+	defer cq.mu.Unlock()
+
+	if _, exists := cq.consumerGroups[groupID]; exists {
+		return nil // Déjà existant
+	}
+
+	// Créer l'état du groupe avec ses propres canaux
+	bufSize := cq.bufferSize
+	if bufSize <= 0 {
+		bufSize = 100 // Valeur par défaut
+	}
+
+	group := &ConsumerGroupState{
+		GroupID:      groupID,
+		Messages:     make(chan *Message, bufSize),
+		Commands:     make(chan int, 10), // Tampon pour les commandes
+		LastOffsetID: lastOffset,
+		Active:       true,
+	}
+
+	cq.consumerGroups[groupID] = group
+
+	// Démarrer le worker de commandes si ce n'est pas déjà fait
+	if !cq.commandWorker {
+		cq.commandWorker = true
+		cq.wg.Add(1)
+		go cq.processCommands()
+	}
+
+	return nil
+}
+
+// processCommands traite les commandes des consumer groups
+func (cq *ChannelQueue) processCommands() {
+	defer cq.wg.Done()
+
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-cq.workerCtx.Done():
+			return
+
+		case <-ticker.C:
+			// Vérifier toutes les commandes des groupes
+			cq.mu.RLock()
+			for groupID, group := range cq.consumerGroups {
+				if !group.Active {
+					continue
+				}
+
+				// Essayer de lire une commande sans bloquer
+				select {
+				case count, ok := <-group.Commands:
+					if !ok {
+						continue
+					}
+					// Traiter la commande en dehors du verrou
+					go cq.fillGroupChannel(groupID, count)
+				default:
+					// Pas de commande en attente, continuer
+				}
+			}
+			cq.mu.RUnlock()
+		}
+	}
+}
+
+// fillGroupChannel remplit le canal de messages d'un groupe
+func (cq *ChannelQueue) fillGroupChannel(groupID string, count int) {
+	// Obtenir l'état du groupe
+	cq.mu.RLock()
+	group, exists := cq.consumerGroups[groupID]
+	if !exists || !group.Active {
+		cq.mu.RUnlock()
+		return
+	}
+	lastOffset := group.LastOffsetID
+	cq.mu.RUnlock()
+
+	// Utiliser le provider pour obtenir des messages
+	if cq.messageProvider == nil {
+		log.Printf("Warning: MessageProvider not set for queue %s", cq.queue.Name)
+		return
+	}
+
+	// Obtenir des messages depuis le provider
+	messages, err := cq.messageProvider.GetMessagesAfterID(
+		cq.workerCtx, cq.domainName, cq.queue.Name, lastOffset, count)
+
+	if err != nil {
+		log.Printf("Error getting messages: %v", err)
+		return
+	}
+
+	if len(messages) == 0 {
+		return
+	}
+
+	// Envoyer les messages au groupe
+	for _, msg := range messages {
+		select {
+		case <-cq.workerCtx.Done():
+			return
+		case group.Messages <- msg:
+			// Message envoyé avec succès
+		case <-time.After(100 * time.Millisecond):
+			return // Canal plein, arrêter
+		}
+	}
+}
+
+// RemoveConsumerGroup supprime un groupe de consommateurs
+func (cq *ChannelQueue) RemoveConsumerGroup(groupID string) {
+	cq.mu.Lock()
+	defer cq.mu.Unlock()
+
+	if group, exists := cq.consumerGroups[groupID]; exists {
+		group.Active = false
+
+		// Fermer les canaux
+		close(group.Messages)
+		close(group.Commands)
+
+		delete(cq.consumerGroups, groupID)
+	}
+}
+
+// RequestMessages demande des messages pour un groupe
+func (cq *ChannelQueue) RequestMessages(groupID string, count int) error {
+	cq.mu.RLock()
+	group, exists := cq.consumerGroups[groupID]
+	cq.mu.RUnlock()
+
+	if !exists || !group.Active {
+		return errors.New("consumer group not active")
+	}
+
+	// Envoyer la commande pour demander des messages
+	select {
+	case group.Commands <- count:
+		return nil
+	case <-time.After(100 * time.Millisecond):
+		return errors.New("command channel full")
+	}
+}
+
+// ConsumeMessage consomme un message pour un groupe spécifique
+func (cq *ChannelQueue) ConsumeMessage(groupID string, timeout time.Duration) (*Message, error) {
+	cq.mu.RLock()
+	group, exists := cq.consumerGroups[groupID]
+	cq.mu.RUnlock()
+
+	if !exists || !group.Active {
+		return nil, errors.New("consumer group not active")
+	}
+
+	// Essayer de lire un message avec timeout
+	select {
+	case <-cq.workerCtx.Done():
+		return nil, ErrQueueClosed
+	case msg, ok := <-group.Messages:
+		if !ok {
+			return nil, ErrQueueClosed
+		}
+		// Mettre à jour le dernier offset
+		group.LastOffsetID = msg.ID
+		return msg, nil
+	case <-time.After(timeout):
+		return nil, nil // Timeout, pas d'erreur
 	}
 }
 

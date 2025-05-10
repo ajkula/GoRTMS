@@ -21,6 +21,8 @@ var (
 	ErrSubscriptionFailed = errors.New("subscription failed")
 )
 
+var _ model.MessageProvider = (*MessageServiceImpl)(nil)
+
 // MessageServiceImpl implémente le service des messages
 type MessageServiceImpl struct {
 	domainRepo        outbound.DomainRepository
@@ -214,74 +216,80 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 		return nil, err
 	}
 
-	// Déterminer l'offset de départ
-	var startMessageID string
-	if !options.ResetOffset && options.StartFromID == "" {
-		// Récupérer l'offset stocké pour ce groupe
-		startMessageID, _ = s.consumerGroupRepo.GetOffset(ctx, domainName, queueName, groupID)
-	} else if options.StartFromID != "" {
-		// Utiliser l'offset spécifié
-		startMessageID = options.StartFromID
+	// Cast vers ChannelQueue pour accéder aux méthodes spécifiques
+	chQueue, ok := channelQueue.(*model.ChannelQueue)
+	if !ok {
+		return nil, errors.New("unexpected queue type")
 	}
 
-	// Enregistrer le consommateur si spécifié
-	if options.ConsumerID != "" {
+	// Obtenir le dernier offset
+	lastOffset, _ := s.consumerGroupRepo.GetOffset(ctx, domainName, queueName, groupID)
+
+	// Enregistrer le consumer group dans la channel queue si nécessaire
+	chQueue.AddConsumerGroup(groupID, lastOffset)
+
+	// Enregistrer le consommateur dans le repository
+	if options != nil && options.ConsumerID != "" {
 		_ = s.consumerGroupRepo.RegisterConsumer(ctx, domainName, queueName, groupID, options.ConsumerID)
 	}
 
-	var message *model.Message
+	// Toujours demander 5 messages par défaut
+	channelQueue.RequestMessages(groupID, 5)
 
-	// Si aucun offset spécifique, tenter de consommer depuis le canal
-	if startMessageID == "" {
-		message, err = channelQueue.Dequeue(ctx)
-		if err != nil {
-			return nil, err
-		}
+	// Définir le timeout
+	timeout := 1 * time.Second
+	if options != nil && options.Timeout > 0 {
+		timeout = options.Timeout
 	}
 
-	// Si aucun message du canal ou offset spécifique, essayer le repository
+	// Consommer un message
+	message, err := chQueue.ConsumeMessage(groupID, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	// Si aucun message n'est trouvé, essayer directement depuis le repository
 	if message == nil {
-		messages, err := s.messageRepo.GetMessagesAfterID(ctx, domainName, queueName, startMessageID, 1)
-		if err != nil {
+		messages, err := s.messageRepo.GetMessagesAfterID(ctx, domainName, queueName, lastOffset, 1)
+		if err != nil || len(messages) == 0 {
 			return nil, err
 		}
-
-		if len(messages) == 0 {
-			return nil, nil // Aucun message disponible
-		}
-
 		message = messages[0]
+
+		// Alimenter le canal du groupe avec d'autres messages pour les prochaines demandes
+		if len(messages) > 1 {
+			_ = chQueue.RequestMessages(groupID, 10) // Demander plus de messages en arrière-plan
+		}
 	}
 
-	// Si un message a été trouvé, mettre à jour l'offset, acquitter automatiquement
+	// Si un message a été trouvé, l'acquitter
 	if message != nil {
-		// Enregistrer l'offset comme avant
+		// Mettre à jour l'offset
 		_ = s.consumerGroupRepo.StoreOffset(ctx, domainName, queueName, groupID, message.ID)
 
-		// Acquitter automatiquement le message
-		fullyAcked, err := s.messageRepo.AcknowledgeMessage(ctx, domainName, queueName, groupID, message.ID)
-		if err != nil {
-			return nil, err
-		}
+		// Acquitter automatiquement
+		fullyAcked, _ := s.messageRepo.AcknowledgeMessage(ctx, domainName, queueName, groupID, message.ID)
 
-		// Si le message est entièrement acquitté et que le mode n'est pas persistant, le supprimer
+		// Si complètement acquitté, supprimer
 		if fullyAcked {
 			_ = s.messageRepo.DeleteMessage(ctx, domainName, queueName, message.ID)
-
-			// Mettre à jour le compteur
-			queue := channelQueue.GetQueue()
-			if queue.MessageCount > 0 {
-				queue.MessageCount--
-			}
 		}
 
-		// Collecter les stats
+		// Mettre à jour les statistiques
 		if s.statsService != nil {
 			s.statsService.TrackMessageConsumed(domainName, queueName)
 		}
 	}
 
 	return message, nil
+}
+
+func (s *MessageServiceImpl) GetMessagesAfterID(
+	ctx context.Context,
+	domainName, queueName, startMessageID string,
+	limit int,
+) ([]*model.Message, error) {
+	return s.messageRepo.GetMessagesAfterID(ctx, domainName, queueName, startMessageID, limit)
 }
 
 // SubscribeToQueue s'abonne à une file d'attente

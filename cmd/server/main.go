@@ -96,6 +96,12 @@ func main() {
 		ctx,
 		statsService,
 	)
+
+	// Injecter messageService dans queueService
+	if queueSvc, ok := queueService.(*service.QueueServiceImpl); ok {
+		queueSvc.SetMessageService(messageService)
+	}
+
 	domainService := service.NewDomainService(domainRepo, queueService, ctx)
 	routingService := service.NewRoutingService(domainRepo, ctx)
 

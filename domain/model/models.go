@@ -80,6 +80,12 @@ type QueueHandler interface {
 
 	// Stop arrête les workers et libère les ressources
 	Stop()
+
+	// pour le système à double canal
+	AddConsumerGroup(groupID string, lastOffset string) error
+	RemoveConsumerGroup(groupID string)
+	RequestMessages(groupID string, count int) error
+	ConsumeMessage(groupID string, timeout time.Duration) (*Message, error)
 }
 
 // RetryConfig définit laconfig desretentatives pour les messages échoués

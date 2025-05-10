@@ -33,6 +33,8 @@ type MessageService interface {
 	ConsumeMessageWithGroup(ctx context.Context,
 		domainName, queueName, groupID string, options *ConsumeOptions,
 	) (*model.Message, error)
+
+	GetMessagesAfterID(ctx context.Context, domainName, queueName, startMessageID string, limit int) ([]*model.Message, error)
 }
 
 // DomainService définit les opérations sur les domaines

@@ -18,11 +18,12 @@ var (
 
 // QueueServiceImpl implémente le service des files d'attente
 type QueueServiceImpl struct {
-	domainRepo    outbound.DomainRepository
-	statsService  inbound.StatsService
-	channelQueues map[string]map[string]*model.ChannelQueue // domainName -> queueName -> ChannelQueue
-	rootCtx       context.Context
-	mu            sync.RWMutex
+	domainRepo     outbound.DomainRepository
+	statsService   inbound.StatsService
+	channelQueues  map[string]map[string]*model.ChannelQueue // domainName -> queueName -> ChannelQueue
+	rootCtx        context.Context
+	messageService model.MessageProvider
+	mu             sync.RWMutex
 }
 
 // NewQueueService crée un nouveau service de files d'attente
@@ -42,6 +43,12 @@ func NewQueueService(
 	go svc.initializeExistingQueues()
 
 	return svc
+}
+
+func (s *QueueServiceImpl) SetMessageService(messageService model.MessageProvider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.messageService = messageService
 }
 
 // initializeExistingQueues initialise les channel queues pour les queues existantes
@@ -111,7 +118,7 @@ func (s *QueueServiceImpl) getOrCreateChannelQueue(domainName string, queue *mod
 	}
 
 	// Créer et démarrer la nouvelle queue
-	cq := model.NewChannelQueue(queue, s.rootCtx, bufferSize)
+	cq := model.NewChannelQueue(queue, s.rootCtx, bufferSize, s.messageService)
 	s.channelQueues[domainName][queue.Name] = cq
 
 	// Démarrer les workers

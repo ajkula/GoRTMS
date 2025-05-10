@@ -4,6 +4,20 @@ import (
 	"sync"
 )
 
+/*
+AckMatrix implémente un système de suivi des acquittements de messages par groupes de consommateurs.
+
+Architecture générale:
+1. Repository = source unique de vérité pour les messages
+2. ChannelQueue = buffer temporaire pour la distribution des messages
+3. AckMatrix = suivi des messages acquittés par chaque consumer group
+4. Le système de double canal sépare les commandes et les messages
+
+Un message n'est définitivement supprimé du repository que lorsque tous les consumer
+groups actifs l'ont acquitté. Si un consumer group est supprimé, ses acquittements
+sont automatiquement considérés comme complets.
+*/
+
 // AckMatrix suit quels consumer groups ont traité quels messages
 type AckMatrix struct {
 	mu sync.RWMutex
