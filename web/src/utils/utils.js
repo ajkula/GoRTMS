@@ -68,3 +68,29 @@ export const stringToColor = (str) => {
 
   return color;
 };
+
+export const formatDuration = (nanoseconds) => {
+  if (!nanoseconds || nanoseconds <= 0) {
+    return 'No TTL';
+  }
+  
+  // Convertir les nanosecondes en millisecondes
+  const ms = nanoseconds / 1000000;
+  
+  // Différentes unités de temps
+  const seconds = Math.floor(ms / 1000) % 60;
+  const minutes = Math.floor(ms / (1000 * 60)) % 60;
+  const hours = Math.floor(ms / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+  
+  // Construire la chaîne de formatage
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  } else if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  } else {
+    return `${seconds}s`;
+  }
+}

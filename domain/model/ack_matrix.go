@@ -124,3 +124,17 @@ func (m *AckMatrix) GetActiveGroupCount() int {
 	defer m.mu.RUnlock()
 	return m.groupCount
 }
+
+// GetPendingMessageCount retourne le nombre de messages en attente pour un groupe
+func (m *AckMatrix) GetPendingMessageCount(groupID string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	count := 0
+	for _, acks := range m.messages {
+		if !acks[groupID] {
+			count++
+		}
+	}
+	return count
+}

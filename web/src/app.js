@@ -22,6 +22,8 @@ import QueuesManager from './components/QueuesManager';
 import QueueMonitor from './components/QueueMonitor';
 import MessagePublisher from './components/MessagePublisher';
 import Routing from './pages/Routing';
+import ConsumerGroupsManager from './components/ConsumerGroupsManager';
+import ConsumerGroupDetail from './components/ConsumerGroupDetail';
 import Events from './pages/Events';
 import api from './api';
 
@@ -212,6 +214,16 @@ const Sidebar = ({ isOpen, toggleSidebar, setPage, currentPage }) => {
             </button>
 
             <button
+              onClick={() => setPage({ type: 'consumer-groups' })}
+              className={`flex items-center px-4 py-2 text-base font-medium rounded-md w-full text-left
+                ${currentPage.type === 'consumer-groups' || currentPage.type === 'consumer-group-detail' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}
+              `}
+            >
+              <User className="mr-3 h-5 w-5" />
+              Consumer Groups
+            </button>
+
+            <button
               onClick={() => setPage({ type: 'settings' })}
               className={`flex items-center px-4 py-2 text-base font-medium rounded-md w-full text-left
                 ${currentPage.type === 'settings' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}
@@ -303,6 +315,20 @@ const App = () => {
     setPage({ type: 'domain-routing', domainName });
   };
 
+  const handleSelectConsumerGroup = (domainName, queueName, groupID) => {
+    console.log({domainName, queueName, groupID})
+    setPage({
+      type: 'consumer-group-detail',
+      domainName,
+      queueName,
+      groupID
+    });
+  };
+
+  const handleBackToConsumerGroups = () => {
+    setPage({ type: 'consumer-groups' });
+  };
+
   // Fonction pour rendre la page active
   const renderPage = () => {
     switch (page.type) {
@@ -377,6 +403,27 @@ const App = () => {
       default:
         return (
           <Dashboard setPage={setPage} />
+        );
+      case 'consumer-groups':
+        return (
+          <div className="p-6">
+            <ConsumerGroupsManager
+              onSelectGroup={handleSelectConsumerGroup}
+              onBack={handleBackToDashboard}
+            />
+          </div>
+        );
+
+      case 'consumer-group-detail':
+        return (
+          <div className="p-6">
+            <ConsumerGroupDetail
+              domainName={page.domainName}
+              queueName={page.queueName}
+              groupID={page.groupID}
+              onBack={handleBackToConsumerGroups}
+            />
+          </div>
         );
     }
   };

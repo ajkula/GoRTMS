@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -215,9 +217,24 @@ func (r *MessageRepository) GetMessagesAfterID(
 		}
 	}
 
-	// Si message de départ non trouvé, retourner vide
+	// Si message de départ non trouvé, retourner les messages dont l'ID numérique est supérieur
 	if startIndex == -1 {
-		return []*model.Message{}, nil
+		// Extraire le numéro de séquence du startMessageID (ex: "msg-1747100000710942500-3551")
+		startSequence := extractSequence(startMessageID)
+
+		// Filtrer les messages dont le numéro de séquence est supérieur
+		resultMessages := []*model.Message{}
+		for _, msg := range allMessages {
+			if extractSequence(msg.ID) > startSequence {
+				resultMessages = append(resultMessages, msg)
+			}
+		}
+
+		// Limiter le nombre de résultats
+		if len(resultMessages) <= limit {
+			return resultMessages, nil
+		}
+		return resultMessages[:limit], nil
 	}
 
 	// Retourner les messages qui suivent
@@ -233,6 +250,18 @@ func (r *MessageRepository) GetMessagesAfterID(
 	}
 
 	return allMessages[startIndex:endIndex], nil
+}
+
+// Fonction helper pour extraire le numéro de séquence d'un ID
+func extractSequence(id string) int64 {
+	parts := strings.Split(id, "-")
+	if len(parts) >= 3 {
+		seq, err := strconv.ParseInt(parts[1], 10, 64)
+		if err == nil {
+			return seq
+		}
+	}
+	return 0
 }
 
 // DeleteMessage supprime un message

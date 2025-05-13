@@ -105,6 +105,13 @@ func main() {
 	domainService := service.NewDomainService(domainRepo, queueService, ctx)
 	routingService := service.NewRoutingService(domainRepo, ctx)
 
+	// Initialiser le ConsumerGroupService
+	consumerGroupService := service.NewConsumerGroupService(
+		consumerGroupRepo,
+		messageRepo,
+		ctx,
+	)
+
 	// Initialiser le service de monitoring des ressources
 	resourceMonitorService := service.NewResourceMonitorService(
 		domainRepo,
@@ -125,6 +132,8 @@ func main() {
 			routingService,
 			statsService,
 			resourceMonitorService,
+			consumerGroupService,
+			consumerGroupRepo,
 		)
 		restHandler.SetupRoutes(router)
 

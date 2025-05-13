@@ -2,11 +2,14 @@ package memory
 
 import (
 	"context"
+	"errors"
+	"log"
 	"sync"
 	"time"
 
 	"slices"
 
+	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
 )
 
@@ -16,6 +19,8 @@ type ConsumerGroupRepository struct {
 	offsets map[string]map[string]map[string]string
 	// Map Domain -> Queue -> GroupID -> LastTime
 	timestamps map[string]map[string]map[string]time.Time
+	// ttls stocke les TTL pour chaque groupe
+	ttls map[string]map[string]map[string]time.Duration
 	// Map Domain -> Queue -> GroupID -> ConsumerIDs
 	consumers   map[string]map[string]map[string][]string
 	messageRepo outbound.MessageRepository
@@ -28,6 +33,7 @@ func NewConsumerGroupRepository(messageRepo outbound.MessageRepository) outbound
 		offsets:     make(map[string]map[string]map[string]string),
 		timestamps:  make(map[string]map[string]map[string]time.Time),
 		consumers:   make(map[string]map[string]map[string][]string),
+		ttls:        make(map[string]map[string]map[string]time.Duration),
 		messageRepo: messageRepo,
 	}
 }
@@ -37,16 +43,35 @@ func (r *ConsumerGroupRepository) StoreOffset(
 	ctx context.Context,
 	domainName, queueName, groupID, messageID string,
 ) error {
+	if domainName == "" || queueName == "" || groupID == "" || messageID == "" {
+		return errors.New("all parameters must be non-empty")
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Créer les maps si nécessaire
+	// Protection supplémentaire contre nil maps
+	if r.offsets == nil {
+		log.Printf("WARNING: r.offsets was nil in StoreOffset - this should never happen!")
+		r.offsets = make(map[string]map[string]map[string]string)
+	}
+	if r.timestamps == nil {
+		log.Printf("WARNING: r.timestamps was nil in StoreOffset - this should never happen!")
+		r.timestamps = make(map[string]map[string]map[string]time.Time)
+	}
+
+	// Créer les maps si nécessaire - code existant
 	if _, exists := r.offsets[domainName]; !exists {
 		r.offsets[domainName] = make(map[string]map[string]string)
-		r.timestamps[domainName] = make(map[string]map[string]time.Time)
 	}
 	if _, exists := r.offsets[domainName][queueName]; !exists {
 		r.offsets[domainName][queueName] = make(map[string]string)
+	}
+
+	if _, exists := r.timestamps[domainName]; !exists {
+		r.timestamps[domainName] = make(map[string]map[string]time.Time)
+	}
+	if _, exists := r.timestamps[domainName][queueName]; !exists {
 		r.timestamps[domainName][queueName] = make(map[string]time.Time)
 	}
 
@@ -101,7 +126,7 @@ func (r *ConsumerGroupRepository) RegisterConsumer(
 	consumerList, exists := r.consumers[domainName][queueName][groupID]
 	if !exists {
 		// Créer une nouvelle liste de consommateurs
-		r.consumers[domainName][queueName][groupID] = []string{consumerID}
+		r.consumers[domainName][queueName][groupID] = []string{}
 		return nil
 	}
 
@@ -277,4 +302,142 @@ func (r *ConsumerGroupRepository) CleanupStaleGroups(
 	}
 
 	return nil
+}
+
+// GetGroupDetails récupère les détails d'un groupe spécifique
+func (r *ConsumerGroupRepository) GetGroupDetails(
+	ctx context.Context,
+	domainName, queueName, groupID string,
+) (*model.ConsumerGroup, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Vérifier si le groupe existe
+	if _, exists := r.consumers[domainName]; !exists {
+		return nil, errors.New("consumer group not found")
+	}
+	if _, exists := r.consumers[domainName][queueName]; !exists {
+		return nil, errors.New("consumer group not found")
+	}
+	consumerList, exists := r.consumers[domainName][queueName][groupID]
+	if !exists {
+		return nil, errors.New("consumer group not found")
+	}
+
+	// Récupérer l'offset
+	var lastOffset string
+	if _, exists := r.offsets[domainName]; exists {
+		if _, exists := r.offsets[domainName][queueName]; exists {
+			lastOffset = r.offsets[domainName][queueName][groupID]
+		}
+	}
+
+	// Récupérer le timestamp d'activité
+	var lastActivity time.Time
+	if _, exists := r.timestamps[domainName]; exists {
+		if _, exists := r.timestamps[domainName][queueName]; exists {
+			lastActivity = r.timestamps[domainName][queueName][groupID]
+		}
+	}
+
+	// Créer l'objet ConsumerGroup
+	group := &model.ConsumerGroup{
+		DomainName:   domainName,
+		QueueName:    queueName,
+		GroupID:      groupID,
+		LastOffset:   lastOffset,
+		ConsumerIDs:  make([]string, len(consumerList)),
+		LastActivity: lastActivity,
+		// Les autres champs ne sont pas disponibles dans l'implémentation actuelle
+	}
+
+	// Copier la liste des consumers
+	copy(group.ConsumerIDs, consumerList)
+
+	// Récupérer le TTL si disponible
+	ttl, err := r.GetTTL(ctx, domainName, queueName, groupID)
+	if err == nil {
+		group.TTL = ttl
+	}
+
+	// Calculer le nombre de messages en attente
+	matrix := r.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
+	group.MessageCount = matrix.GetPendingMessageCount(groupID)
+
+	return group, nil
+}
+
+// StoreTTL enregistre le TTL pour un groupe
+func (r *ConsumerGroupRepository) StoreTTL(
+	ctx context.Context,
+	domainName, queueName, groupID string,
+	ttl time.Duration,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Initialiser les maps si nécessaire
+	if _, exists := r.ttls[domainName]; !exists {
+		r.ttls = make(map[string]map[string]map[string]time.Duration)
+		r.ttls[domainName] = make(map[string]map[string]time.Duration)
+	}
+	if _, exists := r.ttls[domainName][queueName]; !exists {
+		r.ttls[domainName][queueName] = make(map[string]time.Duration)
+	}
+
+	// Stocker le TTL
+	r.ttls[domainName][queueName][groupID] = ttl
+	return nil
+}
+
+// GetTTL récupère le TTL d'un groupe
+func (r *ConsumerGroupRepository) GetTTL(
+	ctx context.Context,
+	domainName, queueName, groupID string,
+) (time.Duration, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Vérifier si le TTL est défini
+	if _, exists := r.ttls[domainName]; !exists {
+		return 0, errors.New("TTL not found")
+	}
+	if _, exists := r.ttls[domainName][queueName]; !exists {
+		return 0, errors.New("TTL not found")
+	}
+	ttl, exists := r.ttls[domainName][queueName][groupID]
+	if !exists {
+		return 0, errors.New("TTL not found")
+	}
+
+	return ttl, nil
+}
+
+// GetAllGroups récupère tous les consumer groups de tous les domaines
+func (r *ConsumerGroupRepository) GetAllGroups(ctx context.Context) ([]*model.ConsumerGroup, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var allGroups []*model.ConsumerGroup
+
+	// Parcourir toutes les entrées
+	for domainName, domainConsumers := range r.consumers {
+		for queueName, queueConsumers := range domainConsumers {
+			for groupID := range queueConsumers {
+				// Libérer le mutex pour appeler GetGroupDetails
+				r.mu.RUnlock()
+				group, err := r.GetGroupDetails(ctx, domainName, queueName, groupID)
+				r.mu.RLock() // Reprendre le mutex
+
+				if err != nil {
+					log.Printf("Error getting details for group %s: %v", groupID, err)
+					continue
+				}
+
+				allGroups = append(allGroups, group)
+			}
+		}
+	}
+
+	return allGroups, nil
 }

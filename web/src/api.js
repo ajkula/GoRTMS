@@ -272,7 +272,7 @@ const api = {
       };
     }
   },
-  
+
   // Récupérer les statistiques actuelles
   async getCurrentStats() {
     try {
@@ -314,6 +314,65 @@ const api = {
         estimatedMemory: 0
       };
     }
+  },
+
+  // Consumer Groups - API complète
+  async getAllConsumerGroups() {
+    return this.fetchJSON(`${API_BASE_URL}/consumer-groups`);
+  },
+
+  async getConsumerGroups(domainName, queueName) {
+    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups`);
+  },
+
+  async getConsumerGroup(domainName, queueName, groupID) {
+    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}`);
+  },
+
+  async createConsumerGroup(domainName, queueName, groupConfig) {
+    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(groupConfig)
+    });
+  },
+
+  async deleteConsumerGroup(domainName, queueName, groupID) {
+    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async updateConsumerGroupTTL(domainName, queueName, groupID, ttl) {
+    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}/ttl`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttl })
+    });
+  },
+
+  async getPendingMessages(domainName, queueName, groupID) {
+    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}/messages`);
+  },
+
+  // async acknowledgeMessage(domainName, queueName, groupID, messageID) {
+  //   return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}/messages/${messageID}/ack`, {
+  //     method: 'POST'
+  //   });
+  // },
+
+  async addConsumerToGroup(domainName, queueName, groupID, consumerID) {
+    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}/consumers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ consumerID })
+    });
+  },
+
+  async removeConsumerFromGroup(domainName, queueName, groupID, consumerID) {
+    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}/consumers/${consumerID}`, {
+      method: 'DELETE'
+    });
   },
 
   // Formater les données pour les graphiques

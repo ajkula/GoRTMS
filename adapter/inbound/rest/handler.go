@@ -17,17 +17,20 @@ import (
 
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
+	"github.com/ajkula/GoRTMS/domain/port/outbound"
 	"github.com/gorilla/mux"
 )
 
 // Handler gère les requêtes HTTP pour l'API REST
 type Handler struct {
-	messageService  inbound.MessageService
-	domainService   inbound.DomainService
-	queueService    inbound.QueueService
-	routingService  inbound.RoutingService
-	statsService    inbound.StatsService
-	resourceMonitor inbound.ResourceMonitorService
+	messageService       inbound.MessageService
+	domainService        inbound.DomainService
+	queueService         inbound.QueueService
+	routingService       inbound.RoutingService
+	statsService         inbound.StatsService
+	resourceMonitor      inbound.ResourceMonitorService
+	consumerGroupService inbound.ConsumerGroupService
+	consumerGroupRepo    outbound.ConsumerGroupRepository
 }
 
 // NewHandler crée un nouveau gestionnaire REST
@@ -38,14 +41,18 @@ func NewHandler(
 	routingService inbound.RoutingService,
 	statsService inbound.StatsService,
 	resourceMonitor inbound.ResourceMonitorService,
+	consumerGroupService inbound.ConsumerGroupService,
+	consumerGroupRepo outbound.ConsumerGroupRepository,
 ) *Handler {
 	return &Handler{
-		messageService:  messageService,
-		domainService:   domainService,
-		queueService:    queueService,
-		routingService:  routingService,
-		statsService:    statsService,
-		resourceMonitor: resourceMonitor,
+		messageService:       messageService,
+		domainService:        domainService,
+		queueService:         queueService,
+		routingService:       routingService,
+		statsService:         statsService,
+		resourceMonitor:      resourceMonitor,
+		consumerGroupService: consumerGroupService,
+		consumerGroupRepo:    consumerGroupRepo,
 	}
 }
 
@@ -76,6 +83,23 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 
 	// Simulation de routing
 	router.HandleFunc("/api/domains/{domain}/routes/test", h.testRoutingRules).Methods("POST")
+
+	// Route globale pour tous les consumer groups
+	router.HandleFunc("/api/consumer-groups", h.listAllConsumerGroups).Methods("GET")
+
+	// Routes pour les consumer groups d'une queue spécifique
+	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups", h.listConsumerGroups).Methods("GET")
+	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups", h.createConsumerGroup).Methods("POST")
+	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}", h.getConsumerGroup).Methods("GET")
+	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}", h.deleteConsumerGroup).Methods("DELETE")
+	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/ttl", h.updateConsumerGroupTTL).Methods("PUT")
+
+	// Routes pour les messages en attente
+	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/messages", h.getPendingMessages).Methods("GET")
+
+	// Routes pour les consumers d'un groupe
+	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers", h.addConsumerToGroup).Methods("POST")
+	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers/{consumer}", h.removeConsumerFromGroup).Methods("DELETE")
 
 	// Route pour les stats
 	router.HandleFunc("/api/stats", h.getStats).Methods("GET")
@@ -635,7 +659,7 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 	var messages []*model.Message
 
 	// Utiliser les consumer groups si groupID est spécifié
-	if groupID != "" {
+	if groupID == "" {
 		groupID = "temp-" + time.Now().Format("20060102-150405.999999999")
 	}
 	options := &inbound.ConsumeOptions{
