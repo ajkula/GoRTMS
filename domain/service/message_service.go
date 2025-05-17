@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ajkula/GoRTMS/domain/model"
@@ -186,20 +187,6 @@ func (s *MessageServiceImpl) PublishMessage(
 	return nil
 }
 
-// ConsumeMessage consomme un message d'une file d'attente
-// Simplifier ConsumeMessage pour utiliser la même logique que ConsumeMessageWithGroup
-func (s *MessageServiceImpl) ConsumeMessage(
-	domainName, queueName string,
-) (*model.Message, error) {
-	// Utiliser un ID de groupe temporaire pour compatibilité
-	tempGroupID := "temp-" + time.Now().Format("20060102-150405.999999999")
-	options := &inbound.ConsumeOptions{
-		ResetOffset: true, // Toujours lire depuis le début
-	}
-
-	return s.ConsumeMessageWithGroup(s.rootCtx, domainName, queueName, tempGroupID, options)
-}
-
 // ConsumeMessageWithGroup consomme avec gestion des groupes
 func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 	ctx context.Context,
@@ -222,19 +209,21 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 		return nil, errors.New("unexpected queue type")
 	}
 
-	// Obtenir le dernier offset
-	lastOffset, _ := s.consumerGroupRepo.GetOffset(ctx, domainName, queueName, groupID)
+	// Obtenir la position
+	position, err := s.consumerGroupRepo.GetPosition(ctx, domainName, queueName, groupID)
+	if err != nil {
+		log.Printf("Error getting position: %v", err)
+	}
+	log.Printf("[DEBUG] Consuming with group=%s, starting from position=%d",
+		groupID, position)
 
-	// Enregistrer le consumer group dans la channel queue si nécessaire
-	chQueue.AddConsumerGroup(groupID, lastOffset)
+	// Enregistrer le consumer group dans la channel queue
+	chQueue.AddConsumerGroup(groupID, position)
 
 	// Enregistrer le consommateur dans le repository
 	if options != nil && options.ConsumerID != "" {
 		_ = s.consumerGroupRepo.RegisterConsumer(ctx, domainName, queueName, groupID, options.ConsumerID)
 	}
-
-	// Toujours demander 5 messages par défaut
-	channelQueue.RequestMessages(groupID, 5)
 
 	// Définir le timeout
 	timeout := 1 * time.Second
@@ -242,37 +231,85 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 		timeout = options.Timeout
 	}
 
-	// Consommer un message
-	message, err := chQueue.ConsumeMessage(groupID, timeout)
+	// Vérifier si des messages sont déjà dans le canal du groupe
+	message, err := chQueue.ConsumeMessage(groupID, 50*time.Millisecond)
 	if err != nil {
-		return nil, err
+		log.Printf("chQueue.ConsumeMessage(%s, 50*time.Millisecond) ERR: %v", groupID, err)
+	}
+	if message == nil {
+		// Si aucun message dans le canal, demander d'en récupérer
+		channelQueue.RequestMessages(groupID, 5)
+
+		// Puis attendre un message avec le timeout complet
+		message, err = chQueue.ConsumeMessage(groupID, timeout)
+		if err != nil {
+			log.Printf("chQueue.ConsumeMessage(%s, %d) ERR: %v", groupID, timeout, err)
+		}
 	}
 
-	// Si aucun message n'est trouvé, essayer directement depuis le repository
+	// Si toujours aucun message, essayer directement depuis le repository
 	if message == nil {
-		messages, err := s.messageRepo.GetMessagesAfterID(ctx, domainName, queueName, lastOffset, 1)
+		log.Printf("[DEBUG] Appel à GetMessagesAfterIndex avec startIndex=%d", position)
+		messages, err := s.messageRepo.GetMessagesAfterIndex(ctx, domainName, queueName, position, 1)
 		if err != nil || len(messages) == 0 {
 			return nil, err
 		}
 		message = messages[0]
 
-		// Alimenter le canal du groupe avec d'autres messages pour les prochaines demandes
+		// Alimenter le canal du groupe avec d'autres messages
 		if len(messages) > 1 {
-			_ = chQueue.RequestMessages(groupID, 10) // Demander plus de messages en arrière-plan
+			_ = chQueue.RequestMessages(groupID, 10)
 		}
 	}
 
-	// Si un message a été trouvé, l'acquitter
+	// Si un message a été trouvé, l'acquitter et mettre à jour la position
 	if message != nil {
-		// Mettre à jour l'offset
-		_ = s.consumerGroupRepo.StoreOffset(ctx, domainName, queueName, groupID, message.ID)
+		// Mettre à jour le timestamp d'activité du groupe
+		if repo, ok := s.consumerGroupRepo.(interface {
+			UpdateLastActivity(ctx context.Context, domainName, queueName, groupID string) error
+		}); ok {
+			if err = repo.UpdateLastActivity(ctx, domainName, queueName, groupID); err != nil {
+				log.Printf("Error updating last activity: %v", err)
+			}
+		}
+
+		// Trouver l'index du message
+		index, err := s.messageRepo.GetIndexByMessageID(ctx, domainName, queueName, message.ID)
+		if err != nil {
+			log.Printf("domainName=%s queueName=%s message.ID=%s Err: %v", domainName, queueName, message.ID, err)
+		} else {
+			// Stocker l'index du prochain message comme position
+			newPosition := index + 1
+			if err := s.consumerGroupRepo.StorePosition(ctx, domainName, queueName, groupID, newPosition); err != nil {
+				log.Printf("Position not stored for group %s: %d, Err: %v", groupID, newPosition, err)
+				return nil, err
+			}
+
+			// IMPORTANT: Mettre à jour la position interne APRÈS avoir stocké dans le repository
+			chQueue.UpdateConsumerGroupPosition(groupID, newPosition)
+
+			log.Printf("[DEBUG] Message consumed ID=%s, Index=%d, Stored next position=%d",
+				message.ID, index, newPosition)
+		}
 
 		// Acquitter automatiquement
-		fullyAcked, _ := s.messageRepo.AcknowledgeMessage(ctx, domainName, queueName, groupID, message.ID)
+		fullyAcked, err := s.messageRepo.AcknowledgeMessage(ctx, domainName, queueName, groupID, message.ID)
+		if err != nil {
+			log.Printf("Ack problem: %s", message.ID)
+		}
 
 		// Si complètement acquitté, supprimer
 		if fullyAcked {
-			_ = s.messageRepo.DeleteMessage(ctx, domainName, queueName, message.ID)
+			if err := s.messageRepo.DeleteMessage(ctx, domainName, queueName, message.ID); err != nil {
+				// Ignorer spécifiquement l'erreur "message not found"
+				if err.Error() == "message not found" {
+					log.Printf("Message already deleted: %s", message.ID)
+				} else {
+					log.Printf("Message not deleted: %s, Err: %v", message.ID, err)
+				}
+			} else {
+				log.Printf("Message deleted: %s", message.ID)
+			}
 		}
 
 		// Mettre à jour les statistiques
@@ -284,12 +321,15 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 	return message, nil
 }
 
-func (s *MessageServiceImpl) GetMessagesAfterID(
+func (s *MessageServiceImpl) GetMessagesAfterIndex(
 	ctx context.Context,
-	domainName, queueName, startMessageID string,
+	domainName, queueName string,
+	startIndex int64,
 	limit int,
 ) ([]*model.Message, error) {
-	return s.messageRepo.GetMessagesAfterID(ctx, domainName, queueName, startMessageID, limit)
+	// Simplement déléguer au repository
+	log.Printf("[DEBUG] Appel à GetMessagesAfterIndex avec startIndex=%d", startIndex)
+	return s.messageRepo.GetMessagesAfterIndex(ctx, domainName, queueName, startIndex, limit)
 }
 
 // SubscribeToQueue s'abonne à une file d'attente
@@ -373,6 +413,15 @@ func (s *MessageServiceImpl) evaluateJSONPredicate(predicate model.JSONPredicate
 }
 
 func (s *MessageServiceImpl) startCleanupTasks(ctx context.Context) {
+	// Structure pour suivre la dernière fois qu'une queue a été vue sans consumer groups
+	type QueueInactivity struct {
+		firstEmptyTime time.Time
+		checked        bool
+	}
+
+	queueInactivity := make(map[string]map[string]*QueueInactivity) // domainName -> queueName -> inactivity
+	var inactivityMu sync.Mutex
+
 	// Nettoyer les messages orphelins périodiquement
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute)
@@ -383,29 +432,66 @@ func (s *MessageServiceImpl) startCleanupTasks(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				inactivityMu.Lock()
+
 				// Parcourir les domaines et queues
 				domains, err := s.domainRepo.ListDomains(ctx)
 				if err != nil {
+					inactivityMu.Unlock()
 					continue
 				}
 
 				for _, domain := range domains {
-					for queueName := range domain.Queues {
-						// Obtenir la matrice d'acquittement
-						matrix := s.messageRepo.GetOrCreateAckMatrix(domain.Name, queueName)
+					// Initialiser la map pour ce domaine si nécessaire
+					if _, exists := queueInactivity[domain.Name]; !exists {
+						queueInactivity[domain.Name] = make(map[string]*QueueInactivity)
+					}
 
-						// Si aucun consumer group actif, supprimer tous les messages
-						// ou si la matrice a des messages sans groupes, les nettoyer
-						// (Ceci devrait être implémenté dans AckMatrix)
-						if matrix.GetActiveGroupCount() == 0 {
+					for queueName := range domain.Queues {
+						// Initialiser l'entrée pour cette queue si nécessaire
+						if _, exists := queueInactivity[domain.Name][queueName]; !exists {
+							queueInactivity[domain.Name][queueName] = &QueueInactivity{}
+						}
+
+						inactivityInfo := queueInactivity[domain.Name][queueName]
+
+						// Vérifier s'il existe des consumer groups
+						groupIDs, err := s.consumerGroupRepo.ListGroups(ctx, domain.Name, queueName)
+
+						if err == nil && len(groupIDs) > 0 {
+							// Il y a des consumer groups, réinitialiser le tracking
+							inactivityInfo.firstEmptyTime = time.Time{} // Zero time
+							inactivityInfo.checked = false
+							continue
+						}
+
+						// Pas de consumer groups, vérifier depuis combien de temps
+						now := time.Now()
+
+						if inactivityInfo.firstEmptyTime.IsZero() {
+							// Premier constat d'absence de consumer groups
+							inactivityInfo.firstEmptyTime = now
+							log.Printf("Queue %s.%s sans consumer groups, début du tracking", domain.Name, queueName)
+						} else if now.Sub(inactivityInfo.firstEmptyTime) > 24*time.Hour && !inactivityInfo.checked {
+							// Sans consumer groups depuis plus de 24h, nettoyer
+							log.Printf("Nettoyage de la queue %s.%s (inactive depuis >24h)", domain.Name, queueName)
+
 							// Obtenir tous les messages et les supprimer
-							messages, _ := s.messageRepo.GetMessages(ctx, domain.Name, queueName, 1000)
+							messages, _ := s.messageRepo.GetMessagesAfterIndex(ctx, domain.Name, queueName, 0, 1000)
 							for _, msg := range messages {
 								_ = s.messageRepo.DeleteMessage(ctx, domain.Name, queueName, msg.ID)
 							}
+
+							// Nettoyer aussi indexToID
+							s.messageRepo.ClearQueueIndices(ctx, domain.Name, queueName)
+
+							// Marquer comme vérifiée pour éviter de nettoyer à chaque cycle
+							inactivityInfo.checked = true
 						}
 					}
 				}
+
+				inactivityMu.Unlock()
 			}
 		}
 	}()

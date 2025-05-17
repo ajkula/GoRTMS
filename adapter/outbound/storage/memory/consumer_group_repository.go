@@ -16,7 +16,7 @@ import (
 // ConsumerGroupRepository implémente le repository en mémoire
 type ConsumerGroupRepository struct {
 	// Map Domain -> Queue -> GroupID -> Offset
-	offsets map[string]map[string]map[string]string
+	positions map[string]map[string]map[string]int64
 	// Map Domain -> Queue -> GroupID -> LastTime
 	timestamps map[string]map[string]map[string]time.Time
 	// ttls stocke les TTL pour chaque groupe
@@ -30,7 +30,7 @@ type ConsumerGroupRepository struct {
 // NewConsumerGroupRepository crée un nouveau repository
 func NewConsumerGroupRepository(messageRepo outbound.MessageRepository) outbound.ConsumerGroupRepository {
 	return &ConsumerGroupRepository{
-		offsets:     make(map[string]map[string]map[string]string),
+		positions:   make(map[string]map[string]map[string]int64),
 		timestamps:  make(map[string]map[string]map[string]time.Time),
 		consumers:   make(map[string]map[string]map[string][]string),
 		ttls:        make(map[string]map[string]map[string]time.Duration),
@@ -38,12 +38,12 @@ func NewConsumerGroupRepository(messageRepo outbound.MessageRepository) outbound
 	}
 }
 
-// StoreOffset enregistre un offset pour un groupe
-func (r *ConsumerGroupRepository) StoreOffset(
+// StorePosition enregistre un offset pour un groupe
+func (r *ConsumerGroupRepository) StorePosition(
 	ctx context.Context,
-	domainName, queueName, groupID, messageID string,
+	domainName, queueName, groupID string, position int64,
 ) error {
-	if domainName == "" || queueName == "" || groupID == "" || messageID == "" {
+	if domainName == "" || queueName == "" || groupID == "" {
 		return errors.New("all parameters must be non-empty")
 	}
 
@@ -51,21 +51,21 @@ func (r *ConsumerGroupRepository) StoreOffset(
 	defer r.mu.Unlock()
 
 	// Protection supplémentaire contre nil maps
-	if r.offsets == nil {
-		log.Printf("WARNING: r.offsets was nil in StoreOffset - this should never happen!")
-		r.offsets = make(map[string]map[string]map[string]string)
+	if r.positions == nil {
+		log.Printf("WARNING: r.positions was nil in StorePosition - this should never happen!")
+		r.positions = make(map[string]map[string]map[string]int64)
 	}
 	if r.timestamps == nil {
-		log.Printf("WARNING: r.timestamps was nil in StoreOffset - this should never happen!")
+		log.Printf("WARNING: r.timestamps was nil in StorePosition - this should never happen!")
 		r.timestamps = make(map[string]map[string]map[string]time.Time)
 	}
 
 	// Créer les maps si nécessaire - code existant
-	if _, exists := r.offsets[domainName]; !exists {
-		r.offsets[domainName] = make(map[string]map[string]string)
+	if _, exists := r.positions[domainName]; !exists {
+		r.positions[domainName] = make(map[string]map[string]int64)
 	}
-	if _, exists := r.offsets[domainName][queueName]; !exists {
-		r.offsets[domainName][queueName] = make(map[string]string)
+	if _, exists := r.positions[domainName][queueName]; !exists {
+		r.positions[domainName][queueName] = make(map[string]int64)
 	}
 
 	if _, exists := r.timestamps[domainName]; !exists {
@@ -75,33 +75,46 @@ func (r *ConsumerGroupRepository) StoreOffset(
 		r.timestamps[domainName][queueName] = make(map[string]time.Time)
 	}
 
+	// Ajouter cette vérification:
+	currentPosition, exists := r.positions[domainName][queueName][groupID]
+	if exists && position <= currentPosition {
+		log.Printf("[WARN] Ignoring position regression for group=%s: current=%d, attempted=%d",
+			groupID, currentPosition, position)
+		return nil
+	}
+
 	// Stocker l'offset et le timestamp
-	r.offsets[domainName][queueName][groupID] = messageID
+	r.positions[domainName][queueName][groupID] = position
 	r.timestamps[domainName][queueName][groupID] = time.Now()
+	log.Printf("[DEBUG] Storing position for group=%s: value=%d", groupID, position)
 
 	return nil
 }
 
-// GetOffset récupère le dernier offset d'un groupe
-func (r *ConsumerGroupRepository) GetOffset(
+// GetPosition récupère le dernier offset d'un groupe
+func (r *ConsumerGroupRepository) GetPosition(
 	ctx context.Context,
 	domainName, queueName, groupID string,
-) (string, error) {
+) (int64, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	// Vérifier si l'offset existe
-	if _, exists := r.offsets[domainName]; !exists {
-		return "", nil
+	if _, exists := r.positions[domainName]; !exists {
+		log.Printf("Domain not found in offsets: %v", domainName)
+		return 0, nil
 	}
-	if _, exists := r.offsets[domainName][queueName]; !exists {
-		return "", nil
+	if _, exists := r.positions[domainName][queueName]; !exists {
+		log.Printf("Queue not found in domain: %v", queueName)
+		return 0, nil
 	}
 
-	offset, exists := r.offsets[domainName][queueName][groupID]
+	offset, exists := r.positions[domainName][queueName][groupID]
 	if !exists {
-		return "", nil
+		log.Printf("Group not found in queue: %v  [%v]", groupID, offset)
+		return 0, nil
 	}
+	log.Printf("[DEBUG] Getting offset for group=%s: returning %d", groupID, offset)
 
 	return offset, nil
 }
@@ -224,7 +237,7 @@ func (r *ConsumerGroupRepository) ListGroups(
 	result := make([]string, 0)
 
 	// Vérifier les offsets
-	if offsets, exists := r.offsets[domainName]; exists {
+	if offsets, exists := r.positions[domainName]; exists {
 		if queueOffsets, exists := offsets[queueName]; exists {
 			for groupID := range queueOffsets {
 				result = append(result, groupID)
@@ -258,23 +271,37 @@ func (r *ConsumerGroupRepository) ListGroups(
 // CleanupStaleGroups nettoie les groupes inactifs
 func (r *ConsumerGroupRepository) CleanupStaleGroups(
 	ctx context.Context,
-	olderThan time.Duration,
+	defaultInactivityPeriod time.Duration,
 ) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	now := time.Now()
-	threshold := now.Add(-olderThan)
+	groupsRemoved := 0
 
 	// Parcourir les timestamps pour trouver les groupes inactifs
 	for domainName, domainTimestamps := range r.timestamps {
 		for queueName, queueTimestamps := range domainTimestamps {
 			for groupID, lastActive := range queueTimestamps {
+				// Déterminer la période d'inactivité pour ce groupe
+				inactivityPeriod := defaultInactivityPeriod
+
+				// Si le groupe a un TTL configuré, l'utiliser à la place
+				if ttl, err := r.GetTTL(ctx, domainName, queueName, groupID); err == nil && ttl > 0 {
+					inactivityPeriod = ttl
+				}
+
+				// Calculer le seuil avec la période appropriée
+				threshold := now.Add(-inactivityPeriod)
+
 				if lastActive.Before(threshold) {
+					log.Printf("Nettoyage du consumer group %s.%s.%s (inactif depuis %v)",
+						domainName, queueName, groupID, now.Sub(lastActive))
+
 					// Supprimer le groupe des offsets
-					if _, exists := r.offsets[domainName]; exists {
-						if _, exists := r.offsets[domainName][queueName]; exists {
-							delete(r.offsets[domainName][queueName], groupID)
+					if _, exists := r.positions[domainName]; exists {
+						if _, exists := r.positions[domainName][queueName]; exists {
+							delete(r.positions[domainName][queueName], groupID)
 						}
 					}
 
@@ -287,6 +314,17 @@ func (r *ConsumerGroupRepository) CleanupStaleGroups(
 
 					// Supprimer le timestamp
 					delete(queueTimestamps, groupID)
+
+					// Supprimer de la matrice d'acquittement et traiter les messages
+					matrix := r.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
+					messagesToDelete := matrix.RemoveGroup(groupID)
+
+					// Supprimer les messages entièrement acquittés
+					for _, msgID := range messagesToDelete {
+						r.messageRepo.DeleteMessage(ctx, domainName, queueName, msgID)
+					}
+
+					groupsRemoved++
 				}
 			}
 
@@ -299,6 +337,10 @@ func (r *ConsumerGroupRepository) CleanupStaleGroups(
 		if len(domainTimestamps) == 0 {
 			delete(r.timestamps, domainName)
 		}
+	}
+
+	if groupsRemoved > 0 {
+		log.Printf("Nettoyage terminé: %d consumer groups supprimés", groupsRemoved)
 	}
 
 	return nil
@@ -325,10 +367,10 @@ func (r *ConsumerGroupRepository) GetGroupDetails(
 	}
 
 	// Récupérer l'offset
-	var lastOffset string
-	if _, exists := r.offsets[domainName]; exists {
-		if _, exists := r.offsets[domainName][queueName]; exists {
-			lastOffset = r.offsets[domainName][queueName][groupID]
+	var lastPosition int64
+	if _, exists := r.positions[domainName]; exists {
+		if _, exists := r.positions[domainName][queueName]; exists {
+			lastPosition = r.positions[domainName][queueName][groupID]
 		}
 	}
 
@@ -345,7 +387,7 @@ func (r *ConsumerGroupRepository) GetGroupDetails(
 		DomainName:   domainName,
 		QueueName:    queueName,
 		GroupID:      groupID,
-		LastOffset:   lastOffset,
+		Position:     lastPosition,
 		ConsumerIDs:  make([]string, len(consumerList)),
 		LastActivity: lastActivity,
 		// Les autres champs ne sont pas disponibles dans l'implémentation actuelle
@@ -440,4 +482,25 @@ func (r *ConsumerGroupRepository) GetAllGroups(ctx context.Context) ([]*model.Co
 	}
 
 	return allGroups, nil
+}
+
+// UpdateLastActivity met à jour le timestamp d'activité d'un groupe
+func (r *ConsumerGroupRepository) UpdateLastActivity(
+	ctx context.Context,
+	domainName, queueName, groupID string,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Créer les maps si nécessaire
+	if _, exists := r.timestamps[domainName]; !exists {
+		r.timestamps[domainName] = make(map[string]map[string]time.Time)
+	}
+	if _, exists := r.timestamps[domainName][queueName]; !exists {
+		r.timestamps[domainName][queueName] = make(map[string]time.Time)
+	}
+
+	// Mettre à jour le timestamp
+	r.timestamps[domainName][queueName][groupID] = time.Now()
+	return nil
 }

@@ -35,14 +35,17 @@ type ChannelQueue struct {
 	consumerGroups map[string]*ConsumerGroupState
 	mu             sync.RWMutex
 	commandWorker  bool
+
+	pendingFetches map[string]bool // groupID -> isCurrentlyFetching
+	fetchMu        sync.Mutex
 }
 
 type ConsumerGroupState struct {
-	GroupID      string
-	Messages     chan *Message // Canal spécifique au groupe pour les messages
-	Commands     chan int      // Canal pour les commandes (demandes de messages)
-	LastOffsetID string
-	Active       bool
+	GroupID  string
+	Messages chan *Message // Canal spécifique au groupe pour les messages
+	Commands chan int      // Canal pour les commandes (demandes de messages)
+	Position int64
+	Active   bool
 }
 
 // NewChannelQueue crée une nouvelle queue basée sur des channels
@@ -116,6 +119,7 @@ func NewChannelQueue(
 		consumerGroups:  make(map[string]*ConsumerGroupState),
 		messageProvider: provider,
 		domainName:      queue.DomainName,
+		pendingFetches:  make(map[string]bool),
 	}
 }
 
@@ -194,7 +198,7 @@ func (cq *ChannelQueue) Dequeue(ctx context.Context) (*Message, error) {
 }
 
 // AddConsumerGroup ajoute un nouveau groupe de consommateurs
-func (cq *ChannelQueue) AddConsumerGroup(groupID string, lastOffset string) error {
+func (cq *ChannelQueue) AddConsumerGroup(groupID string, lastIndex int64) error {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
 
@@ -209,11 +213,11 @@ func (cq *ChannelQueue) AddConsumerGroup(groupID string, lastOffset string) erro
 	}
 
 	group := &ConsumerGroupState{
-		GroupID:      groupID,
-		Messages:     make(chan *Message, bufSize),
-		Commands:     make(chan int, 10), // Tampon pour les commandes
-		LastOffsetID: lastOffset,
-		Active:       true,
+		GroupID:  groupID,
+		Messages: make(chan *Message, bufSize),
+		Commands: make(chan int, 10), // Tampon pour les commandes
+		Position: lastIndex,
+		Active:   true,
 	}
 
 	cq.consumerGroups[groupID] = group
@@ -265,28 +269,57 @@ func (cq *ChannelQueue) processCommands() {
 	}
 }
 
+// UpdateConsumerGroupPosition met à jour l'index interne du groupe
+func (q *ChannelQueue) UpdateConsumerGroupPosition(groupID string, position int64) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if group, exists := q.consumerGroups[groupID]; exists {
+		if position > group.Position {
+			group.Position = position
+			log.Printf("[DEBUG] Updated consumer group %s position to %d", groupID, position)
+		}
+	}
+}
+
 // fillGroupChannel remplit le canal de messages d'un groupe
 func (cq *ChannelQueue) fillGroupChannel(groupID string, count int) {
-	// Obtenir l'état du groupe
+	// Vérifier si fetch en cours pour éviter les appels concurrents
+	cq.fetchMu.Lock()
+	if cq.pendingFetches[groupID] {
+		cq.fetchMu.Unlock()
+		return // Déjà en cours de récupération
+	}
+	cq.pendingFetches[groupID] = true
+	cq.fetchMu.Unlock()
+
+	// Garantir le nettoyage à la sortie
+	defer func() {
+		cq.fetchMu.Lock()
+		delete(cq.pendingFetches, groupID)
+		cq.fetchMu.Unlock()
+	}()
+
+	// Obtenir l'état du groupe de façon thread-safe
 	cq.mu.RLock()
 	group, exists := cq.consumerGroups[groupID]
 	if !exists || !group.Active {
 		cq.mu.RUnlock()
 		return
 	}
-	lastOffset := group.LastOffsetID
+	position := group.Position
 	cq.mu.RUnlock()
 
-	// Utiliser le provider pour obtenir des messages
-	if cq.messageProvider == nil {
-		log.Printf("Warning: MessageProvider not set for queue %s", cq.queue.Name)
+	// Vérifier si le canal de messages a déjà des éléments
+	// Si oui, ne pas récupérer plus de messages jusqu'à ce qu'il soit vidé
+	if len(group.Messages) > 0 {
 		return
 	}
 
-	// Obtenir des messages depuis le provider
-	messages, err := cq.messageProvider.GetMessagesAfterID(
-		cq.workerCtx, cq.domainName, cq.queue.Name, lastOffset, count)
-
+	// Récupérer les messages
+	log.Printf("[DEBUG] Fetching messages for group=%s from position=%d", groupID, position)
+	messages, err := cq.messageProvider.GetMessagesAfterIndex(
+		cq.workerCtx, cq.domainName, cq.queue.Name, position, count)
 	if err != nil {
 		log.Printf("Error getting messages: %v", err)
 		return
@@ -296,7 +329,7 @@ func (cq *ChannelQueue) fillGroupChannel(groupID string, count int) {
 		return
 	}
 
-	// Envoyer les messages au groupe
+	// Traitement des messages
 	for _, msg := range messages {
 		select {
 		case <-cq.workerCtx.Done():
@@ -304,6 +337,8 @@ func (cq *ChannelQueue) fillGroupChannel(groupID string, count int) {
 		case group.Messages <- msg:
 			// Message envoyé avec succès
 		case <-time.After(100 * time.Millisecond):
+			// diagnostiquer si le canal est bloqué
+			log.Printf("[WARN] Canal de messages plein pour group=%s", groupID)
 			return // Canal plein, arrêter
 		}
 	}
@@ -354,6 +389,11 @@ func (cq *ChannelQueue) ConsumeMessage(groupID string, timeout time.Duration) (*
 		return nil, errors.New("consumer group not active")
 	}
 
+	messagesInChannel := len(group.Messages)
+	if messagesInChannel > 0 {
+		log.Printf("[DEBUG] Canal du groupe %s contient %d messages", groupID, messagesInChannel)
+	}
+
 	// Essayer de lire un message avec timeout
 	select {
 	case <-cq.workerCtx.Done():
@@ -362,8 +402,6 @@ func (cq *ChannelQueue) ConsumeMessage(groupID string, timeout time.Duration) (*
 		if !ok {
 			return nil, ErrQueueClosed
 		}
-		// Mettre à jour le dernier offset
-		group.LastOffsetID = msg.ID
 		return msg, nil
 	case <-time.After(timeout):
 		return nil, nil // Timeout, pas d'erreur

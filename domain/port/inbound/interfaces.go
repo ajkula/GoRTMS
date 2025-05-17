@@ -9,7 +9,6 @@ import (
 
 // ConsumeOptions définit les options pour la consommation
 type ConsumeOptions struct {
-	ResetOffset bool
 	StartFromID string
 	ConsumerID  string
 	Timeout     time.Duration
@@ -19,9 +18,6 @@ type ConsumeOptions struct {
 type MessageService interface {
 	// PublishMessage publie un message dans une file d'attente
 	PublishMessage(domainName, queueName string, message *model.Message) error
-
-	// ConsumeMessage consomme un message d'une file d'attente
-	ConsumeMessage(domainName, queueName string) (*model.Message, error)
 
 	// SubscribeToQueue s'abonne à une file d'attente
 	SubscribeToQueue(domainName, queueName string, handler model.MessageHandler) (string, error)
@@ -34,7 +30,7 @@ type MessageService interface {
 		domainName, queueName, groupID string, options *ConsumeOptions,
 	) (*model.Message, error)
 
-	GetMessagesAfterID(ctx context.Context, domainName, queueName, startMessageID string, limit int) ([]*model.Message, error)
+	GetMessagesAfterIndex(ctx context.Context, domainName, queueName string, startIndex int64, limit int) ([]*model.Message, error)
 }
 
 // DomainService définit les opérations sur les domaines

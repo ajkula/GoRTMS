@@ -15,17 +15,17 @@ type MessageRepository interface {
 	// GetMessage récupère un message par son ID
 	GetMessage(ctx context.Context, domainName, queueName, messageID string) (*model.Message, error)
 
-	// GetMessages récupère plusieurs messages
-	GetMessages(ctx context.Context, domainName, queueName string, limit int) ([]*model.Message, error)
-
 	// DeleteMessage supprime un message
 	DeleteMessage(ctx context.Context, domainName, queueName, messageID string) error
 
-	GetMessagesAfterID(
+	// GetMessagesAfterIndex récupère les messages à partir d'un index donné
+	// Si startIndex=0, comportement équivalent à l'ancienne méthode GetMessages
+	GetMessagesAfterIndex(
 		ctx context.Context,
-		domainName, queueName, startMessageID string,
+		domainName, queueName string, startIndex int64,
 		limit int,
 	) ([]*model.Message, error)
+	GetIndexByMessageID(ctx context.Context, domainName, queueName, messageID string) (int64, error)
 
 	// GetOrCreateAckMatrix récupère ou crée une matrice d'acquittement pour une queue
 	GetOrCreateAckMatrix(domainName, queueName string) *model.AckMatrix
@@ -36,6 +36,12 @@ type MessageRepository interface {
 		ctx context.Context,
 		domainName, queueName, groupID, messageID string,
 	) (bool, error)
+
+	// ClearQueueIndices nettoie toutes les références d'index pour une queue spécifique
+	ClearQueueIndices(
+		ctx context.Context,
+		domainName, queueName string,
+	)
 }
 
 // DomainRepository définit les opérations de stockage pour les domaines
@@ -83,10 +89,10 @@ type SubscriptionRegistry interface {
 // ConsumerGroupRepository définit les opérations pour les groupes
 type ConsumerGroupRepository interface {
 	//StoreOffset enregistre unoffset pour un groupe
-	StoreOffset(ctx context.Context, domainName, queueNamme, groupID, messageID string) error
+	StorePosition(ctx context.Context, domainName, queueNamme, groupID string, index int64) error
 
 	// GetOffset récup. le dernier offset d'un group
-	GetOffset(ctx context.Context, domainName, queueName, groupID string) (string, error)
+	GetPosition(ctx context.Context, domainName, queueName, groupID string) (int64, error)
 
 	// RegisterConsumer enregistre unconsumer dans un groupe
 	RegisterConsumer(ctx context.Context, domainName, queueName, groupID, consumerID string) error

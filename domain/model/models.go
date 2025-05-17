@@ -82,7 +82,7 @@ type QueueHandler interface {
 	Stop()
 
 	// pour le système à double canal
-	AddConsumerGroup(groupID string, lastOffset string) error
+	AddConsumerGroup(groupID string, lastIndex int64) error
 	RemoveConsumerGroup(groupID string)
 	RequestMessages(groupID string, count int) error
 	ConsumeMessage(groupID string, timeout time.Duration) (*Message, error)

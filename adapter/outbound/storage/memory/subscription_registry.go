@@ -152,9 +152,6 @@ func (r *SubscriptionRegistry) NotifySubscribers(
 
 // generateSubscriptionID génère un ID unique pour un abonnement
 func generateSubscriptionID() string {
-	// Initialiser le générateur de nombres aléatoires
-	rand.Seed(time.Now().UnixNano())
-
 	// Générer un ID aléatoire
 	return fmt.Sprintf("sub-%d-%d", time.Now().UnixNano(), rand.Intn(10000))
 }

@@ -379,7 +379,7 @@ func (s *Server) ConsumeMessages(
 	// Récupérer les messages
 	var messages []*model.Message
 	for i := 0; i < int(req.MaxMessages); i++ {
-		message, err := s.messageService.ConsumeMessage(req.DomainName, req.QueueName)
+		message, err := s.messageService.ConsumeMessageWithGroup(ctx, req.DomainName, req.QueueName, "", &inbound.ConsumeOptions{})
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "Failed to consume message: %v", err)
 		}

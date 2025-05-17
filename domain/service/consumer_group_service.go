@@ -213,13 +213,8 @@ func (s *ConsumerGroupServiceImpl) getGroupDetails(
 	}
 
 	// Sinon, construire manuellement à partir des informations disponibles
-	offset, err := s.consumerGroupRepo.GetOffset(ctx, domainName, queueName, groupID)
+	position, err := s.consumerGroupRepo.GetPosition(ctx, domainName, queueName, groupID)
 	if err != nil {
-		return nil, err
-	}
-
-	// Si aucun offset n'est trouvé, le groupe n'existe peut-être pas
-	if offset == "" {
 		// Vérifier si le groupe existe en récupérant la liste des groupes
 		groups, err := s.consumerGroupRepo.ListGroups(ctx, domainName, queueName)
 		if err != nil {
@@ -283,7 +278,7 @@ func (s *ConsumerGroupServiceImpl) getGroupDetails(
 		DomainName:   domainName,
 		QueueName:    queueName,
 		GroupID:      groupID,
-		LastOffset:   offset,
+		Position:     position,
 		ConsumerIDs:  consumerIDs,  // Vide si non disponible
 		TTL:          ttl,          // Zéro si non disponible
 		CreatedAt:    createdAt,    // Valeur zéro si non disponible
@@ -304,11 +299,11 @@ func (s *ConsumerGroupServiceImpl) startCleanupTask(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				// Contexte annulé, arrêter la tâche
 				return
 			case <-ticker.C:
-				// Exécuter le nettoyage
-				if err := s.CleanupStaleGroups(ctx, 0); err != nil {
+				// Utiliser une durée raisonnable pour définir l'inactivité (1 heure)
+				// ATTENTION: olderThan était 0, ce qui supprimait immédiatement TOUS les groupes!
+				if err := s.CleanupStaleGroups(ctx, 1*time.Hour); err != nil {
 					log.Printf("Error cleaning up stale consumer groups: %v", err)
 				}
 			}

@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
-	"strconv"
-	"strings"
+	"log"
 	"sync"
-	"time"
+
+	"slices"
 
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
@@ -22,8 +21,9 @@ var (
 // MessageRepository implémente un repository de messages en mémoire
 type MessageRepository struct {
 	// Map de domaines -> files d'attente -> messages
-	messages map[string]map[string]map[string]*model.Message
-	mu       sync.RWMutex
+	messages  map[string]map[string]map[string]*model.Message
+	indexToID map[string]map[string]map[int64]string
+	mu        sync.RWMutex
 
 	// Map des matrices d'acquittement par queue
 	ackMatrices map[string]*model.AckMatrix
@@ -34,6 +34,7 @@ type MessageRepository struct {
 func NewMessageRepository() outbound.MessageRepository {
 	return &MessageRepository{
 		messages:    make(map[string]map[string]map[string]*model.Message),
+		indexToID:   make(map[string]map[string]map[int64]string),
 		ackMatrices: make(map[string]*model.AckMatrix),
 	}
 }
@@ -60,7 +61,7 @@ func (r *MessageRepository) AcknowledgeMessage(
 	return matrix.Acknowledge(messageID, groupID), nil
 }
 
-// StoreMessage stocke un message
+// StoreMessage stocke un message et lui attribue un index séquentiel
 func (r *MessageRepository) StoreMessage(
 	ctx context.Context,
 	domainName, queueName string,
@@ -72,28 +73,28 @@ func (r *MessageRepository) StoreMessage(
 	// Créer les maps si nécessaire
 	if _, exists := r.messages[domainName]; !exists {
 		r.messages[domainName] = make(map[string]map[string]*model.Message)
+		r.indexToID[domainName] = make(map[string]map[int64]string)
 	}
 	if _, exists := r.messages[domainName][queueName]; !exists {
 		r.messages[domainName][queueName] = make(map[string]*model.Message)
+		r.indexToID[domainName][queueName] = make(map[int64]string)
+	}
+
+	// Déterminer le prochain index
+	nextIndex := int64(0)
+	if _, exists := r.indexToID[domainName][queueName]; exists {
+		for idx := range r.indexToID[domainName][queueName] {
+			if idx >= nextIndex {
+				nextIndex = idx + 1
+			}
+		}
 	}
 
 	// Stocker le message
 	r.messages[domainName][queueName][message.ID] = message
 
-	// Démarrer une goroutine pour nettoyer les messages expirés si TTL > 0
-	if ttl, ok := message.Metadata["ttl"].(int64); ok && ttl > 0 {
-		go func(msgID string) {
-			time.Sleep(time.Duration(ttl) * time.Millisecond)
-			r.mu.Lock()
-			defer r.mu.Unlock()
-
-			if queues, exists := r.messages[domainName]; exists {
-				if queue, exists := queues[queueName]; exists {
-					delete(queue, msgID)
-				}
-			}
-		}(message.ID)
-	}
+	// Associer l'index au message ID
+	r.indexToID[domainName][queueName][nextIndex] = message.ID
 
 	return nil
 }
@@ -123,145 +124,101 @@ func (r *MessageRepository) GetMessage(
 	return message, nil
 }
 
-// GetMessages récupère plusieurs messages
-func (r *MessageRepository) GetMessages(
+// GetMessagesAfterIndex récupère les messages à partir d'un index donné
+// Remplace les anciennes méthodes GetMessages et GetMessagesAfterID:
+// - Pour l'équivalent de GetMessages, utiliser startIndex=0
+// - Pour l'équivalent de GetMessagesAfterID, convertir l'ID en index d'abord
+func (r *MessageRepository) GetMessagesAfterIndex(
 	ctx context.Context,
 	domainName, queueName string,
+	startIndex int64,
 	limit int,
 ) ([]*model.Message, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Vérifier si le domaine et la file d'attente existent
-	if _, exists := r.messages[domainName]; !exists {
+	log.Printf("[TRACE] GetMessagesAfterIndex appelé avec startIndex=%d",
+		startIndex)
+
+	// Vérifier si le domaine et la queue existent
+	if _, exists := r.indexToID[domainName]; !exists {
 		return []*model.Message{}, nil
 	}
-	if _, exists := r.messages[domainName][queueName]; !exists {
+	if _, exists := r.indexToID[domainName][queueName]; !exists {
 		return []*model.Message{}, nil
 	}
 
-	// Récupérer les messages
-	queue := r.messages[domainName][queueName]
+	// AJOUT: Debug pour voir tous les index disponibles
+	log.Printf("Index disponibles pour %s.%s: %v", domainName, queueName, r.indexToID[domainName][queueName])
+
+	// Collecter tous les index disponibles et les trier
+	var indexes []int64
+	for idx := range r.indexToID[domainName][queueName] {
+		if idx >= startIndex {
+			indexes = append(indexes, idx)
+		}
+	}
+	slices.Sort(indexes)
+
+	// AJOUT: Debug pour voir les index qui seront utilisés
+	log.Printf("Utilisation des index: %v (startIndex: %d)", indexes, startIndex)
+
+	// Récupérer les messages correspondants, en ignorant ceux qui ont été supprimés
 	messages := make([]*model.Message, 0, limit)
+	obsoleteIndexes := []int64{} // Pour enregistrer les index à supprimer
 
-	// Trier par horodatage (plus ancien en premier)
-	var oldestTime time.Time
-	var oldestID string
+	for _, idx := range indexes {
+		messageID := r.indexToID[domainName][queueName][idx]
 
-	for i := 0; i < limit; i++ {
-		oldestTime = time.Now().Add(1 * time.Hour) // Futur
-		oldestID = ""
+		// AJOUT: Debug pour comprendre le processus
+		log.Printf("Vérification de l'index %d avec messageID %s", idx, messageID)
 
-		for id, msg := range queue {
-			if oldestID == "" || msg.Timestamp.Before(oldestTime) {
-				oldestTime = msg.Timestamp
-				oldestID = id
+		// Vérifier que le message existe toujours
+		if message, exists := r.messages[domainName][queueName][messageID]; exists {
+			messages = append(messages, message)
+			log.Printf("Message trouvé et ajouté, total: %d/%d", len(messages), limit)
+			if len(messages) >= limit {
+				break // Nous avons assez de messages
 			}
+		} else {
+			// Marquer pour suppression (ne pas modifier la map pendant l'itération)
+			obsoleteIndexes = append(obsoleteIndexes, idx)
+			log.Printf("Message non trouvé, marqué pour suppression: index %d", idx)
 		}
+	}
 
-		if oldestID == "" {
-			break // Plus de messages
-		}
-
-		messages = append(messages, queue[oldestID])
-		delete(queue, oldestID) // Supprimer le message de la map (FIFO)
+	// Supprimer les index obsolètes après l'itération
+	for _, idx := range obsoleteIndexes {
+		log.Printf("Suppression de l'index obsolète %d", idx)
+		delete(r.indexToID[domainName][queueName], idx)
 	}
 
 	return messages, nil
 }
 
-// GetMessagesAfterID récupère les messages après un ID spécifique
-func (r *MessageRepository) GetMessagesAfterID(
+// Cette méthode parcourt la map indexToID pour trouver quel index correspond à un ID
+func (r *MessageRepository) GetIndexByMessageID(
 	ctx context.Context,
-	domainName, queueName, startMessageID string,
-	limit int,
-) ([]*model.Message, error) {
+	domainName, queueName, messageID string,
+) (int64, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Vérifier si le domaine et la queue existent
-	if _, exists := r.messages[domainName]; !exists {
-		return []*model.Message{}, nil
+	if _, exists := r.indexToID[domainName]; !exists {
+		return 0, ErrQueueNotFound
 	}
-	if _, exists := r.messages[domainName][queueName]; !exists {
-		return []*model.Message{}, nil
-	}
-
-	queue := r.messages[domainName][queueName]
-
-	// Récupérer tous les messages et les trier par timestamp
-	allMessages := make([]*model.Message, 0, len(queue))
-	for _, msg := range queue {
-		allMessages = append(allMessages, msg)
+	if _, exists := r.indexToID[domainName][queueName]; !exists {
+		return 0, ErrQueueNotFound
 	}
 
-	// Trier par timestamp (plus ancien en premier)
-	sort.Slice(allMessages, func(i, j int) bool {
-		return allMessages[i].Timestamp.Before(allMessages[j].Timestamp)
-	})
-
-	// Si pas d'ID de départ, retourner les premiers messages
-	if startMessageID == "" {
-		if len(allMessages) <= limit {
-			return allMessages, nil
-		}
-		return allMessages[:limit], nil
-	}
-
-	// Trouver la position du message de départ
-	startIndex := -1
-	for i, msg := range allMessages {
-		if msg.ID == startMessageID {
-			startIndex = i
-			break
+	// Parcourir les index pour trouver celui qui pointe vers notre messageID
+	for index, id := range r.indexToID[domainName][queueName] {
+		if id == messageID {
+			return index, nil
 		}
 	}
 
-	// Si message de départ non trouvé, retourner les messages dont l'ID numérique est supérieur
-	if startIndex == -1 {
-		// Extraire le numéro de séquence du startMessageID (ex: "msg-1747100000710942500-3551")
-		startSequence := extractSequence(startMessageID)
-
-		// Filtrer les messages dont le numéro de séquence est supérieur
-		resultMessages := []*model.Message{}
-		for _, msg := range allMessages {
-			if extractSequence(msg.ID) > startSequence {
-				resultMessages = append(resultMessages, msg)
-			}
-		}
-
-		// Limiter le nombre de résultats
-		if len(resultMessages) <= limit {
-			return resultMessages, nil
-		}
-		return resultMessages[:limit], nil
-	}
-
-	// Retourner les messages qui suivent
-	startIndex++ // Commencer après le message de départ
-
-	if startIndex >= len(allMessages) {
-		return []*model.Message{}, nil
-	}
-
-	endIndex := startIndex + limit
-	if endIndex > len(allMessages) {
-		endIndex = len(allMessages)
-	}
-
-	return allMessages[startIndex:endIndex], nil
-}
-
-// Fonction helper pour extraire le numéro de séquence d'un ID
-func extractSequence(id string) int64 {
-	parts := strings.Split(id, "-")
-	if len(parts) >= 3 {
-		seq, err := strconv.ParseInt(parts[1], 10, 64)
-		if err == nil {
-			return seq
-		}
-	}
-	return 0
+	return 0, ErrMessageNotFound
 }
 
 // DeleteMessage supprime un message
@@ -287,4 +244,63 @@ func (r *MessageRepository) DeleteMessage(
 
 	delete(r.messages[domainName][queueName], messageID)
 	return nil
+}
+
+// ClearQueueIndices nettoie toutes les références d'index pour une queue spécifique
+func (r *MessageRepository) ClearQueueIndices(
+	ctx context.Context,
+	domainName, queueName string,
+) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Vérifier que les maps existent
+	if _, exists := r.indexToID[domainName]; !exists {
+		return
+	}
+	if _, exists := r.indexToID[domainName][queueName]; !exists {
+		return
+	}
+
+	// Supprimer toutes les entrées de indexToID pour cette queue
+	if domainIndices, exists := r.indexToID[domainName]; exists {
+		// Réinitialiser la map pour cette queue
+		domainIndices[queueName] = make(map[int64]string)
+		log.Printf("Indices réinitialisés pour %s.%s", domainName, queueName)
+	}
+}
+
+// CleanupMessageIndices supprime les entrées d'index jusqu'à une position minimum
+func (r *MessageRepository) CleanupMessageIndices(
+	ctx context.Context,
+	domainName, queueName string,
+	minPosition int64,
+) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Vérifier que les maps existent
+	if _, exists := r.indexToID[domainName]; !exists {
+		return
+	}
+
+	indexMap, exists := r.indexToID[domainName][queueName]
+	if !exists {
+		return
+	}
+
+	initialSize := len(indexMap)
+
+	// Supprimer tous les index inférieurs à minPosition
+	for idx := range indexMap {
+		if idx < minPosition {
+			delete(indexMap, idx)
+		}
+	}
+
+	removedCount := initialSize - len(indexMap)
+	if removedCount > 0 {
+		log.Printf("[DEBUG] Nettoyage incrémental des indices pour %s.%s: %d indices supprimés (< %d), %d restants",
+			domainName, queueName, removedCount, minPosition, len(indexMap))
+	}
 }

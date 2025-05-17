@@ -629,7 +629,6 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 	timeoutStr := query.Get("timeout")
 	maxCountStr := query.Get("max")
 	groupID := query.Get("group")
-	resetStr := query.Get("reset")
 	startFromID := query.Get("start_from")
 	consumerID := query.Get("consumer")
 
@@ -643,10 +642,7 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 		maxCount, _ = strconv.Atoi(maxCountStr)
 	}
 
-	resetOffset := false
-	if resetStr == "true" {
-		resetOffset = true
-	}
+	log.Printf("Received request with groupID: %s, consumerID: %s, maxCount: %d", groupID, consumerID, maxCount)
 
 	// Adapter pour le polling long si un timeout est spécifié
 	ctx := r.Context()
@@ -663,7 +659,6 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 		groupID = "temp-" + time.Now().Format("20060102-150405.999999999")
 	}
 	options := &inbound.ConsumeOptions{
-		ResetOffset: resetOffset,
 		StartFromID: startFromID,
 		ConsumerID:  consumerID,
 		Timeout:     time.Duration(timeout) * time.Second,
