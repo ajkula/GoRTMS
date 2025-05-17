@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,10 @@ type MessageServiceImpl struct {
 	queueService      inbound.QueueService
 	statsService      inbound.StatsService
 	rootCtx           context.Context
+
+	// Compteur pour le nettoyage périodique
+	messageCountSinceLastCleanup int
+	cleanupMu                    sync.Mutex
 }
 
 // NewMessageService crée un nouveau service de messages
@@ -214,8 +219,6 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 	if err != nil {
 		log.Printf("Error getting position: %v", err)
 	}
-	log.Printf("[DEBUG] Consuming with group=%s, starting from position=%d",
-		groupID, position)
 
 	// Enregistrer le consumer group dans la channel queue
 	chQueue.AddConsumerGroup(groupID, position)
@@ -249,7 +252,6 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 
 	// Si toujours aucun message, essayer directement depuis le repository
 	if message == nil {
-		log.Printf("[DEBUG] Appel à GetMessagesAfterIndex avec startIndex=%d", position)
 		messages, err := s.messageRepo.GetMessagesAfterIndex(ctx, domainName, queueName, position, 1)
 		if err != nil || len(messages) == 0 {
 			return nil, err
@@ -287,9 +289,6 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 
 			// IMPORTANT: Mettre à jour la position interne APRÈS avoir stocké dans le repository
 			chQueue.UpdateConsumerGroupPosition(groupID, newPosition)
-
-			log.Printf("[DEBUG] Message consumed ID=%s, Index=%d, Stored next position=%d",
-				message.ID, index, newPosition)
 		}
 
 		// Acquitter automatiquement
@@ -316,6 +315,39 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 		if s.statsService != nil {
 			s.statsService.TrackMessageConsumed(domainName, queueName)
 		}
+
+		// Incrémenter le compteur de manière thread-safe
+		s.cleanupMu.Lock()
+		s.messageCountSinceLastCleanup++
+		shouldCleanup := s.messageCountSinceLastCleanup >= 100 // Intervalle de nettoyage
+		if shouldCleanup {
+			s.messageCountSinceLastCleanup = 0
+		}
+		s.cleanupMu.Unlock()
+
+		// Si le seuil est atteint, nettoyer les indices
+		if shouldCleanup {
+			// Trouver la position minimum parmi tous les groupes
+			minPosition := int64(math.MaxInt64)
+			groups, err := s.consumerGroupRepo.ListGroups(ctx, domainName, queueName)
+			if err == nil && len(groups) > 0 {
+				for _, gID := range groups {
+					pos, err := s.consumerGroupRepo.GetPosition(ctx, domainName, queueName, gID)
+					if err == nil && pos < minPosition && pos > 0 {
+						minPosition = pos
+					}
+				}
+
+				// Si une position minimum valide a été trouvée
+				if minPosition < int64(math.MaxInt64) {
+					// Garder une marge de sécurité
+					safePosition := minPosition - 10
+					if safePosition > 0 {
+						s.messageRepo.CleanupMessageIndices(ctx, domainName, queueName, safePosition)
+					}
+				}
+			}
+		}
 	}
 
 	return message, nil
@@ -328,7 +360,6 @@ func (s *MessageServiceImpl) GetMessagesAfterIndex(
 	limit int,
 ) ([]*model.Message, error) {
 	// Simplement déléguer au repository
-	log.Printf("[DEBUG] Appel à GetMessagesAfterIndex avec startIndex=%d", startIndex)
 	return s.messageRepo.GetMessagesAfterIndex(ctx, domainName, queueName, startIndex, limit)
 }
 

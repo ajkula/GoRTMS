@@ -277,7 +277,6 @@ func (q *ChannelQueue) UpdateConsumerGroupPosition(groupID string, position int6
 	if group, exists := q.consumerGroups[groupID]; exists {
 		if position > group.Position {
 			group.Position = position
-			log.Printf("[DEBUG] Updated consumer group %s position to %d", groupID, position)
 		}
 	}
 }
@@ -317,7 +316,6 @@ func (cq *ChannelQueue) fillGroupChannel(groupID string, count int) {
 	}
 
 	// Récupérer les messages
-	log.Printf("[DEBUG] Fetching messages for group=%s from position=%d", groupID, position)
 	messages, err := cq.messageProvider.GetMessagesAfterIndex(
 		cq.workerCtx, cq.domainName, cq.queue.Name, position, count)
 	if err != nil {
@@ -387,11 +385,6 @@ func (cq *ChannelQueue) ConsumeMessage(groupID string, timeout time.Duration) (*
 
 	if !exists || !group.Active {
 		return nil, errors.New("consumer group not active")
-	}
-
-	messagesInChannel := len(group.Messages)
-	if messagesInChannel > 0 {
-		log.Printf("[DEBUG] Canal du groupe %s contient %d messages", groupID, messagesInChannel)
 	}
 
 	// Essayer de lire un message avec timeout

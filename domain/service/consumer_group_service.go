@@ -57,7 +57,7 @@ func (s *ConsumerGroupServiceImpl) ListConsumerGroups(
 	// Convertir en objets ConsumerGroup complets
 	groups := make([]*model.ConsumerGroup, 0, len(groupIDs))
 	for _, groupID := range groupIDs {
-		group, err := s.getGroupDetails(ctx, domainName, queueName, groupID)
+		group, err := s.GetGroupDetails(ctx, domainName, queueName, groupID)
 		if err != nil {
 			log.Printf("Error getting details for group %s: %v", groupID, err)
 			continue
@@ -99,14 +99,6 @@ func (s *ConsumerGroupServiceImpl) ListAllGroups(ctx context.Context) ([]*model.
 	return allGroups, nil
 }
 
-// GetConsumerGroup récupère les détails d'un consumer group
-func (s *ConsumerGroupServiceImpl) GetConsumerGroup(
-	ctx context.Context,
-	domainName, queueName, groupID string,
-) (*model.ConsumerGroup, error) {
-	return s.getGroupDetails(ctx, domainName, queueName, groupID)
-}
-
 // CreateConsumerGroup crée un nouveau consumer group
 func (s *ConsumerGroupServiceImpl) CreateConsumerGroup(
 	ctx context.Context,
@@ -142,7 +134,7 @@ func (s *ConsumerGroupServiceImpl) DeleteConsumerGroup(
 	domainName, queueName, groupID string,
 ) error {
 	// Récupérer la liste des consumers du groupe
-	group, err := s.getGroupDetails(ctx, domainName, queueName, groupID)
+	group, err := s.GetGroupDetails(ctx, domainName, queueName, groupID)
 	if err != nil {
 		return err
 	}
@@ -175,7 +167,7 @@ func (s *ConsumerGroupServiceImpl) UpdateConsumerGroupTTL(
 	ttl time.Duration,
 ) error {
 	// Vérifier que le groupe existe
-	_, err := s.getGroupDetails(ctx, domainName, queueName, groupID)
+	_, err := s.GetGroupDetails(ctx, domainName, queueName, groupID)
 	if err != nil {
 		return err
 	}
@@ -200,8 +192,8 @@ func (s *ConsumerGroupServiceImpl) CleanupStaleGroups(
 	return s.consumerGroupRepo.CleanupStaleGroups(ctx, olderThan)
 }
 
-// getGroupDetails récupère les détails d'un groupe spécifique
-func (s *ConsumerGroupServiceImpl) getGroupDetails(
+// GetGroupDetails récupère les détails d'un groupe spécifique
+func (s *ConsumerGroupServiceImpl) GetGroupDetails(
 	ctx context.Context,
 	domainName, queueName, groupID string,
 ) (*model.ConsumerGroup, error) {
@@ -209,7 +201,24 @@ func (s *ConsumerGroupServiceImpl) getGroupDetails(
 	if repo, ok := s.consumerGroupRepo.(interface {
 		GetGroupDetails(ctx context.Context, domainName, queueName, groupID string) (*model.ConsumerGroup, error)
 	}); ok {
-		return repo.GetGroupDetails(ctx, domainName, queueName, groupID)
+		group, err := repo.GetGroupDetails(ctx, domainName, queueName, groupID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Mettre à jour la dernière activité
+		if updater, ok := s.consumerGroupRepo.(interface {
+			UpdateLastActivity(ctx context.Context, domainName, queueName, groupID string, t time.Time) error
+		}); ok {
+			now := time.Now()
+			if err := updater.UpdateLastActivity(ctx, domainName, queueName, groupID, now); err != nil {
+				log.Printf("Warning: Failed to update last activity: %v", err)
+			} else {
+				group.LastActivity = now
+			}
+		}
+
+		return group, nil
 	}
 
 	// Sinon, construire manuellement à partir des informations disponibles
@@ -260,8 +269,14 @@ func (s *ConsumerGroupServiceImpl) getGroupDetails(
 		GetCreationTime(ctx context.Context, domainName, queueName, groupID string) (time.Time, error)
 		GetLastActivity(ctx context.Context, domainName, queueName, groupID string) (time.Time, error)
 	}); ok {
-		createdAt, _ = repo.GetCreationTime(ctx, domainName, queueName, groupID)
-		lastActivity, _ = repo.GetLastActivity(ctx, domainName, queueName, groupID)
+		createdAt, err = repo.GetCreationTime(ctx, domainName, queueName, groupID)
+		if err != nil {
+			log.Printf("[ERROR] Getting creation date: %s", err)
+		}
+		lastActivity, err = repo.GetLastActivity(ctx, domainName, queueName, groupID)
+		if err != nil {
+			log.Printf("[ERROR] Getting last activity: %s", err)
+		}
 	}
 
 	// Compter les messages en attente
@@ -286,7 +301,31 @@ func (s *ConsumerGroupServiceImpl) getGroupDetails(
 		MessageCount: messageCount, // Zéro si non disponible
 	}
 
+	// Mettre à jour la dernière activité à la fin également
+	if updater, ok := s.consumerGroupRepo.(interface {
+		UpdateLastActivity(ctx context.Context, domainName, queueName, groupID string, t time.Time) error
+	}); ok {
+		now := time.Now()
+		if err := updater.UpdateLastActivity(ctx, domainName, queueName, groupID, now); err != nil {
+			log.Printf("Warning: Failed to update last activity: %v", err)
+		} else {
+			group.LastActivity = now
+		}
+	}
+
 	return group, nil
+}
+
+func (s *ConsumerGroupServiceImpl) UpdateLastActivity(
+	ctx context.Context,
+	domainName, queueName, groupID, consumerID string,
+) error {
+	if updater, ok := s.consumerGroupRepo.(interface {
+		UpdateLastActivity(ctx context.Context, domainName, queueName, groupID string, t time.Time) error
+	}); ok {
+		return updater.UpdateLastActivity(ctx, domainName, queueName, groupID, time.Now())
+	}
+	return nil // Ne pas échouer si non supporté
 }
 
 // startCleanupTask démarre une tâche périodique pour nettoyer les groupes inactifs
@@ -301,10 +340,12 @@ func (s *ConsumerGroupServiceImpl) startCleanupTask(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				// Utiliser une durée raisonnable pour définir l'inactivité (1 heure)
-				// ATTENTION: olderThan était 0, ce qui supprimait immédiatement TOUS les groupes!
-				if err := s.CleanupStaleGroups(ctx, 1*time.Hour); err != nil {
+				// pour éviter de supprimer trop tôt les groupes
+				log.Printf("Starting cleanup of stale consumer groups...")
+				if err := s.CleanupStaleGroups(ctx, 4*time.Hour); err != nil {
 					log.Printf("Error cleaning up stale consumer groups: %v", err)
+				} else {
+					log.Printf("Cleanup of stale consumer groups completed successfully")
 				}
 			}
 		}

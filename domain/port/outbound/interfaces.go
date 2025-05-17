@@ -42,6 +42,11 @@ type MessageRepository interface {
 		ctx context.Context,
 		domainName, queueName string,
 	)
+	CleanupMessageIndices(
+		ctx context.Context,
+		domainName, queueName string,
+		minPosition int64,
+	)
 }
 
 // DomainRepository définit les opérations de stockage pour les domaines

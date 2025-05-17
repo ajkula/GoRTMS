@@ -326,7 +326,15 @@ const api = {
   },
 
   async getConsumerGroup(domainName, queueName, groupID) {
-    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}`);
+    try {
+      console.log(`Fetching consumer group: ${domainName}/${queueName}/${groupID}`);
+      const data = await this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}`);
+      console.log("Consumer group data received:", data);
+      return data;
+    } catch (error) {
+      console.error(`Error fetching consumer group ${groupID}:`, error);
+      throw error;
+    }
   },
 
   async createConsumerGroup(domainName, queueName, groupConfig) {
@@ -344,15 +352,32 @@ const api = {
   },
 
   async updateConsumerGroupTTL(domainName, queueName, groupID, ttl) {
-    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}/ttl`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ttl })
-    });
+    try {
+      console.log(`Updating TTL for ${domainName}/${queueName}/${groupID} to ${ttl}`);
+      const result = await this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}/ttl`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ttl })
+      });
+      console.log("TTL update result:", result);
+      return result;
+    } catch (error) {
+      console.error(`Error updating TTL for group ${groupID}:`, error);
+      throw error;
+    }
   },
 
   async getPendingMessages(domainName, queueName, groupID) {
-    return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}/messages`);
+    try {
+      console.log(`Fetching pending messages: ${domainName}/${queueName}/${groupID}`);
+      const data = await this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}/messages`);
+      console.log("Pending messages received:", data);
+      // Gestion de la structure de données variée
+      return Array.isArray(data) ? data : (data.messages || []);
+    } catch (error) {
+      console.error(`Error fetching pending messages for group ${groupID}:`, error);
+      return []; // Retourner un tableau vide en cas d'erreur
+    }
   },
 
   // async acknowledgeMessage(domainName, queueName, groupID, messageID) {

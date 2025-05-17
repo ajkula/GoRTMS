@@ -148,9 +148,6 @@ func (r *MessageRepository) GetMessagesAfterIndex(
 		return []*model.Message{}, nil
 	}
 
-	// AJOUT: Debug pour voir tous les index disponibles
-	log.Printf("Index disponibles pour %s.%s: %v", domainName, queueName, r.indexToID[domainName][queueName])
-
 	// Collecter tous les index disponibles et les trier
 	var indexes []int64
 	for idx := range r.indexToID[domainName][queueName] {

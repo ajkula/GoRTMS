@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -78,15 +79,12 @@ func (r *ConsumerGroupRepository) StorePosition(
 	// Ajouter cette vérification:
 	currentPosition, exists := r.positions[domainName][queueName][groupID]
 	if exists && position <= currentPosition {
-		log.Printf("[WARN] Ignoring position regression for group=%s: current=%d, attempted=%d",
-			groupID, currentPosition, position)
 		return nil
 	}
 
 	// Stocker l'offset et le timestamp
 	r.positions[domainName][queueName][groupID] = position
 	r.timestamps[domainName][queueName][groupID] = time.Now()
-	log.Printf("[DEBUG] Storing position for group=%s: value=%d", groupID, position)
 
 	return nil
 }
@@ -114,7 +112,6 @@ func (r *ConsumerGroupRepository) GetPosition(
 		log.Printf("Group not found in queue: %v  [%v]", groupID, offset)
 		return 0, nil
 	}
-	log.Printf("[DEBUG] Getting offset for group=%s: returning %d", groupID, offset)
 
 	return offset, nil
 }
@@ -269,80 +266,129 @@ func (r *ConsumerGroupRepository) ListGroups(
 }
 
 // CleanupStaleGroups nettoie les groupes inactifs
-func (r *ConsumerGroupRepository) CleanupStaleGroups(
-	ctx context.Context,
-	defaultInactivityPeriod time.Duration,
-) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func (r *ConsumerGroupRepository) CleanupStaleGroups(ctx context.Context, olderThan time.Duration) error {
+	// Ajouter un timeout explicite à l'opération
+	cleanupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
+	// IMPORTANT: Utiliser un verrou avec timeout pour éviter les blocages indéfinis
+	lockAcquired := make(chan struct{}, 1)
+	go func() {
+		r.mu.Lock()
+		select {
+		case lockAcquired <- struct{}{}:
+			// Le verrou a été envoyé au canal
+		case <-cleanupCtx.Done():
+			// Si le contexte est terminé mais qu'on a le verrou, le libérer
+			r.mu.Unlock()
+		}
+	}()
+
+	select {
+	case <-lockAcquired:
+		// Le verrou a été acquis, assurez-vous de le libérer
+		defer r.mu.Unlock()
+	case <-cleanupCtx.Done():
+		// Timeout lors de l'acquisition du verrou
+		log.Printf("[WARN] Timeout while acquiring lock for CleanupStaleGroups, operation aborted")
+		return fmt.Errorf("timeout while acquiring lock for cleanup")
+	}
+
+	log.Printf("[DEBUG] Starting cleanup of stale consumer groups (older than %s)", olderThan)
+
+	// Utiliser timestamps pour nettoyer les groupes inactifs
+	cleanupCount := 0
 	now := time.Now()
-	groupsRemoved := 0
 
-	// Parcourir les timestamps pour trouver les groupes inactifs
-	for domainName, domainTimestamps := range r.timestamps {
-		for queueName, queueTimestamps := range domainTimestamps {
-			for groupID, lastActive := range queueTimestamps {
-				// Déterminer la période d'inactivité pour ce groupe
-				inactivityPeriod := defaultInactivityPeriod
+	// Faire une copie des domaines à parcourir pour éviter les problèmes de concurrence
+	domainsList := make([]string, 0, len(r.timestamps))
+	for domain := range r.timestamps {
+		domainsList = append(domainsList, domain)
+	}
 
-				// Si le groupe a un TTL configuré, l'utiliser à la place
-				if ttl, err := r.GetTTL(ctx, domainName, queueName, groupID); err == nil && ttl > 0 {
-					inactivityPeriod = ttl
+	// Parcourir tous les domaines
+	for _, domain := range domainsList {
+		domainMap, exists := r.timestamps[domain]
+		if !exists {
+			continue
+		}
+
+		// Copier les queues pour ce domaine
+		queuesList := make([]string, 0, len(domainMap))
+		for queue := range domainMap {
+			queuesList = append(queuesList, queue)
+		}
+
+		// Parcourir toutes les queues du domaine
+		for _, queue := range queuesList {
+			queueMap, exists := domainMap[queue]
+			if !exists {
+				continue
+			}
+
+			// Copier les groupes pour cette queue
+			groupsList := make([]string, 0, len(queueMap))
+			for group := range queueMap {
+				groupsList = append(groupsList, group)
+			}
+
+			// Parcourir tous les groupes de la queue
+			for _, group := range groupsList {
+				lastActivity, exists := queueMap[group]
+				if !exists {
+					continue
 				}
 
-				// Calculer le seuil avec la période appropriée
-				threshold := now.Add(-inactivityPeriod)
+				// Vérifier si le groupe est inactif depuis trop longtemps
+				if lastActivity.Add(olderThan).Before(now) {
+					log.Printf("[INFO] Removing stale consumer group %s.%s.%s (last activity: %v)",
+						domain, queue, group, lastActivity)
 
-				if lastActive.Before(threshold) {
-					log.Printf("Nettoyage du consumer group %s.%s.%s (inactif depuis %v)",
-						domainName, queueName, groupID, now.Sub(lastActive))
-
-					// Supprimer le groupe des offsets
-					if _, exists := r.positions[domainName]; exists {
-						if _, exists := r.positions[domainName][queueName]; exists {
-							delete(r.positions[domainName][queueName], groupID)
+					// Supprimer le groupe de toutes les maps
+					if domainPositions, ok := r.positions[domain]; ok {
+						if queuePositions, ok := domainPositions[queue]; ok {
+							delete(queuePositions, group)
 						}
 					}
 
-					// Supprimer le groupe des consumers
-					if _, exists := r.consumers[domainName]; exists {
-						if _, exists := r.consumers[domainName][queueName]; exists {
-							delete(r.consumers[domainName][queueName], groupID)
+					if domainTTLs, ok := r.ttls[domain]; ok {
+						if queueTTLs, ok := domainTTLs[queue]; ok {
+							delete(queueTTLs, group)
 						}
 					}
 
-					// Supprimer le timestamp
-					delete(queueTimestamps, groupID)
-
-					// Supprimer de la matrice d'acquittement et traiter les messages
-					matrix := r.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
-					messagesToDelete := matrix.RemoveGroup(groupID)
-
-					// Supprimer les messages entièrement acquittés
-					for _, msgID := range messagesToDelete {
-						r.messageRepo.DeleteMessage(ctx, domainName, queueName, msgID)
+					if domainConsumers, ok := r.consumers[domain]; ok {
+						if queueConsumers, ok := domainConsumers[queue]; ok {
+							delete(queueConsumers, group)
+						}
 					}
 
-					groupsRemoved++
+					// Supprimer de timestamps en dernier pour la cohérence
+					delete(queueMap, group)
+					cleanupCount++
+
+					// Nettoyer aussi la matrice d'acquittement si nécessaire
+					ackMatrix := r.messageRepo.GetOrCreateAckMatrix(domain, queue)
+					if ackMatrix != nil {
+						messageIDs := ackMatrix.RemoveGroup(group)
+						for _, msgID := range messageIDs {
+							if err := r.messageRepo.DeleteMessage(ctx, domain, queue, msgID); err != nil {
+								log.Printf("[WARN] Error deleting message %s after group removal: %v", msgID, err)
+							}
+						}
+					}
+
+					// Vérifier périodiquement si le contexte est terminé
+					if cleanupCtx.Err() != nil {
+						log.Printf("[WARN] Cleanup interrupted by context cancellation after processing %d groups", cleanupCount)
+						return cleanupCtx.Err()
+					}
 				}
 			}
-
-			// Nettoyer les maps vides
-			if len(queueTimestamps) == 0 {
-				delete(domainTimestamps, queueName)
-			}
-		}
-
-		if len(domainTimestamps) == 0 {
-			delete(r.timestamps, domainName)
 		}
 	}
 
-	if groupsRemoved > 0 {
-		log.Printf("Nettoyage terminé: %d consumer groups supprimés", groupsRemoved)
-	}
-
+	log.Printf("[INFO] Cleanup of stale consumer groups completed successfully: removed %d inactive groups", cleanupCount)
 	return nil
 }
 
@@ -466,6 +512,8 @@ func (r *ConsumerGroupRepository) GetAllGroups(ctx context.Context) ([]*model.Co
 	for domainName, domainConsumers := range r.consumers {
 		for queueName, queueConsumers := range domainConsumers {
 			for groupID := range queueConsumers {
+				log.Printf("[DEBUG] getting: %s.%s.%s", domainName, queueName, groupID)
+
 				// Libérer le mutex pour appeler GetGroupDetails
 				r.mu.RUnlock()
 				group, err := r.GetGroupDetails(ctx, domainName, queueName, groupID)
@@ -480,6 +528,7 @@ func (r *ConsumerGroupRepository) GetAllGroups(ctx context.Context) ([]*model.Co
 			}
 		}
 	}
+	log.Printf("[DEBUG] getting groups: %+v", allGroups[0])
 
 	return allGroups, nil
 }
