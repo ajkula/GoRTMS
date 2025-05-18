@@ -138,3 +138,17 @@ func (m *AckMatrix) GetPendingMessageCount(groupID string) int {
 	}
 	return count
 }
+
+// GetPendingMessageCount retourne le nombre de messages en attente pour un groupe
+func (m *AckMatrix) GetPendingMessageIDs(groupID string) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	ids := make([]string, m.GetPendingMessageCount(groupID))
+	for id, acks := range m.messages {
+		if !acks[groupID] {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}

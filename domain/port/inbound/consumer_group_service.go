@@ -14,6 +14,7 @@ type ConsumerGroupService interface {
 	CreateConsumerGroup(ctx context.Context, domainName, queueName, groupID string, ttl time.Duration) error
 	DeleteConsumerGroup(ctx context.Context, domainName, queueName, groupID string) error
 	UpdateConsumerGroupTTL(ctx context.Context, domainName, queueName, groupID string, ttl time.Duration) error
+	GetPendingMessages(ctx context.Context, domainName, queueName, groupID string) ([]*model.Message, error)
 	// RegisterConsumer(...) error
 	// RemoveConsumer(...) error
 }

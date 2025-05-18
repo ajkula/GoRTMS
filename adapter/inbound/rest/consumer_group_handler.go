@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/gorilla/mux"
 )
 
@@ -222,14 +221,12 @@ func (h *Handler) getPendingMessages(w http.ResponseWriter, r *http.Request) {
 	queueName := vars["queue"]
 	groupID := vars["group"]
 
-	// Note: Cette fonctionnalité nécessite une méthode pour récupérer les messages
-	// en attente pour un groupe spécifique. L'implémentation dépend de l'architecture existante.
-	// Voici un exemple simplifié:
+	log.Printf("API request: Getting pending messages for group %s.%s.%s", domainName, queueName, groupID)
 
-	// Supposons qu'on ait accès à une méthode pour obtenir les messages en attente
-	// Ceci est un placeholder, à adapter selon votre architecture
-	messages, err := h.getPendingMessagesForGroup(r.Context(), domainName, queueName, groupID)
+	// Utiliser la méthode du service directement
+	messages, err := h.consumerGroupService.GetPendingMessages(r.Context(), domainName, queueName, groupID)
 	if err != nil {
+		log.Printf("Error getting pending messages: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -239,51 +236,6 @@ func (h *Handler) getPendingMessages(w http.ResponseWriter, r *http.Request) {
 		"messages": messages,
 	})
 }
-
-// getPendingMessagesForGroup est une méthode helper pour récupérer les messages en attente
-// À adapter selon votre architecture existante
-func (h *Handler) getPendingMessagesForGroup(ctx context.Context, domainName, queueName, groupID string) ([]*model.Message, error) {
-	// Placeholder - à implémenter selon votre architecture
-	// Cette implémentation dépend de comment les messages sont stockés et comment
-	// vous pouvez déterminer quels messages sont en attente pour un groupe spécifique.
-	return []*model.Message{}, nil
-}
-
-/**
-// Implémenter correctement getPendingMessagesForGroup pour récupérer les vrais messages
-func (h *Handler) getPendingMessagesForGroup(ctx context.Context, domainName, queueName, groupID string) ([]*model.Message, error) {
-    log.Printf("Getting pending messages for group %s.%s.%s", domainName, queueName, groupID)
-
-    // Utiliser la matrice d'acquittement pour trouver les messages en attente
-    matrix := h.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
-    if matrix == nil {
-        log.Printf("No acknowledgment matrix found for %s.%s", domainName, queueName)
-        return []*model.Message{}, nil
-    }
-
-    // Récupérer les IDs des messages en attente
-    pendingIDs := matrix.GetPendingMessageIDs(groupID)
-    if len(pendingIDs) == 0 {
-        log.Printf("No pending message IDs found for group %s", groupID)
-        return []*model.Message{}, nil
-    }
-
-    log.Printf("Found %d pending message IDs for group %s", len(pendingIDs), groupID)
-
-    // Récupérer les messages correspondants
-    messages := make([]*model.Message, 0, len(pendingIDs))
-    for _, msgID := range pendingIDs {
-        msg, err := h.messageRepo.GetMessage(ctx, domainName, queueName, msgID)
-        if err != nil {
-            log.Printf("Warning: Could not retrieve message %s: %v", msgID, err)
-            continue
-        }
-        messages = append(messages, msg)
-    }
-
-    log.Printf("Returning %d pending messages for group %s", len(messages), groupID)
-    return messages, nil
-}*/
 
 // addConsumerToGroup ajoute un consumer à un groupe
 func (h *Handler) addConsumerToGroup(w http.ResponseWriter, r *http.Request) {

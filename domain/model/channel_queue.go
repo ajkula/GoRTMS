@@ -56,7 +56,10 @@ func NewChannelQueue(
 	provider MessageProvider,
 ) *ChannelQueue {
 	if bufferSize <= 0 {
-		bufferSize = 100 // default
+		bufferSize = queue.Config.MaxSize // default
+		if queue.Config.MaxSize <= 0 {
+			bufferSize = 1000
+		}
 	}
 
 	workerCtx, cancel := context.WithCancel(ctx)

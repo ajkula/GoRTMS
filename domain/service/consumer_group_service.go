@@ -328,6 +328,46 @@ func (s *ConsumerGroupServiceImpl) UpdateLastActivity(
 	return nil // Ne pas échouer si non supporté
 }
 
+func (s *ConsumerGroupServiceImpl) GetPendingMessages(ctx context.Context, domainName, queueName, groupID string) ([]*model.Message, error) {
+	log.Printf("Getting pending messages for group %s.%s.%s", domainName, queueName, groupID)
+
+	// Vérifier que le groupe existe
+	_, err := s.GetGroupDetails(ctx, domainName, queueName, groupID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Utiliser la matrice d'acquittement pour trouver les messages en attente
+	matrix := s.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
+	if matrix == nil {
+		log.Printf("No acknowledgment matrix found for %s.%s", domainName, queueName)
+		return []*model.Message{}, nil
+	}
+
+	// Récupérer les IDs des messages en attente
+	pendingIDs := matrix.GetPendingMessageIDs(groupID)
+	if len(pendingIDs) == 0 {
+		log.Printf("No pending message IDs found for group %s", groupID)
+		return []*model.Message{}, nil
+	}
+
+	log.Printf("Found %d pending message IDs for group %s", len(pendingIDs), groupID)
+
+	// Récupérer les messages correspondants
+	messages := make([]*model.Message, 0, len(pendingIDs))
+	for _, msgID := range pendingIDs {
+		msg, err := s.messageRepo.GetMessage(ctx, domainName, queueName, msgID)
+		if err != nil {
+			log.Printf("Warning: Could not retrieve message %s: %v", msgID, err)
+			continue
+		}
+		messages = append(messages, msg)
+	}
+
+	log.Printf("Returning %d pending messages for group %s", len(messages), groupID)
+	return messages, nil
+}
+
 // startCleanupTask démarre une tâche périodique pour nettoyer les groupes inactifs
 func (s *ConsumerGroupServiceImpl) startCleanupTask(ctx context.Context) {
 	go func() {
