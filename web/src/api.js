@@ -276,7 +276,7 @@ const api = {
   // Récupérer les statistiques actuelles
   async getCurrentStats() {
     try {
-      return await api.fetchJSON('/api/resources/current');
+      return await api.fetchJSON(`${API_BASE_URL}/resources/current`);
     } catch (error) {
       console.error('Error fetching current resource stats:', error);
       return {

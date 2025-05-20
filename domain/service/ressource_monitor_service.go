@@ -14,6 +14,7 @@ import (
 // ResourceMonitorServiceImpl implémente le service de monitoring des ressources
 type ResourceMonitorServiceImpl struct {
 	domainRepo      outbound.DomainRepository
+	messageRepo     outbound.MessageRepository
 	queueService    inbound.QueueService
 	statsHistory    []*inbound.ResourceStats
 	lastStats       *inbound.ResourceStats
@@ -27,6 +28,7 @@ type ResourceMonitorServiceImpl struct {
 // NewResourceMonitorService crée un nouveau service de surveillance des ressources
 func NewResourceMonitorService(
 	domainRepo outbound.DomainRepository,
+	messageRepo outbound.MessageRepository,
 	queueService inbound.QueueService,
 	rootCtx context.Context,
 ) inbound.ResourceMonitorService {
@@ -34,6 +36,7 @@ func NewResourceMonitorService(
 
 	svc := &ResourceMonitorServiceImpl{
 		domainRepo:      domainRepo,
+		messageRepo:     messageRepo,
 		queueService:    queueService,
 		statsHistory:    make([]*inbound.ResourceStats, 0, 60), // 1 heure d'historique à 1 point/minute
 		maxHistorySize:  60,
@@ -106,7 +109,7 @@ func (s *ResourceMonitorServiceImpl) collectStats(ctx context.Context) {
 					EstimatedMemory: int64(queue.MessageCount * 1024),
 				}
 
-				domainInfo.MessageCount += queue.MessageCount
+				domainInfo.MessageCount += s.messageRepo.GetQueueMessageCount(domain.Name, queueName)
 				domainInfo.EstimatedMemory += queueInfo.EstimatedMemory
 				domainInfo.QueueStats[queueName] = queueInfo
 			}

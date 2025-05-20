@@ -47,6 +47,8 @@ type MessageRepository interface {
 		domainName, queueName string,
 		minPosition int64,
 	)
+
+	GetQueueMessageCount(domainName, queueName string) int
 }
 
 // DomainRepository définit les opérations de stockage pour les domaines

@@ -15,14 +15,16 @@ const DomainUsageChart = () => {
       
       if (currentStats && currentStats.domainStats) {
         // Transformer les données de domaine pour le graphique
-        const chartData = Object.entries(currentStats.domainStats).map(([domainName, stats]) => ({
+        const chartData = Object.entries(currentStats.domainStats).map(([domainName, stats]) => {
+          console.log({messageCount: stats.messageCount})
+          
+          return ({
           name: domainName,
           messageCount: stats.messageCount,
           queueCount: stats.queueCount,
           memoryUsage: Math.round(stats.estimatedMemory / (1024 * 1024)), // Convertir en MB
           color: stringToColor(domainName)
-        }));
-        
+        })});
         setDomainData(chartData);
       }
     } catch (err) {

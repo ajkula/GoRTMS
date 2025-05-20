@@ -539,7 +539,10 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 
 		// Compter les messages et les règles
 		for queueName, queue := range domain.Queues {
-			messageCount += queue.MessageCount
+			// Count the nbr of messages in the repository
+			queueMessageCount := s.messageRepo.GetQueueMessageCount(domain.Name, queueName)
+
+			messageCount += queueMessageCount
 
 			// Ajouter à la liste de toutes les files d'attente pour trier les top files
 			maxSize := queue.Config.MaxSize
@@ -547,12 +550,12 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 				maxSize = 1000 // Valeur par défaut
 			}
 
-			usage := float64(queue.MessageCount) / float64(maxSize) * 100
+			usage := float64(queueMessageCount) / float64(maxSize) * 100
 			allQueues = append(allQueues, QueueStats{
 				Domain:       domain.Name,
 				Name:         queueName,
-				MessageCount: queue.MessageCount,
-				MaxSize:      maxSize,
+				MessageCount: queueMessageCount,
+				MaxSize:      queue.Config.MaxSize,
 				Usage:        usage,
 			})
 

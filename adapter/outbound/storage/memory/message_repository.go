@@ -21,9 +21,10 @@ var (
 // MessageRepository implémente un repository de messages en mémoire
 type MessageRepository struct {
 	// Map de domaines -> files d'attente -> messages
-	messages  map[string]map[string]map[string]*model.Message
-	indexToID map[string]map[string]map[int64]string
-	mu        sync.RWMutex
+	messages         map[string]map[string]map[string]*model.Message
+	indexToID        map[string]map[string]map[int64]string
+	nextIndexCounter map[string]map[string]int64
+	mu               sync.RWMutex
 
 	// Map des matrices d'acquittement par queue
 	ackMatrices map[string]*model.AckMatrix
@@ -33,9 +34,10 @@ type MessageRepository struct {
 // NewMessageRepository crée un nouveau repository de messages en mémoire
 func NewMessageRepository() outbound.MessageRepository {
 	return &MessageRepository{
-		messages:    make(map[string]map[string]map[string]*model.Message),
-		indexToID:   make(map[string]map[string]map[int64]string),
-		ackMatrices: make(map[string]*model.AckMatrix),
+		messages:         make(map[string]map[string]map[string]*model.Message),
+		indexToID:        make(map[string]map[string]map[int64]string),
+		nextIndexCounter: make(map[string]map[string]int64),
+		ackMatrices:      make(map[string]*model.AckMatrix),
 	}
 }
 
@@ -74,21 +76,17 @@ func (r *MessageRepository) StoreMessage(
 	if _, exists := r.messages[domainName]; !exists {
 		r.messages[domainName] = make(map[string]map[string]*model.Message)
 		r.indexToID[domainName] = make(map[string]map[int64]string)
+		r.nextIndexCounter[domainName] = make(map[string]int64)
 	}
 	if _, exists := r.messages[domainName][queueName]; !exists {
 		r.messages[domainName][queueName] = make(map[string]*model.Message)
 		r.indexToID[domainName][queueName] = make(map[int64]string)
+		r.nextIndexCounter[domainName][queueName] = 0
 	}
 
-	// Déterminer le prochain index
-	nextIndex := int64(0)
-	if _, exists := r.indexToID[domainName][queueName]; exists {
-		for idx := range r.indexToID[domainName][queueName] {
-			if idx >= nextIndex {
-				nextIndex = idx + 1
-			}
-		}
-	}
+	// Utiliser et incrémenter le compteur atomique
+	nextIndex := r.nextIndexCounter[domainName][queueName]
+	r.nextIndexCounter[domainName][queueName]++
 
 	// Stocker le message
 	r.messages[domainName][queueName][message.ID] = message
@@ -241,6 +239,21 @@ func (r *MessageRepository) DeleteMessage(
 
 	delete(r.messages[domainName][queueName], messageID)
 	return nil
+}
+
+// GetQueueMessageCount returns queue size
+func (r *MessageRepository) GetQueueMessageCount(domainName string, queueName string) int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// check if domain and queue exist
+	if _, exists := r.messages[domainName]; !exists {
+		return 0
+	}
+	if queueMessages, exists := r.messages[domainName][queueName]; exists {
+		return len(queueMessages)
+	}
+	return 0
 }
 
 // ClearQueueIndices nettoie toutes les références d'index pour une queue spécifique

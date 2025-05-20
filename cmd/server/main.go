@@ -27,6 +27,7 @@ import (
 )
 
 func main() {
+
 	// Traiter les arguments de ligne de commande
 	var configPath string
 	var generateConfig bool
@@ -115,6 +116,7 @@ func main() {
 	// Initialiser le service de monitoring des ressources
 	resourceMonitorService := service.NewResourceMonitorService(
 		domainRepo,
+		messageRepo,
 		queueService,
 		ctx,
 	)

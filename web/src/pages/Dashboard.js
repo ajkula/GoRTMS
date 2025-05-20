@@ -27,8 +27,6 @@ const Dashboard = ({ setPage }) => {
       // Charger les statistiques générales
       const statsData = await api.getStats();
 
-      console.log({ stats });
-
       setStats(statsData);
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
@@ -47,6 +45,7 @@ const Dashboard = ({ setPage }) => {
       });
     } finally {
       setLoading(false);
+      console.log({ stats });
     }
   };
 
