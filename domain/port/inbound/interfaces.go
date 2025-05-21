@@ -12,6 +12,7 @@ type ConsumeOptions struct {
 	StartFromID string
 	ConsumerID  string
 	Timeout     time.Duration
+	MaxCount    int
 }
 
 // MessageService définit les opérations sur les messages

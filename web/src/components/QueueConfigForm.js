@@ -1,4 +1,5 @@
 import React from 'react';
+import { deliveryModes } from '../utils/utils';
 
 const QueueConfigForm = ({ queueConfig, setQueueConfig }) => {
   return (
@@ -29,9 +30,7 @@ const QueueConfigForm = ({ queueConfig, setQueueConfig }) => {
             onChange={(e) => setQueueConfig({ ...queueConfig, deliveryMode: e.target.value })}
             className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
           >
-            <option value="broadcast">Broadcast</option>
-            <option value="roundRobin">Round Robin</option>
-            <option value="singleConsumer">Single Consumer</option>
+            {deliveryModes.map((mode) =>(<option value={mode.value}>{mode.label}</option>))}
           </select>
         </div>
       </div>

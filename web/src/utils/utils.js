@@ -94,3 +94,11 @@ export const formatDuration = (nanoseconds) => {
     return `${seconds}s`;
   }
 }
+
+export const formatDeliveryMode = (mode) => deliveryModes[mode].label;
+
+export const deliveryModes = [
+  {value: "broadcast", label: "Broadcast"},
+  {value: "roundRobin", label: "Round Robin"},
+  {value: "singleConsumer", label: "Single Consumer"},
+];

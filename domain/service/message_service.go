@@ -198,6 +198,8 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 	domainName, queueName, groupID string,
 	options *inbound.ConsumeOptions,
 ) (*model.Message, error) {
+	now := time.Now()
+	log.Printf("[DEBUG] Start=%s ConsumeMessageWithGroup (domainName=%s, queueName=%s, groupID$%s)", now, domainName, queueName, groupID)
 	if options == nil {
 		options = &inbound.ConsumeOptions{}
 	}
@@ -211,13 +213,14 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 	// Cast vers ChannelQueue pour accéder aux méthodes spécifiques
 	chQueue, ok := channelQueue.(*model.ChannelQueue)
 	if !ok {
-		return nil, errors.New("unexpected queue type")
+		return nil, errors.New("[ERROR] unexpected queue type")
 	}
 
 	// Obtenir la position
 	position, err := s.consumerGroupRepo.GetPosition(ctx, domainName, queueName, groupID)
 	if err != nil {
-		log.Printf("Error getting position: %v", err)
+		log.Printf("[WARN] GetPosition error: %v, will use 0", err)
+		position = 0
 	}
 
 	// Enregistrer le consumer group dans la channel queue
@@ -228,39 +231,30 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 		_ = s.consumerGroupRepo.RegisterConsumer(ctx, domainName, queueName, groupID, options.ConsumerID)
 	}
 
-	// Définir le timeout
-	timeout := 1 * time.Second
-	if options != nil && options.Timeout > 0 {
-		timeout = options.Timeout
+	// Vérifier si des messages sont déjà dans le canal du groupe
+	message, err := chQueue.ConsumeMessage(groupID, 10*time.Millisecond)
+	if err != nil {
+		log.Printf("[ERROR] End=%s ConsumeMessageWithGroup chQueue.ConsumeMessage(%s, 50*time.Millisecond) ERR: %v", time.Since(now), groupID, err)
 	}
 
-	// Vérifier si des messages sont déjà dans le canal du groupe
-	message, err := chQueue.ConsumeMessage(groupID, 50*time.Millisecond)
-	if err != nil {
-		log.Printf("chQueue.ConsumeMessage(%s, 50*time.Millisecond) ERR: %v", groupID, err)
-	}
 	if message == nil {
+		maxCount := 5
+		if options.MaxCount > 0 {
+			maxCount = options.MaxCount
+		}
 		// Si aucun message dans le canal, demander d'en récupérer
-		channelQueue.RequestMessages(groupID, 5)
+		channelQueue.RequestMessages(groupID, maxCount)
+
+		// Définir le timeout
+		timeout := 1 * time.Second
+		if options != nil && options.Timeout > 0 {
+			timeout = options.Timeout
+		}
 
 		// Puis attendre un message avec le timeout complet
 		message, err = chQueue.ConsumeMessage(groupID, timeout)
 		if err != nil {
-			log.Printf("chQueue.ConsumeMessage(%s, %d) ERR: %v", groupID, timeout, err)
-		}
-	}
-
-	// Si toujours aucun message, essayer directement depuis le repository
-	if message == nil {
-		messages, err := s.messageRepo.GetMessagesAfterIndex(ctx, domainName, queueName, position, 1)
-		if err != nil || len(messages) == 0 {
-			return nil, err
-		}
-		message = messages[0]
-
-		// Alimenter le canal du groupe avec d'autres messages
-		if len(messages) > 1 {
-			_ = chQueue.RequestMessages(groupID, 10)
+			log.Printf("[ERROR] End=%s ConsumeMessageWithGroup chQueue.ConsumeMessage(%s, %d) ERR: %s", time.Since(now), groupID, timeout, err)
 		}
 	}
 
@@ -271,19 +265,19 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 			UpdateLastActivity(ctx context.Context, domainName, queueName, groupID string) error
 		}); ok {
 			if err = repo.UpdateLastActivity(ctx, domainName, queueName, groupID); err != nil {
-				log.Printf("Error updating last activity: %v", err)
+				log.Printf("[ERROR] End=%s ConsumeMessageWithGroup updating last activity: %s", time.Since(now), err)
 			}
 		}
 
 		// Trouver l'index du message
 		index, err := s.messageRepo.GetIndexByMessageID(ctx, domainName, queueName, message.ID)
 		if err != nil {
-			log.Printf("domainName=%s queueName=%s message.ID=%s Err: %v", domainName, queueName, message.ID, err)
+			log.Printf("[ERROR] End=%s ConsumeMessageWithGroup s.messageRepo.GetIndexByMessageID (error=%s)", time.Since(now), err)
 		} else {
 			// Stocker l'index du prochain message comme position
 			newPosition := index + 1
 			if err := s.consumerGroupRepo.StorePosition(ctx, domainName, queueName, groupID, newPosition); err != nil {
-				log.Printf("Position not stored for group %s: %d, Err: %v", groupID, newPosition, err)
+				log.Printf("[ERROR] End=%s ConsumeMessageWithGroup StorePosition (error=%s)", time.Since(now), err)
 				return nil, err
 			}
 
@@ -291,64 +285,78 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 			chQueue.UpdateConsumerGroupPosition(groupID, newPosition)
 		}
 
-		// Acquitter automatiquement
-		fullyAcked, err := s.messageRepo.AcknowledgeMessage(ctx, domainName, queueName, groupID, message.ID)
-		if err != nil {
-			log.Printf("Ack problem: %s", message.ID)
-		}
+		// Le reste des opérations peut être effectué en arrière-plan
+		// Créer un nouveau contexte pour la goroutine car le ctx parent pourrait être annulé
+		bgCtx := context.Background()
+		msgCopy := *message // Créer une copie du message pour éviter les race conditions
 
-		// Si complètement acquitté, supprimer
-		if fullyAcked {
-			if err := s.messageRepo.DeleteMessage(ctx, domainName, queueName, message.ID); err != nil {
-				// Ignorer spécifiquement l'erreur "message not found"
-				if err.Error() == "message not found" {
-					log.Printf("Message already deleted: %s", message.ID)
+		go func(
+			ctx context.Context,
+			domainName, queueName, groupID, messageID string,
+			startTime time.Time,
+		) {
+			// Acquitter automatiquement
+			fullyAcked, err := s.messageRepo.AcknowledgeMessage(ctx, domainName, queueName, groupID, message.ID)
+			if err != nil {
+				log.Printf("[ERROR] End=%s ConsumeMessageWithGroup AcknowledgeMessage (error=%s)", time.Since(now), err)
+			}
+
+			// Si complètement acquitté, supprimer
+			if fullyAcked {
+				if err := s.messageRepo.DeleteMessage(ctx, domainName, queueName, message.ID); err != nil {
+					// Ignorer spécifiquement l'erreur "message not found"
+					if err.Error() == "message not found" {
+						log.Printf("[ERROR] Message already deleted: %s", message.ID)
+					} else {
+						log.Printf("[ERROR] Message not deleted: %s, Err: %v", message.ID, err)
+					}
 				} else {
-					log.Printf("Message not deleted: %s, Err: %v", message.ID, err)
+					log.Printf("Message deleted: %s", message.ID)
 				}
-			} else {
-				log.Printf("Message deleted: %s", message.ID)
 			}
-		}
 
-		// Mettre à jour les statistiques
-		if s.statsService != nil {
-			s.statsService.TrackMessageConsumed(domainName, queueName)
-		}
+			// Mettre à jour les statistiques
+			if s.statsService != nil {
+				s.statsService.TrackMessageConsumed(domainName, queueName)
+			}
 
-		// Incrémenter le compteur de manière thread-safe
-		s.cleanupMu.Lock()
-		s.messageCountSinceLastCleanup++
-		shouldCleanup := s.messageCountSinceLastCleanup >= 100 // Intervalle de nettoyage
-		if shouldCleanup {
-			s.messageCountSinceLastCleanup = 0
-		}
-		s.cleanupMu.Unlock()
+			// Incrémenter le compteur de manière thread-safe
+			s.cleanupMu.Lock()
+			s.messageCountSinceLastCleanup++
+			shouldCleanup := s.messageCountSinceLastCleanup >= 100 // Intervalle de nettoyage
+			if shouldCleanup {
+				s.messageCountSinceLastCleanup = 0
+			}
+			s.cleanupMu.Unlock()
 
-		// Si le seuil est atteint, nettoyer les indices
-		if shouldCleanup {
-			// Trouver la position minimum parmi tous les groupes
-			minPosition := int64(math.MaxInt64)
-			groups, err := s.consumerGroupRepo.ListGroups(ctx, domainName, queueName)
-			if err == nil && len(groups) > 0 {
-				for _, gID := range groups {
-					pos, err := s.consumerGroupRepo.GetPosition(ctx, domainName, queueName, gID)
-					if err == nil && pos < minPosition && pos > 0 {
-						minPosition = pos
+			// Si le seuil est atteint, nettoyer les indices
+			if shouldCleanup {
+				// Trouver la position minimum parmi tous les groupes
+				minPosition := int64(math.MaxInt64)
+				groups, err := s.consumerGroupRepo.ListGroups(ctx, domainName, queueName)
+				if err == nil && len(groups) > 0 {
+					for _, gID := range groups {
+						pos, err := s.consumerGroupRepo.GetPosition(ctx, domainName, queueName, gID)
+						if err == nil && pos < minPosition && pos > 0 {
+							minPosition = pos
+						}
 					}
-				}
 
-				// Si une position minimum valide a été trouvée
-				if minPosition < int64(math.MaxInt64) {
-					// Garder une marge de sécurité
-					safePosition := minPosition - 10
-					if safePosition > 0 {
-						s.messageRepo.CleanupMessageIndices(ctx, domainName, queueName, safePosition)
+					// Si une position minimum valide a été trouvée
+					if minPosition < int64(math.MaxInt64) {
+						// Garder une marge de sécurité
+						safePosition := minPosition - 10
+						if safePosition > 0 {
+							s.messageRepo.CleanupMessageIndices(ctx, domainName, queueName, safePosition)
+						}
 					}
 				}
 			}
-		}
+			log.Printf("[GOROUTINE] End=%s ConsumeMessageWithGroup Finished  *****************", time.Since(now))
+		}(bgCtx, domainName, queueName, groupID, msgCopy.ID, now)
+
 	}
+	log.Printf("[DEBUG] End=%s ConsumeMessageWithGroup Finished  *****************", time.Since(now))
 
 	return message, nil
 }

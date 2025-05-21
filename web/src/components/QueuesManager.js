@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PlusCircle, Trash2, Loader, AlertTriangle, Eye, ArrowLeft, Send, GitBranch } from 'lucide-react';
 import QueueConfigForm, { defaultQueueConfig } from './QueueConfigForm';
 import api from '../api';
+import { formatDeliveryMode } from '../utils/utils';
 
 const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, onViewRouting }) => {
   const [queues, setQueues] = useState([]);
@@ -224,7 +225,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
                               {queue.config.IsPersistent ? 'Persistent' : 'Temporary'}
                             </span>
                             <span className="inline-flex px-2 py-1 rounded-full bg-blue-100 text-blue-800">
-                              {queue.config.DeliveryMode || 'Broadcast'}
+                              {formatDeliveryMode(queue.config.DeliveryMode)}
                             </span>
                           </span>
                         )}
