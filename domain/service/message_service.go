@@ -199,7 +199,7 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 	options *inbound.ConsumeOptions,
 ) (*model.Message, error) {
 	now := time.Now()
-	log.Printf("[DEBUG] Start=%s ConsumeMessageWithGroup (domainName=%s, queueName=%s, groupID$%s)", now, domainName, queueName, groupID)
+	log.Printf("[DEBUG] Start=%s ConsumeMessageWithGroup (domainName=%s, queueName=%s, groupID=%s)", now, domainName, queueName, groupID)
 	if options == nil {
 		options = &inbound.ConsumeOptions{}
 	}

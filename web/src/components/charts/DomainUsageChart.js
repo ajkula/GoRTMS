@@ -1,46 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import { ResponsiveContainer, ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from 'recharts';
 import { stringToColor } from '../../utils/utils';
-import api from '../../api';
+import { useResourceStats } from '../../hooks/useResourceStats';
 
 const DomainUsageChart = () => {
-  const [domainData, setDomainData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // Use the existing useResourceStats hook
+  const { currentStats, loading, error, refresh } = useResourceStats();
   
-  const loadDomainData = async () => {
-    try {
-      setLoading(true);
-      const currentStats = await api.getCurrentStats();
-      
-      if (currentStats && currentStats.domainStats) {
-        // Transformer les données de domaine pour le graphique
-        const chartData = Object.entries(currentStats.domainStats).map(([domainName, stats]) => {
-          console.log({messageCount: stats.messageCount})
-          
-          return ({
-          name: domainName,
-          messageCount: stats.messageCount,
-          queueCount: stats.queueCount,
-          memoryUsage: Math.round(stats.estimatedMemory / (1024 * 1024)), // Convertir en MB
-          color: stringToColor(domainName)
-        })});
-        setDomainData(chartData);
-      }
-    } catch (err) {
-      console.error('Error loading domain usage data:', err);
-      setError('Failed to load domain usage data');
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  useEffect(() => {
-    loadDomainData();
+  // Transform domain stats data for chart display
+  const domainData = useMemo(() => {
+    if (!currentStats || !currentStats.domainStats) return [];
     
-    const interval = setInterval(loadDomainData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+    return Object.entries(currentStats.domainStats).map(([domainName, stats]) => ({
+      name: domainName,
+      messageCount: stats.messageCount,
+      queueCount: stats.queueCount,
+      memoryUsage: Math.round(stats.estimatedMemory / (1024 * 1024)), // Convert to MB
+      color: stringToColor(domainName)
+    }));
+  }, [currentStats]);
   
   return (
     <div>

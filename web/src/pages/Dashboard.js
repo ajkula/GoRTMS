@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { RefreshCw, Loader, AlertTriangle } from 'lucide-react';
-import api from '../api';
+import { useDashboardStats } from '../hooks/useDashboardStats';
 
 // Import des composants de charts extraits
 import StatCards from '../components/charts/StatCards';
@@ -14,49 +14,8 @@ import DomainUsageChart from '../components/charts/DomainUsageChart';
 import EventsList from '../components/charts/EventsList';
 
 const Dashboard = ({ setPage }) => {
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // Fonction pour charger les données du dashboard
-  const loadDashboardData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Charger les statistiques générales
-      const statsData = await api.getStats();
-
-      setStats(statsData);
-    } catch (err) {
-      console.error('Error fetching dashboard data:', err);
-      setError(err.message || 'Failed to load dashboard data');
-
-      // En cas d'erreur, configurer des données par défaut
-      setStats({
-        domains: 0,
-        queues: 0,
-        messages: 0,
-        routes: 0,
-        messageRates: [],
-        activeDomains: [],
-        topQueues: [],
-        recentEvents: []
-      });
-    } finally {
-      setLoading(false);
-      console.log({ stats });
-    }
-  };
-
-  // Charger les données au montage
-  useEffect(() => {
-    loadDashboardData();
-
-    // Actualiser les données toutes les 30 secondes
-    const interval = setInterval(loadDashboardData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  // Utiliser le hook pour récupérer les statistiques
+  const { stats, loading, error, refreshStats } = useDashboardStats();
 
   if (loading && !stats) {
     return (
@@ -76,7 +35,7 @@ const Dashboard = ({ setPage }) => {
         </div>
 
         <button
-          onClick={loadDashboardData}
+          onClick={refreshStats}
           className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           disabled={loading}
         >
@@ -106,7 +65,7 @@ const Dashboard = ({ setPage }) => {
         <StatCards stats={stats} />
       </div>
 
-      {/* Resource Monitor et Domain Usage - Nouveau! */}
+      {/* Resource Monitor et Domain Usage */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-white rounded-lg shadow p-6">
           <DomainPieChart data={stats?.activeDomains || []} />

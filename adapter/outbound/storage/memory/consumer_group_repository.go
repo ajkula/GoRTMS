@@ -528,7 +528,9 @@ func (r *ConsumerGroupRepository) GetAllGroups(ctx context.Context) ([]*model.Co
 			}
 		}
 	}
-	log.Printf("[DEBUG] getting groups: %+v", allGroups[0])
+	if len(allGroups) > 0 {
+		log.Printf("[DEBUG] getting groups: %+v", allGroups[0])
+	}
 
 	return allGroups, nil
 }

@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { PlusCircle, Trash2, Clock, RefreshCw, AlertTriangle, Settings, ArrowRight } from 'lucide-react';
-import api from '../api';
+import { PlusCircle, Trash2, RefreshCw, AlertTriangle, Settings } from 'lucide-react';
+import { useDomains } from '../hooks/useDomains';
+import { useQueues } from '../hooks/useQueues';
+import { useConsumerGroups } from '../hooks/useConsumerGroups';
+import { useConsumerGroupActions } from '../hooks/useConsumerGroupActions';
 import { formatDuration } from '../utils/utils';
 
 const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
-  const [domains, setDomains] = useState([]);
-  const [consumerGroups, setConsumerGroups] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // Utiliser les hooks pour récupérer les données
+  const { domains, loading: domainsLoading } = useDomains();
+  const { consumerGroups, loading, error, refreshConsumerGroups } = useConsumerGroups();
+  
+  // États locaux pour la gestion du formulaire et des modals
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newGroupForm, setNewGroupForm] = useState({
     domainName: '',
@@ -16,52 +20,22 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
     ttl: '1h'
   });
 
-  // Charger tous les domaines
-  useEffect(() => {
-    const fetchDomains = async () => {
-      try {
-        const domainsData = await api.getDomains();
-        setDomains(domainsData);
-      } catch (err) {
-        console.error('Error fetching domains:', err);
-        setError(err.message || 'Failed to load domains');
-      }
-    };
+  // Utiliser le hook useQueues pour charger les queues en fonction du domaine sélectionné
+  const { queues } = useQueues(newGroupForm.domainName);
+  
+  // Utiliser le hook useConsumerGroupActions pour les opérations CRUD
+  const { createConsumerGroup, deleteConsumerGroup, loading: actionLoading, error: actionError } = 
+    useConsumerGroupActions(refreshConsumerGroups);
 
-    fetchDomains();
-  }, []);
-
-  // Fonction pour charger tous les consumer groups de tous les domaines
-  const fetchAllConsumerGroups = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Cette API doit être créée côté backend
-      const data = await api.getAllConsumerGroups();
-      setConsumerGroups(data.groups || []);
-    } catch (err) {
-      console.error('Error fetching consumer groups:', err);
-      setError(err.message || 'Failed to load consumer groups');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchAllConsumerGroups();
-    
-    // Rafraîchir périodiquement
-    const interval = setInterval(fetchAllConsumerGroups, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  // Calculer si le bouton de création doit être activé ou non
+  const canCreateGroup = domains.length > 0;
 
   // Gérer la création d'un nouveau groupe
   const handleCreateGroup = async (e) => {
     e.preventDefault();
-    
+
     try {
-      await api.createConsumerGroup(
+      await createConsumerGroup(
         newGroupForm.domainName,
         newGroupForm.queueName,
         {
@@ -69,7 +43,7 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
           ttl: newGroupForm.ttl
         }
       );
-      
+
       setShowCreateModal(false);
       setNewGroupForm({
         domainName: '',
@@ -77,10 +51,8 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
         groupID: '',
         ttl: '1h'
       });
-      
-      await fetchAllConsumerGroups();
     } catch (err) {
-      setError(err.message || 'Failed to create consumer group');
+      // L'erreur est déjà gérée dans le hook useConsumerGroupActions
     }
   };
 
@@ -91,32 +63,14 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
     }
 
     try {
-      await api.deleteConsumerGroup(domainName, queueName, groupID);
-      await fetchAllConsumerGroups();
+      await deleteConsumerGroup(domainName, queueName, groupID);
     } catch (err) {
-      setError(err.message || 'Failed to delete consumer group');
+      // L'erreur est déjà gérée dans le hook useConsumerGroupActions
     }
   };
 
-  // Chargement des queues pour un domaine sélectionné
-  const [queues, setQueues] = useState([]);
-  useEffect(() => {
-    const fetchQueues = async () => {
-      if (!newGroupForm.domainName) {
-        setQueues([]);
-        return;
-      }
-      
-      try {
-        const queuesData = await api.getQueues(newGroupForm.domainName);
-        setQueues(queuesData);
-      } catch (err) {
-        console.error(`Error fetching queues for ${newGroupForm.domainName}:`, err);
-      }
-    };
-    
-    fetchQueues();
-  }, [newGroupForm.domainName]);
+  // Vérifier si le formulaire est complet pour activer/désactiver le bouton de création
+  const isFormValid = newGroupForm.domainName && newGroupForm.queueName && newGroupForm.groupID;
 
   return (
     <div className="container mx-auto">
@@ -124,8 +78,13 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
         <h1 className="text-2xl font-bold">Consumer Groups</h1>
         <div>
           <button
+            disabled={!canCreateGroup}
             onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white
+              ${!canCreateGroup
+                ? 'bg-indigo-300 cursor-not-allowed opacity-50'
+                : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
+              }`}
           >
             <PlusCircle className="h-5 w-5 mr-2" />
             New Consumer Group
@@ -133,12 +92,12 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
         </div>
       </div>
 
-      {error && (
+      {(error || actionError) && (
         <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
           <div className="flex">
             <AlertTriangle className="h-5 w-5 text-red-400" />
             <div className="ml-3">
-              <p className="text-sm text-red-700">{error}</p>
+              <p className="text-sm text-red-700">{error || actionError}</p>
             </div>
           </div>
         </div>
@@ -148,11 +107,12 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
       <div className="bg-white shadow overflow-hidden sm:rounded-md mb-8">
         <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
           <h2 className="text-lg leading-6 font-medium text-gray-900">All Consumer Groups</h2>
-          <button 
-            onClick={fetchAllConsumerGroups}
+          <button
+            onClick={refreshConsumerGroups}
             className="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            disabled={loading || actionLoading}
           >
-            <RefreshCw className="h-4 w-4 mr-1" />
+            <RefreshCw className={`h-4 w-4 mr-1 ${(loading || actionLoading) ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
@@ -193,9 +153,7 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {consumerGroups.map((group) => {
-                console.log({ group });
-                return (
+              {consumerGroups.map((group) => (
                 <tr key={`${group.DomainName}-${group.QueueName}-${group.GroupID}`}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {group.DomainName}
@@ -219,6 +177,7 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
                     <button
                       onClick={() => onSelectGroup(group.DomainName, group.QueueName, group.GroupID)}
                       className="text-indigo-600 hover:text-indigo-900 mr-3"
+                      disabled={actionLoading}
                     >
                       <Settings className="h-4 w-4 inline mr-1" />
                       Configure
@@ -226,12 +185,13 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
                     <button
                       onClick={() => handleDeleteGroup(group.DomainName, group.QueueName, group.GroupID)}
                       className="text-red-600 hover:text-red-900"
+                      disabled={actionLoading}
                     >
                       <Trash2 className="h-4 w-4 inline" />
                     </button>
                   </td>
                 </tr>
-              )})}
+              ))}
             </tbody>
           </table>
         )}
@@ -249,9 +209,10 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
                 </label>
                 <select
                   value={newGroupForm.domainName}
-                  onChange={(e) => setNewGroupForm({...newGroupForm, domainName: e.target.value})}
+                  onChange={(e) => setNewGroupForm({ ...newGroupForm, domainName: e.target.value, queueName: '' })}
                   className="w-full border border-gray-300 rounded-md p-2"
                   required
+                  disabled={actionLoading || domainsLoading}
                 >
                   <option value="">Select Domain</option>
                   {domains.map(domain => (
@@ -266,10 +227,10 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
                 </label>
                 <select
                   value={newGroupForm.queueName}
-                  onChange={(e) => setNewGroupForm({...newGroupForm, queueName: e.target.value})}
+                  onChange={(e) => setNewGroupForm({ ...newGroupForm, queueName: e.target.value })}
                   className="w-full border border-gray-300 rounded-md p-2"
                   required
-                  disabled={!newGroupForm.domainName}
+                  disabled={!newGroupForm.domainName || actionLoading}
                 >
                   <option value="">Select Queue</option>
                   {queues.map(queue => (
@@ -285,10 +246,11 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
                 <input
                   type="text"
                   value={newGroupForm.groupID}
-                  onChange={(e) => setNewGroupForm({...newGroupForm, groupID: e.target.value})}
+                  onChange={(e) => setNewGroupForm({ ...newGroupForm, groupID: e.target.value })}
                   className="w-full border border-gray-300 rounded-md p-2"
                   placeholder="Enter group ID"
                   required
+                  disabled={actionLoading}
                 />
               </div>
 
@@ -300,13 +262,15 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
                   <input
                     type="text"
                     value={newGroupForm.ttl}
-                    onChange={(e) => setNewGroupForm({...newGroupForm, ttl: e.target.value})}
+                    onChange={(e) => setNewGroupForm({ ...newGroupForm, ttl: e.target.value })}
                     className="w-full border border-gray-300 rounded-md p-2"
                     placeholder="e.g. 30m, 1h, 24h"
+                    disabled={actionLoading}
                   />
                   <select
-                    onChange={(e) => setNewGroupForm({...newGroupForm, ttl: e.target.value})}
+                    onChange={(e) => setNewGroupForm({ ...newGroupForm, ttl: e.target.value })}
                     className="border border-gray-300 rounded-md p-2"
+                    disabled={actionLoading}
                   >
                     <option value="5m">5m</option>
                     <option value="15m">15m</option>
@@ -328,14 +292,20 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
                   type="button"
                   onClick={() => setShowCreateModal(false)}
                   className="px-4 py-2 border border-gray-300 rounded-md text-gray-700"
+                  disabled={actionLoading}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-md"
+                  className={`px-4 py-2 rounded-md ${
+                    isFormValid 
+                      ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
+                      : 'bg-indigo-300 text-white cursor-not-allowed'
+                  }`}
+                  disabled={!isFormValid || actionLoading}
                 >
-                  Create
+                  {actionLoading ? 'Creating...' : 'Create'}
                 </button>
               </div>
             </form>

@@ -1,72 +1,18 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React from 'react';
 import { ResponsiveContainer, CartesianGrid, Tooltip, Legend, Area, AreaChart, Line, YAxis, XAxis } from 'recharts';
 import { RefreshCw, Database, Server, AlertTriangle, Loader } from 'lucide-react';
+import { useResourceStats } from '../../hooks/useResourceStats';
 import api from '../../api';
 
 const ResourceMonitor = () => {
-  const [statsHistory, setStatsHistory] = useState([]);
-  const [currentStats, setCurrentStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // Fonction pour charger les données
-  const loadResourceData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Récupérer les statistiques actuelles
-      const current = await api.getCurrentStats();
-      setCurrentStats(current);
-      
-      // Récupérer l'historique des statistiques
-      const history = await api.getStatsHistory(30); // 30 derniers points
-      setStatsHistory(api.formatHistoryForCharts(history));
-      
-    } catch (err) {
-      console.error('Error loading resource data:', err);
-      setError('Failed to load resource data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Charger les données au montage et périodiquement
-  useEffect(() => {
-    loadResourceData();
-    
-    // Actualiser toutes les 30 secondes
-    const interval = setInterval(loadResourceData, 30000);
-    return () => clearInterval(interval);
-  }, []);
-  
-  // Utiliser les données réelles ou des données fictives si l'API n'est pas disponible
-  const chartData = useMemo(() => {
-    if (statsHistory.length > 0) {
-      return statsHistory.map(stat => {
-        const timestamp = stat.timestamp || Date.now() / 1000;
-        return {
-          timestamp,
-          memoryUsageMB: stat.memoryUsage ? Math.round(stat.memoryUsage / (1024 * 1024) * 100) / 100 : 0,
-          goroutines: stat.goroutines || 0,
-          gcPauseMs: stat.gcPauseNs ? (stat.gcPauseNs / 1000000) : 0,
-          heapObjects: stat.heapObjects || 0
-        };
-      });
-    }
-    
-    // Données fictives en cas d'absence de données réelles
-    return Array.from({ length: 10 }, (_, i) => {
-      const timestamp = Date.now() / 1000 - (9-i) * 60;
-      return {
-        timestamp,
-        memoryUsageMB: Math.floor(100 + Math.random() * 50),
-        goroutines: Math.floor(20 + Math.random() * 30),
-        gcPauseMs: Math.random() * 5,
-        heapObjects: Math.floor(5000 + Math.random() * 3000)
-      };
-    });
-  }, [statsHistory]);
+  // Use the custom hook to manage resource data
+  const { 
+    chartData, 
+    currentStats, 
+    loading, 
+    error, 
+    refresh 
+  } = useResourceStats(30, 30000);
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -74,7 +20,7 @@ const ResourceMonitor = () => {
         <h2 className="text-lg font-medium text-gray-900">System Resources</h2>
         <div className="flex space-x-2">
           <button
-            onClick={loadResourceData}
+            onClick={refresh}
             className="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-sm rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             disabled={loading}
           >
@@ -128,17 +74,17 @@ const ResourceMonitor = () => {
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis 
-                dataKey="timestamp" 
-                tickFormatter={(unixTime) => {
-                  if (!unixTime) return '';
-                  const date = new Date(unixTime * 1000);
-                  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-                }}
-                scale="time"
-                type="number"
-                domain={['dataMin', 'dataMax']}
-              />
+            <XAxis 
+              dataKey="timestamp" 
+              tickFormatter={(unixTime) => {
+                if (!unixTime) return '';
+                const date = new Date(unixTime * 1000);
+                return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+              }}
+              scale="time"
+              type="number"
+              domain={['dataMin', 'dataMax']}
+            />
             <YAxis yAxisId="left" orientation="left" stroke="#3b82f6" />
             <YAxis yAxisId="right" orientation="right" stroke="#22c55e" />
             <Tooltip 

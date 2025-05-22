@@ -3,6 +3,11 @@ const API_BASE_URL = '/api';
 const api = {
   // Fonction utilitaire pour gérer les erreurs et parser les réponses JSON
   async fetchJSON(url, options = {}) {
+    if (!url) {
+      console.error('API fetch error: URL is undefined');
+      throw new Error('API fetch error: URL is undefined');
+    }
+
     try {
       const response = await fetch(url, options);
       if (!response.ok) {
@@ -276,7 +281,7 @@ const api = {
   // Récupérer les statistiques actuelles
   async getCurrentStats() {
     try {
-      return await api.fetchJSON(`${API_BASE_URL}/resources/current`);
+      return await this.fetchJSON(`${API_BASE_URL}/resources/current`);
     } catch (error) {
       console.error('Error fetching current resource stats:', error);
       return {
@@ -294,7 +299,7 @@ const api = {
   // Récupérer l'historique des statistiques
   async getStatsHistory(limit = 60) {
     try {
-      return await api.fetchJSON(`/api/resources/history?limit=${limit}`);
+      return await this.fetchJSON(`/api/resources/history?limit=${limit}`);
     } catch (error) {
       console.error('Error fetching resource stats history:', error);
       return [];
@@ -304,7 +309,7 @@ const api = {
   // Récupérer les statistiques pour un domaine spécifique
   async getDomainStats(domainName) {
     try {
-      return await api.fetchJSON(`/api/resources/domains/${domainName}`);
+      return await this.fetchJSON(`/api/resources/domains/${domainName}`);
     } catch (error) {
       console.error(`Error fetching domain resource stats for ${domainName}:`, error);
       return {
