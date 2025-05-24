@@ -14,9 +14,8 @@ import (
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
 )
 
-// ConsumerGroupRepository implémente le repository en mémoire
 type ConsumerGroupRepository struct {
-	// Map Domain -> Queue -> GroupID -> Offset
+	// Map Domain -> Queue -> GroupID -> Position
 	positions map[string]map[string]map[string]int64
 	// Map Domain -> Queue -> GroupID -> LastTime
 	timestamps map[string]map[string]map[string]time.Time
@@ -28,7 +27,7 @@ type ConsumerGroupRepository struct {
 	mu          sync.RWMutex
 }
 
-// NewConsumerGroupRepository crée un nouveau repository
+// Makes a repository
 func NewConsumerGroupRepository(messageRepo outbound.MessageRepository) outbound.ConsumerGroupRepository {
 	return &ConsumerGroupRepository{
 		positions:   make(map[string]map[string]map[string]int64),
@@ -39,7 +38,6 @@ func NewConsumerGroupRepository(messageRepo outbound.MessageRepository) outbound
 	}
 }
 
-// StorePosition enregistre un offset pour un groupe
 func (r *ConsumerGroupRepository) StorePosition(
 	ctx context.Context,
 	domainName, queueName, groupID string, position int64,
@@ -51,17 +49,17 @@ func (r *ConsumerGroupRepository) StorePosition(
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Protection supplémentaire contre nil maps
+	// Protection vs nil maps
 	if r.positions == nil {
-		log.Printf("WARNING: r.positions was nil in StorePosition - this should never happen!")
+		log.Printf("[WARNING]: r.positions was nil in StorePosition - this should never happen!")
 		r.positions = make(map[string]map[string]map[string]int64)
 	}
 	if r.timestamps == nil {
-		log.Printf("WARNING: r.timestamps was nil in StorePosition - this should never happen!")
+		log.Printf("[WARNING]: r.timestamps was nil in StorePosition - this should never happen!")
 		r.timestamps = make(map[string]map[string]map[string]time.Time)
 	}
 
-	// Créer les maps si nécessaire - code existant
+	// find or create
 	if _, exists := r.positions[domainName]; !exists {
 		r.positions[domainName] = make(map[string]map[string]int64)
 	}
@@ -76,20 +74,18 @@ func (r *ConsumerGroupRepository) StorePosition(
 		r.timestamps[domainName][queueName] = make(map[string]time.Time)
 	}
 
-	// Ajouter cette vérification:
 	currentPosition, exists := r.positions[domainName][queueName][groupID]
 	if exists && position <= currentPosition {
 		return nil
 	}
 
-	// Stocker l'offset et le timestamp
+	// Store Pos and timestamp
 	r.positions[domainName][queueName][groupID] = position
 	r.timestamps[domainName][queueName][groupID] = time.Now()
 
 	return nil
 }
 
-// GetPosition récupère le dernier offset d'un groupe
 func (r *ConsumerGroupRepository) GetPosition(
 	ctx context.Context,
 	domainName, queueName, groupID string,
@@ -97,9 +93,9 @@ func (r *ConsumerGroupRepository) GetPosition(
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Vérifier si l'offset existe
+	// if Pos exists
 	if _, exists := r.positions[domainName]; !exists {
-		log.Printf("Domain not found in offsets: %v", domainName)
+		log.Printf("Domain not found in positions: %v", domainName)
 		return 0, nil
 	}
 	if _, exists := r.positions[domainName][queueName]; !exists {
@@ -107,16 +103,15 @@ func (r *ConsumerGroupRepository) GetPosition(
 		return 0, nil
 	}
 
-	offset, exists := r.positions[domainName][queueName][groupID]
+	position, exists := r.positions[domainName][queueName][groupID]
 	if !exists {
-		log.Printf("Group not found in queue: %v  [%v]", groupID, offset)
+		log.Printf("Group not found in queue: %v  [%v]", groupID, position)
 		return 0, nil
 	}
 
-	return offset, nil
+	return position, nil
 }
 
-// RegisterConsumer enregistre un consommateur dans un groupe
 func (r *ConsumerGroupRepository) RegisterConsumer(
 	ctx context.Context,
 	domainName, queueName, groupID, consumerID string,
@@ -124,7 +119,7 @@ func (r *ConsumerGroupRepository) RegisterConsumer(
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Créer les maps si nécessaire
+	// find or create
 	if _, exists := r.consumers[domainName]; !exists {
 		r.consumers[domainName] = make(map[string]map[string][]string)
 	}
@@ -132,23 +127,23 @@ func (r *ConsumerGroupRepository) RegisterConsumer(
 		r.consumers[domainName][queueName] = make(map[string][]string)
 	}
 
-	// Vérifier si le consommateur existe déjà
+	// if exists
 	consumerList, exists := r.consumers[domainName][queueName][groupID]
 	if !exists {
-		// Créer une nouvelle liste de consommateurs
+		// New consumers list
 		r.consumers[domainName][queueName][groupID] = []string{}
 		return nil
 	}
 
-	// Vérifier si le consommateur est déjà enregistré
+	// if exists
 	if slices.Contains(consumerList, consumerID) {
-		return nil // Déjà enregistré
+		return nil
 	}
 
-	// Ajouter le consommateur
+	// Add consumer
 	r.consumers[domainName][queueName][groupID] = append(consumerList, consumerID)
 
-	// Mettre à jour le timestamp d'activité
+	// Update activity timestamp
 	if _, exists := r.timestamps[domainName]; !exists {
 		r.timestamps[domainName] = make(map[string]map[string]time.Time)
 	}
@@ -157,14 +152,13 @@ func (r *ConsumerGroupRepository) RegisterConsumer(
 	}
 	r.timestamps[domainName][queueName][groupID] = time.Now()
 
-	// Enregistrer avec la matrice d'acquittement
+	// Add group to ackMatrix
 	matrix := r.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
 	matrix.RegisterGroup(groupID)
 
 	return nil
 }
 
-// RemoveConsumer supprime un consommateur d'un groupe
 func (r *ConsumerGroupRepository) RemoveConsumer(
 	ctx context.Context,
 	domainName, queueName, groupID, consumerID string,
@@ -172,9 +166,8 @@ func (r *ConsumerGroupRepository) RemoveConsumer(
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Vérifier si le groupe existe
 	if _, exists := r.consumers[domainName]; !exists {
-		return nil // Rien à faire
+		return nil
 	}
 	if _, exists := r.consumers[domainName][queueName]; !exists {
 		return nil
@@ -185,10 +178,10 @@ func (r *ConsumerGroupRepository) RemoveConsumer(
 		return nil
 	}
 
-	// Rechercher et supprimer le consommateur
+	// Find and remove consumer
 	for i, id := range consumerList {
 		if id == consumerID {
-			// Supprimer le consommateur en préservant l'ordre
+			// remove consumer preserving order
 			r.consumers[domainName][queueName][groupID] = append(
 				consumerList[:i],
 				consumerList[i+1:]...,
@@ -197,22 +190,22 @@ func (r *ConsumerGroupRepository) RemoveConsumer(
 		}
 	}
 
-	// Mettre à jour le timestamp d'activité
+	// update activity timestamp
 	if _, exists := r.timestamps[domainName]; exists {
 		if _, exists := r.timestamps[domainName][queueName]; exists {
 			r.timestamps[domainName][queueName][groupID] = time.Now()
 		}
 	}
 
-	// Si c'est le dernier consommateur du groupe, supprimer le groupe de la matrice
+	// if last consumer, remove group from matrix
 	if _, exists := r.consumers[domainName]; exists {
 		if queueConsumers, exists := r.consumers[domainName][queueName]; exists {
 			if consumerList, exists := queueConsumers[groupID]; exists && len(consumerList) == 0 {
-				// Supprimer de la matrice d'acquittement
+				// remove from ackMatrix
 				matrix := r.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
 				messagesToDelete := matrix.RemoveGroup(groupID)
 
-				// Supprimer les messages entièrement acquittés
+				// delete fully ack msgs
 				for _, msgID := range messagesToDelete {
 					r.messageRepo.DeleteMessage(ctx, domainName, queueName, msgID)
 				}
@@ -223,7 +216,6 @@ func (r *ConsumerGroupRepository) RemoveConsumer(
 	return nil
 }
 
-// ListGroups liste tous les groupes pour une queue
 func (r *ConsumerGroupRepository) ListGroups(
 	ctx context.Context,
 	domainName, queueName string,
@@ -233,28 +225,22 @@ func (r *ConsumerGroupRepository) ListGroups(
 
 	result := make([]string, 0)
 
-	// Vérifier les offsets
-	if offsets, exists := r.positions[domainName]; exists {
-		if queueOffsets, exists := offsets[queueName]; exists {
-			for groupID := range queueOffsets {
+	// Check offsets
+	if position, exists := r.positions[domainName]; exists {
+		if queuePos, exists := position[queueName]; exists {
+			for groupID := range queuePos {
 				result = append(result, groupID)
 			}
 			return result, nil
 		}
 	}
 
-	// Vérifier les consumers si aucun offset
+	// Check consumers if no pos
 	if consumers, exists := r.consumers[domainName]; exists {
 		if queueConsumers, exists := consumers[queueName]; exists {
 			for groupID := range queueConsumers {
-				// Vérifier si ce groupe n'est pas déjà dans le résultat
-				found := false
-				for _, id := range result {
-					if id == groupID {
-						found = true
-						break
-					}
-				}
+				// check if not already in results
+				found := slices.Contains(result, groupID)
 				if !found {
 					result = append(result, groupID)
 				}
@@ -265,86 +251,114 @@ func (r *ConsumerGroupRepository) ListGroups(
 	return result, nil
 }
 
-// CleanupStaleGroups nettoie les groupes inactifs
+func (r *ConsumerGroupRepository) DeleteGroup(
+	ctx context.Context,
+	domainName, queueName, groupID string,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Delete from all maps
+	if domainPositions, ok := r.positions[domainName]; ok {
+		if queuePositions, ok := domainPositions[queueName]; ok {
+			delete(queuePositions, groupID)
+		}
+	}
+
+	if domainTTL, ok := r.ttls[domainName]; ok {
+		if queueTTLs, ok := domainTTL[queueName]; ok {
+			delete(queueTTLs, groupID)
+		}
+	}
+
+	if domainConsumers, ok := r.consumers[domainName]; ok {
+		if queueConsumers, ok := domainConsumers[queueName]; ok {
+			delete(queueConsumers, groupID)
+		}
+	}
+
+	if domainTimestamps, ok := r.timestamps[domainName]; ok {
+		if queueTimestamps, ok := domainTimestamps[queueName]; ok {
+			delete(queueTimestamps, groupID)
+		}
+	}
+
+	return nil
+}
+
 func (r *ConsumerGroupRepository) CleanupStaleGroups(ctx context.Context, olderThan time.Duration) error {
-	// Ajouter un timeout explicite à l'opération
+	// Add explicit timeout
 	cleanupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	// IMPORTANT: Utiliser un verrou avec timeout pour éviter les blocages indéfinis
+	// IMPORTANT: Use deadlock safe lock with timeout
 	lockAcquired := make(chan struct{}, 1)
 	go func() {
 		r.mu.Lock()
 		select {
 		case lockAcquired <- struct{}{}:
-			// Le verrou a été envoyé au canal
+			// Lock sent to chan
 		case <-cleanupCtx.Done():
-			// Si le contexte est terminé mais qu'on a le verrou, le libérer
+			// free lock if still closed when ctx closed
 			r.mu.Unlock()
 		}
 	}()
 
 	select {
 	case <-lockAcquired:
-		// Le verrou a été acquis, assurez-vous de le libérer
 		defer r.mu.Unlock()
 	case <-cleanupCtx.Done():
-		// Timeout lors de l'acquisition du verrou
 		log.Printf("[WARN] Timeout while acquiring lock for CleanupStaleGroups, operation aborted")
 		return fmt.Errorf("timeout while acquiring lock for cleanup")
 	}
 
 	log.Printf("[DEBUG] Starting cleanup of stale consumer groups (older than %s)", olderThan)
 
-	// Utiliser timestamps pour nettoyer les groupes inactifs
 	cleanupCount := 0
 	now := time.Now()
 
-	// Faire une copie des domaines à parcourir pour éviter les problèmes de concurrence
+	// copy domains to avoid concurrency
 	domainsList := make([]string, 0, len(r.timestamps))
 	for domain := range r.timestamps {
 		domainsList = append(domainsList, domain)
 	}
 
-	// Parcourir tous les domaines
 	for _, domain := range domainsList {
 		domainMap, exists := r.timestamps[domain]
 		if !exists {
 			continue
 		}
 
-		// Copier les queues pour ce domaine
 		queuesList := make([]string, 0, len(domainMap))
 		for queue := range domainMap {
 			queuesList = append(queuesList, queue)
 		}
 
-		// Parcourir toutes les queues du domaine
 		for _, queue := range queuesList {
 			queueMap, exists := domainMap[queue]
 			if !exists {
 				continue
 			}
 
-			// Copier les groupes pour cette queue
+			// Copy all groups from queue
 			groupsList := make([]string, 0, len(queueMap))
 			for group := range queueMap {
 				groupsList = append(groupsList, group)
 			}
 
-			// Parcourir tous les groupes de la queue
+			// each group from queue
 			for _, group := range groupsList {
 				lastActivity, exists := queueMap[group]
 				if !exists {
 					continue
 				}
 
-				// Vérifier si le groupe est inactif depuis trop longtemps
+				// Check group TTL
 				if lastActivity.Add(olderThan).Before(now) {
 					log.Printf("[INFO] Removing stale consumer group %s.%s.%s (last activity: %v)",
 						domain, queue, group, lastActivity)
 
-					// Supprimer le groupe de toutes les maps
+					// delete group from all maps
 					if domainPositions, ok := r.positions[domain]; ok {
 						if queuePositions, ok := domainPositions[queue]; ok {
 							delete(queuePositions, group)
@@ -363,11 +377,11 @@ func (r *ConsumerGroupRepository) CleanupStaleGroups(ctx context.Context, olderT
 						}
 					}
 
-					// Supprimer de timestamps en dernier pour la cohérence
+					// delete timestamps lastly
 					delete(queueMap, group)
 					cleanupCount++
 
-					// Nettoyer aussi la matrice d'acquittement si nécessaire
+					// Clean AckMatrix
 					ackMatrix := r.messageRepo.GetOrCreateAckMatrix(domain, queue)
 					if ackMatrix != nil {
 						messageIDs := ackMatrix.RemoveGroup(group)
@@ -378,7 +392,7 @@ func (r *ConsumerGroupRepository) CleanupStaleGroups(ctx context.Context, olderT
 						}
 					}
 
-					// Vérifier périodiquement si le contexte est terminé
+					// Check if ctx closed
 					if cleanupCtx.Err() != nil {
 						log.Printf("[WARN] Cleanup interrupted by context cancellation after processing %d groups", cleanupCount)
 						return cleanupCtx.Err()
@@ -392,7 +406,6 @@ func (r *ConsumerGroupRepository) CleanupStaleGroups(ctx context.Context, olderT
 	return nil
 }
 
-// GetGroupDetails récupère les détails d'un groupe spécifique
 func (r *ConsumerGroupRepository) GetGroupDetails(
 	ctx context.Context,
 	domainName, queueName, groupID string,
@@ -400,7 +413,6 @@ func (r *ConsumerGroupRepository) GetGroupDetails(
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Vérifier si le groupe existe
 	if _, exists := r.consumers[domainName]; !exists {
 		return nil, errors.New("consumer group not found")
 	}
@@ -412,7 +424,6 @@ func (r *ConsumerGroupRepository) GetGroupDetails(
 		return nil, errors.New("consumer group not found")
 	}
 
-	// Récupérer l'offset
 	var lastPosition int64
 	if _, exists := r.positions[domainName]; exists {
 		if _, exists := r.positions[domainName][queueName]; exists {
@@ -420,7 +431,7 @@ func (r *ConsumerGroupRepository) GetGroupDetails(
 		}
 	}
 
-	// Récupérer le timestamp d'activité
+	// Activity timestamp
 	var lastActivity time.Time
 	if _, exists := r.timestamps[domainName]; exists {
 		if _, exists := r.timestamps[domainName][queueName]; exists {
@@ -428,7 +439,6 @@ func (r *ConsumerGroupRepository) GetGroupDetails(
 		}
 	}
 
-	// Créer l'objet ConsumerGroup
 	group := &model.ConsumerGroup{
 		DomainName:   domainName,
 		QueueName:    queueName,
@@ -436,10 +446,9 @@ func (r *ConsumerGroupRepository) GetGroupDetails(
 		Position:     lastPosition,
 		ConsumerIDs:  make([]string, len(consumerList)),
 		LastActivity: lastActivity,
-		// Les autres champs ne sont pas disponibles dans l'implémentation actuelle
+		// Other fields todo...
 	}
 
-	// Copier la liste des consumers
 	copy(group.ConsumerIDs, consumerList)
 
 	// Récupérer le TTL si disponible
@@ -448,14 +457,13 @@ func (r *ConsumerGroupRepository) GetGroupDetails(
 		group.TTL = ttl
 	}
 
-	// Calculer le nombre de messages en attente
+	// Calculate waiting messages count
 	matrix := r.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
 	group.MessageCount = matrix.GetPendingMessageCount(groupID)
 
 	return group, nil
 }
 
-// StoreTTL enregistre le TTL pour un groupe
 func (r *ConsumerGroupRepository) StoreTTL(
 	ctx context.Context,
 	domainName, queueName, groupID string,
@@ -464,7 +472,7 @@ func (r *ConsumerGroupRepository) StoreTTL(
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Initialiser les maps si nécessaire
+	// Init maps
 	if _, exists := r.ttls[domainName]; !exists {
 		r.ttls = make(map[string]map[string]map[string]time.Duration)
 		r.ttls[domainName] = make(map[string]map[string]time.Duration)
@@ -473,12 +481,10 @@ func (r *ConsumerGroupRepository) StoreTTL(
 		r.ttls[domainName][queueName] = make(map[string]time.Duration)
 	}
 
-	// Stocker le TTL
 	r.ttls[domainName][queueName][groupID] = ttl
 	return nil
 }
 
-// GetTTL récupère le TTL d'un groupe
 func (r *ConsumerGroupRepository) GetTTL(
 	ctx context.Context,
 	domainName, queueName, groupID string,
@@ -486,7 +492,7 @@ func (r *ConsumerGroupRepository) GetTTL(
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Vérifier si le TTL est défini
+	// Check if TTL is defined
 	if _, exists := r.ttls[domainName]; !exists {
 		return 0, errors.New("TTL not found")
 	}
@@ -501,23 +507,20 @@ func (r *ConsumerGroupRepository) GetTTL(
 	return ttl, nil
 }
 
-// GetAllGroups récupère tous les consumer groups de tous les domaines
 func (r *ConsumerGroupRepository) GetAllGroups(ctx context.Context) ([]*model.ConsumerGroup, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	var allGroups []*model.ConsumerGroup
 
-	// Parcourir toutes les entrées
 	for domainName, domainConsumers := range r.consumers {
 		for queueName, queueConsumers := range domainConsumers {
 			for groupID := range queueConsumers {
 				log.Printf("[DEBUG] getting: %s.%s.%s", domainName, queueName, groupID)
 
-				// Libérer le mutex pour appeler GetGroupDetails
 				r.mu.RUnlock()
 				group, err := r.GetGroupDetails(ctx, domainName, queueName, groupID)
-				r.mu.RLock() // Reprendre le mutex
+				r.mu.RLock()
 
 				if err != nil {
 					log.Printf("Error getting details for group %s: %v", groupID, err)
@@ -535,7 +538,6 @@ func (r *ConsumerGroupRepository) GetAllGroups(ctx context.Context) ([]*model.Co
 	return allGroups, nil
 }
 
-// UpdateLastActivity met à jour le timestamp d'activité d'un groupe
 func (r *ConsumerGroupRepository) UpdateLastActivity(
 	ctx context.Context,
 	domainName, queueName, groupID string,
@@ -543,7 +545,6 @@ func (r *ConsumerGroupRepository) UpdateLastActivity(
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Créer les maps si nécessaire
 	if _, exists := r.timestamps[domainName]; !exists {
 		r.timestamps[domainName] = make(map[string]map[string]time.Time)
 	}
@@ -551,7 +552,6 @@ func (r *ConsumerGroupRepository) UpdateLastActivity(
 		r.timestamps[domainName][queueName] = make(map[string]time.Time)
 	}
 
-	// Mettre à jour le timestamp
 	r.timestamps[domainName][queueName][groupID] = time.Now()
 	return nil
 }

@@ -32,12 +32,14 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
         // Assurez-vous que ces propriétés existent quelle que soit la casse
         consumerIDs: groupData.ConsumerIDs || groupData.consumerIDs || [],
         lastActivity: groupData.LastActivity || groupData.lastActivity,
-        position: groupData.Position || groupData.position || 0
+        createdAt: groupData.CreatedAt || groupData.createdAt,
+        position: groupData.Position || groupData.position || 0,
+        ttl: groupData.TTL || groupData.ttl || 0,
       };
 
       setGroup(normalizedGroup);
-      setTTL(groupData.ttl || '0');
-      setTTLInput(groupData.ttl || '0');
+      setTTL(formatDuration(groupData.TTL) || '0');
+      setTTLInput(formatDuration(groupData.TTL) || '0');
 
       // Charger les messages en attente pour ce groupe
       console.log(`Fetching pending messages for ${domainName}/${queueName}/${groupID}`);
@@ -58,8 +60,8 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
     fetchGroupDetails();
 
     // Rafraîchir périodiquement
-    const interval = setInterval(fetchGroupDetails, 10000);
-    return () => clearInterval(interval);
+    // const interval = setInterval(fetchGroupDetails, 10000);
+    // return () => clearInterval(interval);
   }, [domainName, queueName, groupID]);
 
   // Mettre à jour le TTL avec gestion d'erreur améliorée
@@ -198,6 +200,12 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{groupID}</dd>
             </div>
             <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <dt className="text-sm font-medium text-gray-500">Creation date</dt>
+              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                {group && group.createdAt ? new Date(group.createdAt).toLocaleString() : 'Never'}
+              </dd>
+            </div>
+            <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt className="text-sm font-medium text-gray-500">Last Activity</dt>
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                 {group && group.lastActivity ? new Date(group.lastActivity).toLocaleString() : 'Never'}
@@ -217,7 +225,7 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
                     <input
                       type="text"
                       value={ttlInput}
-                      onChange={(e) => setTTLInput(e.target.value)}
+                      onChange={(e) => setTTLInput(formatDuration(e.target.value))}
                       className="border border-gray-300 rounded-md p-1 text-sm"
                       placeholder="e.g. 30m, 1h, 24h"
                     />
@@ -253,7 +261,7 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
                   </div>
                 ) : (
                   <>
-                    <span className="mr-2">{formatDuration(ttl)}</span>
+                    <span className="mr-2">{group && group.ttl ? formatDuration(group.ttl) : ttl}</span>
                     <button
                       onClick={() => setShowTTLEditor(true)}
                       className="p-1 text-indigo-600 hover:text-indigo-800"

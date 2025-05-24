@@ -4,17 +4,17 @@ import (
 	"time"
 )
 
-// ConsumerGroup représente ungroupe de consumers d'une queue
+// Queue consumers group
 type ConsumerGroup struct {
 	DomainName   string
 	QueueName    string
 	GroupID      string
 	Position     int64
-	ConsumerIDs  []string      // Liste des consumers
-	TTL          time.Duration // Nouveau: Durée avant inactivité
-	CreatedAt    time.Time     // Nouveau: Date de création
-	LastActivity time.Time     // Nouveau: Dernière activité (pas juste consommation)
-	MessageCount int           // Nouveau: Messages en attente d'acquittement
+	CreatedAt    time.Time
+	ConsumerIDs  []string      // Consumers
+	TTL          time.Duration // Time to live
+	LastActivity time.Time     // Last activity (any)
+	MessageCount int           // Messages waiting ack
 }
 
 func (cg *ConsumerGroup) UpdatePosition(newPosition int64) {
@@ -26,4 +26,9 @@ func (cg *ConsumerGroup) UpdatePosition(newPosition int64) {
 
 func (cg *ConsumerGroup) GetPosition() int64 {
 	return cg.Position
+}
+
+func (cg *ConsumerGroup) SetCreatedAt(t time.Time) {
+	cg.CreatedAt = t
+	cg.LastActivity = time.Now()
 }

@@ -31,7 +31,6 @@ func (h *Handler) listAllConsumerGroups(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// listConsumerGroups liste tous les consumer groups d'une queue
 func (h *Handler) listConsumerGroups(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -49,7 +48,6 @@ func (h *Handler) listConsumerGroups(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// getConsumerGroup récupère les détails d'un consumer group
 func (h *Handler) getConsumerGroup(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -62,7 +60,7 @@ func (h *Handler) getConsumerGroup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("[ERROR] getting consumer group %s.%s.%s: %v", domainName, queueName, groupID, err)
 
-		// Différencier les différents types d'erreurs
+		// Filter error types
 		if err.Error() == "consumer group not found" {
 			http.Error(w, "Consumer group not found or expired", http.StatusNotFound)
 		} else {
@@ -71,7 +69,7 @@ func (h *Handler) getConsumerGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// MAJ explicite de l'activité
+	// Activity update
 	if updater, ok := h.consumerGroupService.(interface {
 		UpdateLastActivity(ctx context.Context, domainName, queueName, groupID, consumerID string) error
 	}); ok {
@@ -84,13 +82,11 @@ func (h *Handler) getConsumerGroup(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(group)
 }
 
-// createConsumerGroup crée un nouveau consumer group
 func (h *Handler) createConsumerGroup(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
 	queueName := vars["queue"]
 
-	// Lire le corps de la requête
 	var request struct {
 		GroupID string `json:"groupID"`
 		TTL     string `json:"ttl,omitempty"`
@@ -101,13 +97,12 @@ func (h *Handler) createConsumerGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Valider les paramètres
 	if request.GroupID == "" {
 		http.Error(w, "GroupID is required", http.StatusBadRequest)
 		return
 	}
 
-	// Convertir le TTL en duration
+	// Convert TTL to duration
 	var ttl time.Duration
 	var err error
 	if request.TTL != "" && request.TTL != "0" {
@@ -118,7 +113,7 @@ func (h *Handler) createConsumerGroup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Créer le consumer group
+	// create
 	if err := h.consumerGroupService.CreateConsumerGroup(r.Context(), domainName, queueName, request.GroupID, ttl); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -132,7 +127,7 @@ func (h *Handler) createConsumerGroup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// deleteConsumerGroup supprime un consumer group
+// TODO: check
 func (h *Handler) deleteConsumerGroup(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -150,7 +145,6 @@ func (h *Handler) deleteConsumerGroup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// updateConsumerGroupTTL met à jour le TTL d'un consumer group
 func (h *Handler) updateConsumerGroupTTL(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -159,7 +153,6 @@ func (h *Handler) updateConsumerGroupTTL(w http.ResponseWriter, r *http.Request)
 
 	log.Printf("[DEBUG] Updating TTL for consumer group %s.%s.%s", domainName, queueName, groupID)
 
-	// Lire le corps de la requête
 	var request struct {
 		TTL string `json:"ttl"`
 	}
@@ -170,7 +163,7 @@ func (h *Handler) updateConsumerGroupTTL(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Convertir le TTL en duration
+	// TTL to duration
 	var ttl time.Duration
 	var err error
 	if request.TTL != "" && request.TTL != "0" {
@@ -182,7 +175,7 @@ func (h *Handler) updateConsumerGroupTTL(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	// Vérifier d'abord que le groupe existe
+	// group check
 	_, err = h.consumerGroupService.GetGroupDetails(r.Context(), domainName, queueName, groupID)
 	if err != nil {
 		log.Printf("[ERROR] getting consumer group: %v", err)
@@ -190,14 +183,14 @@ func (h *Handler) updateConsumerGroupTTL(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Mettre à jour le TTL
+	// TTL update
 	if err := h.consumerGroupService.UpdateConsumerGroupTTL(r.Context(), domainName, queueName, groupID, ttl); err != nil {
 		log.Printf("[ERROR] updating TTL: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Mise à jour explicite de l'activité (si l'interface le prend en charge)
+	// update through interface
 	if updater, ok := h.consumerGroupService.(interface {
 		UpdateLastActivity(ctx context.Context, domainName, queueName, groupID, consumerID string) error
 	}); ok {
@@ -214,7 +207,6 @@ func (h *Handler) updateConsumerGroupTTL(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// getPendingMessages récupère les messages en attente pour un consumer group
 func (h *Handler) getPendingMessages(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -223,7 +215,6 @@ func (h *Handler) getPendingMessages(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("API request: Getting pending messages for group %s.%s.%s", domainName, queueName, groupID)
 
-	// Utiliser la méthode du service directement
 	messages, err := h.consumerGroupService.GetPendingMessages(r.Context(), domainName, queueName, groupID)
 	if err != nil {
 		log.Printf("Error getting pending messages: %v", err)
@@ -237,14 +228,12 @@ func (h *Handler) getPendingMessages(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// addConsumerToGroup ajoute un consumer à un groupe
 func (h *Handler) addConsumerToGroup(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
 	queueName := vars["queue"]
 	groupID := vars["group"]
 
-	// Lire le corps de la requête
 	var request struct {
 		ConsumerID string `json:"consumerID"`
 	}
@@ -254,7 +243,7 @@ func (h *Handler) addConsumerToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ajouter le consumer
+	// Add consumer
 	if err := h.consumerGroupRepo.RegisterConsumer(r.Context(), domainName, queueName, groupID, request.ConsumerID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -266,7 +255,6 @@ func (h *Handler) addConsumerToGroup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// removeConsumerFromGroup supprime un consumer d'un groupe
 func (h *Handler) removeConsumerFromGroup(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -274,7 +262,7 @@ func (h *Handler) removeConsumerFromGroup(w http.ResponseWriter, r *http.Request
 	groupID := vars["group"]
 	consumerID := vars["consumer"]
 
-	// Supprimer le consumer
+	// Delete consumer
 	if err := h.consumerGroupRepo.RemoveConsumer(r.Context(), domainName, queueName, groupID, consumerID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

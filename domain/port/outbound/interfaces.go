@@ -110,5 +110,6 @@ type ConsumerGroupRepository interface {
 	// ListGroups liste tous les groupes pour une queue
 	ListGroups(ctx context.Context, domainName, queueName string) ([]string, error)
 
+	DeleteGroup(ctx context.Context, domainName, queueName, groupID string) error
 	CleanupStaleGroups(ctx context.Context, olderThan time.Duration) error
 }

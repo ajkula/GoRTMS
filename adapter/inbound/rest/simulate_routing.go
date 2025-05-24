@@ -13,15 +13,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// testRoutingRules teste si un message serait routé selon les règles actuelles
 func (h *Handler) testRoutingRules(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
 
-	// Analyser le corps de la requête
 	var request struct {
-		Queue   string                 `json:"queue"`   // File d'attente source
-		Payload map[string]interface{} `json:"payload"` // Contenu du message de test
+		Queue   string                 `json:"queue"`   // Source queue
+		Payload map[string]interface{} `json:"payload"` // Test message content
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -30,36 +28,43 @@ func (h *Handler) testRoutingRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Vérifier que la file source existe
+	// Source Q exists check
 	_, err := h.queueService.GetQueue(r.Context(), domainName, request.Queue)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Source queue not found: %s", err), http.StatusNotFound)
 		return
 	}
 
-	// Convertir le payload en JSON
+	// Payload to JSON
 	payloadBytes, err := json.Marshal(request.Payload)
 	if err != nil {
 		http.Error(w, "Failed to encode payload", http.StatusInternalServerError)
 		return
 	}
 
-	// Créer un message de test
+	id := "test-" + GenerateID()
+	if val, ok := request.Payload["id"]; ok {
+		if str, ok := val.(string); ok && str != "" {
+			id = str
+		}
+	}
+
+	// Create test msg
 	testMessage := &model.Message{
-		ID:        "test-" + GenerateID(),
+		ID:        id,
 		Payload:   payloadBytes,
 		Headers:   make(map[string]string),
 		Timestamp: time.Now(),
 	}
 
-	// Obtenir toutes les règles de routage pour le domaine
+	// Get all routing rules for the domain
 	rules, err := h.routingService.ListRoutingRules(r.Context(), domainName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Filtrer les règles qui ont la file spécifiée comme source
+	// Filter the rules that have the specified queue as the source
 	sourceRules := make([]*model.RoutingRule, 0)
 	for _, rule := range rules {
 		if rule.SourceQueue == request.Queue {
@@ -67,7 +72,7 @@ func (h *Handler) testRoutingRules(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Tester chaque règle
+	// Test each rule
 	type MatchResult struct {
 		Rule             *model.RoutingRule `json:"rule"`
 		Matches          bool               `json:"matches"`
@@ -76,7 +81,7 @@ func (h *Handler) testRoutingRules(w http.ResponseWriter, r *http.Request) {
 
 	matches := make([]MatchResult, 0, len(sourceRules))
 	for _, rule := range sourceRules {
-		// Évaluer le prédicat pour voir si la règle s'applique
+		// Evaluate the predicate to see if the rule applies
 		isMatch := evaluatePredicate(rule.Predicate, testMessage)
 
 		matches = append(matches, MatchResult{
@@ -86,7 +91,6 @@ func (h *Handler) testRoutingRules(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Générer la réponse
 	response := map[string]interface{}{
 		"sourceQueue": request.Queue,
 		"messageId":   testMessage.ID,
@@ -97,14 +101,13 @@ func (h *Handler) testRoutingRules(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// evaluatePredicate évalue un prédicat sur un message
 func evaluatePredicate(predicate interface{}, message *model.Message) bool {
-	// Cas où nous avons un prédicat JSON
+	// if JSON
 	if jsonPred, ok := predicate.(model.JSONPredicate); ok {
 		return evaluateJSONPredicate(jsonPred, message)
 	}
 
-	// Si le prédicat est déjà un objet JsonPredicate sous forme de map
+	// if map
 	if mapPred, ok := predicate.(map[string]interface{}); ok {
 		jsonPred := model.JSONPredicate{
 			Type:  mapPred["type"].(string),
@@ -114,36 +117,31 @@ func evaluatePredicate(predicate interface{}, message *model.Message) bool {
 		return evaluateJSONPredicate(jsonPred, message)
 	}
 
-	// Si nous avons une fonction de prédicat (cas avancé)
+	// if func
 	if predFunc, ok := predicate.(model.PredicateFunc); ok {
 		return predFunc(message)
 	}
 
-	// Prédicat inconnu ou non supporté
 	log.Printf("Unsupported predicate type: %T", predicate)
 	return false
 }
 
-// evaluateJSONPredicate évalue un prédicat JSON sur un message
 func evaluateJSONPredicate(predicate model.JSONPredicate, message *model.Message) bool {
 
-	// Décoder le payload du message
+	// decode payload
 	var payload map[string]interface{}
 	if err := json.Unmarshal(message.Payload, &payload); err != nil {
 		log.Printf("Error decoding message payload for predicate evaluation: %v", err)
 		return false
 	}
 
-	// Obtenir la valeur du champ à partir du payload
 	fieldPath := strings.Split(predicate.Field, ".")
 	fieldValue := getNestedValue(payload, fieldPath)
 
 	if fieldValue == nil {
-		// Le champ n'existe pas dans le message
 		return false
 	}
 
-	// Comparer selon le type d'opération
 	switch predicate.Type {
 	case "eq": // equals
 		return isEqual(fieldValue, predicate.Value)
@@ -165,7 +163,7 @@ func evaluateJSONPredicate(predicate model.JSONPredicate, message *model.Message
 	}
 }
 
-// getNestedValue extrait une valeur imbriquée d'une map
+// extracts a nested value from a map
 func getNestedValue(data map[string]interface{}, path []string) interface{} {
 	if len(path) == 0 {
 		return nil
@@ -182,14 +180,14 @@ func getNestedValue(data map[string]interface{}, path []string) interface{} {
 	return nil
 }
 
-// Fonctions auxiliaires pour les comparaisons
+// Helper functions for comparisons
 func isEqual(a, b interface{}) bool {
-	// Implémentation de base, à améliorer pour gérer différents types
+	// Basic implementation, to be improved to handle different types
 	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
 }
 
 func isGreaterThan(a, b interface{}) bool {
-	// Convertir en nombres si possible
+	// Convert to numbers if possible
 	aFloat, aOk := toFloat64(a)
 	bFloat, bOk := toFloat64(b)
 
@@ -197,7 +195,7 @@ func isGreaterThan(a, b interface{}) bool {
 		return aFloat > bFloat
 	}
 
-	// Comparaison lexicographique pour les strings
+	// Lexicographic comparison for strings
 	return fmt.Sprintf("%v", a) > fmt.Sprintf("%v", b)
 }
 
@@ -219,7 +217,7 @@ func contains(a, b interface{}) bool {
 	return strings.Contains(aStr, bStr)
 }
 
-// toFloat64 tente de convertir une valeur en float64
+// toFloat64 tries to convert a value to float64
 func toFloat64(v interface{}) (float64, bool) {
 	switch value := v.(type) {
 	case float64:

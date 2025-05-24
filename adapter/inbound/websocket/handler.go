@@ -154,21 +154,21 @@ func (h *Handler) handleWebSocketSession(wsConn *websocketConnection) {
 	}
 }
 
-// handleClientMessage traite les messages envoyés par le client WebSocket
+// process messages from WebSocket client
 func (h *Handler) handleClientMessage(wsConn *websocketConnection, messageType int, data []byte) {
-	// Uniquement pour les messages texte
+	// text only
 	if messageType != websocket.TextMessage {
 		return
 	}
 
-	// Parser le message JSON
+	// Parse JSON
 	var message map[string]any
 	if err := json.Unmarshal(data, &message); err != nil {
 		log.Printf("Error parsing client message: %v", err)
 		return
 	}
 
-	// Récupérer le type de message
+	// get message type
 	msgType, ok := message["type"].(string)
 	if !ok {
 		return

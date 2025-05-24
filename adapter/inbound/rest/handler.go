@@ -21,7 +21,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// Handler gère les requêtes HTTP pour l'API REST
+// REST API handler
 type Handler struct {
 	messageService       inbound.MessageService
 	domainService        inbound.DomainService
@@ -33,7 +33,6 @@ type Handler struct {
 	consumerGroupRepo    outbound.ConsumerGroupRepository
 }
 
-// NewHandler crée un nouveau gestionnaire REST
 func NewHandler(
 	messageService inbound.MessageService,
 	domainService inbound.DomainService,
@@ -56,55 +55,49 @@ func NewHandler(
 	}
 }
 
-// SetupRoutes configure les routes de l'API REST
+// SetupRoutes REST API config
 func (h *Handler) SetupRoutes(router *mux.Router) {
-	// Routes pour les domaines
+	// Domains routes
 	router.HandleFunc("/api/domains", h.listDomains).Methods("GET")
 	router.HandleFunc("/api/domains", h.createDomain).Methods("POST")
 	router.HandleFunc("/api/domains/{domain}", h.getDomain).Methods("GET")
 	router.HandleFunc("/api/domains/{domain}", h.deleteDomain).Methods("DELETE")
 
-	// Routes pour les files d'attente
+	// Queues routes
 	router.HandleFunc("/api/domains/{domain}/queues", h.listQueues).Methods("GET")
 	router.HandleFunc("/api/domains/{domain}/queues", h.createQueue).Methods("POST")
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}", h.getQueue).Methods("GET")
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}", h.deleteQueue).Methods("DELETE")
 
-	// Routes pour les messages
+	// Messages routes
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/messages", h.publishMessage).Methods("POST")
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/messages", h.consumeMessages).Methods("GET")
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/subscribe", h.subscribeToQueue).Methods("POST")
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/unsubscribe", h.unsubscribeFromQueue).Methods("POST")
 
-	// Routes pour les règles de routage
+	// Routing rules routes
 	router.HandleFunc("/api/domains/{domain}/routes", h.listRoutingRules).Methods("GET")
 	router.HandleFunc("/api/domains/{domain}/routes", h.addRoutingRule).Methods("POST")
 	router.HandleFunc("/api/domains/{domain}/routes/{source}/{destination}", h.removeRoutingRule).Methods("DELETE")
 
-	// Simulation de routing
+	// Simulation routes
 	router.HandleFunc("/api/domains/{domain}/routes/test", h.testRoutingRules).Methods("POST")
 
-	// Route globale pour tous les consumer groups
+	// ConsumerGroup routes
 	router.HandleFunc("/api/consumer-groups", h.listAllConsumerGroups).Methods("GET")
-
-	// Routes pour les consumer groups d'une queue spécifique
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups", h.listConsumerGroups).Methods("GET")
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups", h.createConsumerGroup).Methods("POST")
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}", h.getConsumerGroup).Methods("GET")
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}", h.deleteConsumerGroup).Methods("DELETE")
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/ttl", h.updateConsumerGroupTTL).Methods("PUT")
-
-	// Routes pour les messages en attente
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/messages", h.getPendingMessages).Methods("GET")
-
-	// Routes pour les consumers d'un groupe
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers", h.addConsumerToGroup).Methods("POST")
 	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers/{consumer}", h.removeConsumerFromGroup).Methods("DELETE")
 
-	// Route pour les stats
+	// Stats routes
 	router.HandleFunc("/api/stats", h.getStats).Methods("GET")
 
-	// Routes pour les ressources système (nouvelles)
+	// system ressources routes
 	if h.resourceMonitor != nil {
 		log.Println("Setting up resource monitoring routes")
 		router.HandleFunc("/api/resources/current", h.getCurrentResourceStats).Methods("GET")
@@ -112,35 +105,33 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 		router.HandleFunc("/api/resources/domains/{domain}", h.getDomainResourceStats).Methods("GET")
 	}
 
-	// Route pour la santé
+	// health check routes
 	router.HandleFunc("/health", h.healthCheck).Methods("GET")
 
-	// Route pour l'UI
+	// UI routes
 	router.PathPrefix("/ui/").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Chemin du fichier demandé
+		// req file path
 		path := strings.TrimPrefix(r.URL.Path, "/ui/")
 		filePath := filepath.Join("./web/dist", path)
 
-		// Vérifier si le fichier existe
+		// check if file exists
 		_, err := os.Stat(filePath)
 		if os.IsNotExist(err) {
-			// Si le fichier n'existe pas, servir index.html pour le routage React
+			// if file doesn't exist, serve index.html for React routing
 			http.ServeFile(w, r, "./web/dist/index.html")
 			return
 		}
 
-		// Sinon, servir le fichier statique
+		// Or, serve static file
 		http.StripPrefix("/ui/", http.FileServer(http.Dir("./web/dist"))).ServeHTTP(w, r)
 	}))
 }
 
-// healthCheck vérifie l'état du service
 func (h *Handler) healthCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// listDomains liste tous les domaines
 func (h *Handler) listDomains(w http.ResponseWriter, r *http.Request) {
 	domains, err := h.domainService.ListDomains(r.Context())
 	if err != nil {
@@ -148,7 +139,7 @@ func (h *Handler) listDomains(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convertir en structure simple pour la réponse JSON
+	// simple JSON response structure
 	type domainResponse struct {
 		Name string `json:"name"`
 	}
@@ -164,7 +155,6 @@ func (h *Handler) listDomains(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// createDomain crée un nouveau domaine
 func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 	var config model.DomainConfig
 	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
@@ -177,7 +167,7 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Enregistrer l'événement
+	// Register event
 	h.statsService.RecordDomainCreated(config.Name)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -188,7 +178,6 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// getDomain récupère les détails d'un domaine
 func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -199,7 +188,7 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Créer une structure simplifiée sans références circulaires
+	// Simple structure circular reference-less
 	type QueueInfo struct {
 		Name         string            `json:"name"`
 		MessageCount int               `json:"messageCount"`
@@ -219,20 +208,20 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 		Routes []RouteInfo      `json:"routes"`
 	}
 
-	// Remplir la réponse
+	// assign response
 	response := DomainResponse{
 		Name:   domain.Name,
 		Queues: make([]QueueInfo, 0, len(domain.Queues)),
 		Routes: make([]RouteInfo, 0),
 	}
 
-	// Convertir le schema en version sérialisable
+	// Convert schema to serializable type
 	if domain.Schema != nil {
 		schemaInfo := model.SchemaInfo{
 			HasValidation: domain.Schema.Validation != nil,
 		}
 
-		// Copier les champs si disponibles
+		// Copie if available
 		if domain.Schema.Fields != nil {
 			schemaInfo.Fields = make(map[string]string)
 			for fieldName, fieldType := range domain.Schema.Fields {
@@ -250,7 +239,7 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 			qName, q.Config, q.MessageCount)
 	}
 
-	// Ajouter les queues
+	// Add queues
 	for queueName, queue := range domain.Queues {
 		response.Queues = append(response.Queues, QueueInfo{
 			Name:         queueName,
@@ -259,40 +248,39 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Ajouter les routes avec un meilleur traitement des prédicats
+	// Add better predicate treatment routes
 	for srcQueue, dstRoutes := range domain.Routes {
 		for dstQueue, rule := range dstRoutes {
 			var predicateInfo any = nil
 
 			switch pred := rule.Predicate.(type) {
 			case model.JSONPredicate:
-				// Cas du JSONPredicate explicite
+				// JSONPredicate
 				predicateInfo = pred
 
 			case model.PredicateFunc, func(*model.Message) bool:
-				// Cas d'une fonction - non sérialisable
+				// function - unserializable
 				predicateInfo = map[string]string{
 					"type": "function",
 					"info": "Predicate function (non-serializable)",
 				}
 
 			case map[string]any:
-				// Cas d'un map existant - probablement déjà un prédicat structuré
-				// Vérifier s'il a la structure d'un JSONPredicate
+				// existing map - JSONPredicate ?
 				if pred["type"] != nil && pred["field"] != nil {
-					// C'est probablement un JSONPredicate sous forme de map
+					// map JSONPredicate
 					predicateInfo = map[string]any{
 						"type":  pred["type"],
 						"field": pred["field"],
 						"value": pred["value"],
 					}
 				} else {
-					// Map générique - conserver tel quel
+					// Map - keep as is
 					predicateInfo = pred
 				}
 
 			default:
-				// Cas par défaut - fournir le type pour le débogage
+				// default - serve type for debug
 				predicateInfo = map[string]string{
 					"type": fmt.Sprintf("%T", rule.Predicate),
 					"info": "Unknown predicate type",
@@ -307,7 +295,7 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Log la réponse pour débogage
+	// Log response
 	respBytes, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
 		log.Printf("Error marshaling response: %v", err)
@@ -321,7 +309,6 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// deleteDomain supprime un domaine
 func (h *Handler) deleteDomain(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -337,7 +324,6 @@ func (h *Handler) deleteDomain(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// listQueues liste toutes les files d'attente d'un domaine
 func (h *Handler) listQueues(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -348,7 +334,7 @@ func (h *Handler) listQueues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convertir en structure simple pour la réponse JSON
+	// simple JSON response structure
 	type queueResponse struct {
 		Name         string             `json:"name"`
 		MessageCount int                `json:"messageCount"`
@@ -370,27 +356,26 @@ func (h *Handler) listQueues(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// createQueue crée une nouvelle file d'attente
 func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
 
-	// Lire le corps de la requête brut
+	// Read raw req body
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Printf("Error reading request body: %v", err)
 		http.Error(w, "Failed to read request", http.StatusBadRequest)
 		return
 	}
-	// Réinitialiser le corps pour le décodeur JSON
+	// Reset body for JSON decoder
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-	// Log le corps de la requête
+	// Log req body
 	log.Printf("Queue creation request body: %s", string(bodyBytes))
 
 	var request struct {
 		Name   string          `json:"name"`
-		Config json.RawMessage `json:"config"` // Utilisez RawMessage pour éviter les problèmes de décodage
+		Config json.RawMessage `json:"config"` // RawMessage to avoid decoding pblms
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -399,7 +384,7 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Maintenant, décodez la configuration manuellement
+	// decode manually
 	var configMap map[string]any
 	if err := json.Unmarshal(request.Config, &configMap); err != nil {
 		log.Printf("Error decoding config: %v", err)
@@ -407,15 +392,15 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Construire la configuration de base
+	// Base config
 	config := &model.QueueConfig{}
 
-	// Appliquer les valeurs de la requête
+	// Apply req values
 	if isPersistent, ok := configMap["isPersistent"].(bool); ok {
 		config.IsPersistent = isPersistent
 	}
 
-	// JSON envoie les nombres comme float64
+	// JSON makes numbers as float64
 	if maxSize, ok := configMap["maxSize"].(float64); ok {
 		config.MaxSize = int(maxSize)
 	}
@@ -424,13 +409,13 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 		ttl, err := time.ParseDuration(ttlStr)
 		if err != nil {
 			log.Printf("Error parsing TTL duration: %v", err)
-			// Ne pas échouer, utiliser la valeur par défaut
+			// use default instead
 		} else {
 			config.TTL = ttl
 		}
 	}
 
-	// Traiter le mode de livraison
+	// Process delivery mode
 	if modeStr, ok := configMap["deliveryMode"].(string); ok {
 		switch modeStr {
 		case "broadcast":
@@ -447,7 +432,7 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Creating queue with config: %+v", config)
 
-	// Traiter la configuration de retry
+	// Process retry config
 	if retryEnabled, ok := configMap["retryEnabled"].(bool); ok && retryEnabled {
 		config.RetryEnabled = true
 		if retryConfigMap, ok := configMap["retryConfig"].(map[string]interface{}); ok {
@@ -477,7 +462,7 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Traiter la configuration du circuit breaker
+	// Process circuit breaker config
 	if cbEnabled, ok := configMap["circuitBreakerEnabled"].(bool); ok && cbEnabled {
 		config.CircuitBreakerEnabled = true
 		if cbConfigMap, ok := configMap["circuitBreakerConfig"].(map[string]interface{}); ok {
@@ -528,7 +513,6 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// getQueue récupère les détails d'une file d'attente
 func (h *Handler) getQueue(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -548,7 +532,6 @@ func (h *Handler) getQueue(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// deleteQueue supprime une file d'attente
 func (h *Handler) deleteQueue(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -565,13 +548,11 @@ func (h *Handler) deleteQueue(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// publishMessage publie un message dans une file d'attente
 func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
 	queueName := vars["queue"]
 
-	// Lire le corps de la requête
 	var payload map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		log.Printf("Error decoding request body: %v", err)
@@ -581,7 +562,7 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Message payload: %+v", payload)
 
-	// Convertir le payload en JSON
+	// Convert to JSON
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("Error marshalling payload: %v", err)
@@ -596,7 +577,7 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Créer le message
+	// Create message
 	message := &model.Message{
 		ID:        GenerateID(),
 		Payload:   payloadBytes,
@@ -604,7 +585,7 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 		Timestamp: time.Now(),
 	}
 
-	// Publier le message
+	// Publish message
 	if err := h.messageService.PublishMessage(domainName, queueName, message); err != nil {
 		log.Printf("Error publishing message: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -618,13 +599,11 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// consumeMessages consomme des messages d'une file d'attente
 func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
 	queueName := vars["queue"]
 
-	// Extraction des paramètres
 	query := r.URL.Query()
 	timeoutStr := query.Get("timeout")
 	maxCountStr := query.Get("max")
@@ -644,7 +623,7 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Received request with groupID: %s, consumerID: %s, maxCount: %d", groupID, consumerID, maxCount)
 
-	// Adapter pour le polling long si un timeout est spécifié
+	// long polling if timeout is set TODO: check this part
 	ctx := r.Context()
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -654,7 +633,6 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 
 	var messages []*model.Message
 
-	// Utiliser les consumer groups si groupID est spécifié
 	if groupID == "" {
 		groupID = "temp-" + time.Now().Format("20060102-150405.999999999")
 	}
@@ -664,8 +642,7 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 		Timeout:     time.Duration(timeout) * time.Second,
 	}
 
-	// Récupérer les messages avec gestion des groupes
-	for i := 0; i < maxCount; i++ {
+	for range maxCount {
 		message, err := h.messageService.ConsumeMessageWithGroup(ctx, domainName, queueName, groupID, options)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -673,29 +650,27 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if message == nil {
-			break // Plus de messages
+			break // empty
 		}
 
 		messages = append(messages, message)
 	}
 
-	// Convertir les messages pour la réponse
 	responseMessages := make([]map[string]any, len(messages))
 	for i, msg := range messages {
-		// Décoder le payload
 		var payload map[string]any
 		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 			payload = map[string]any{"data": string(msg.Payload)}
 		}
 
-		// Ajouter les métadonnées
+		// Add metadata
 		responseMsg := map[string]any{
 			"id":        msg.ID,
 			"timestamp": msg.Timestamp,
 			"headers":   msg.Headers,
 		}
 
-		// Fusionner avec le payload
+		// Fusion with payload
 		for k, v := range payload {
 			responseMsg[k] = v
 		}
@@ -710,11 +685,8 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// subscribeToQueue s'abonne à une file d'attente (HTTP API pour registering)
+// TODO: check this
 func (h *Handler) subscribeToQueue(w http.ResponseWriter, r *http.Request) {
-	// Cette méthode est juste pour l'API HTTP, les vraies souscriptions
-	// se font via WebSocket/autres protocoles
-
 	// vars := mux.Vars(r)
 	// domainName := vars["domain"]
 	// queueName := vars["queue"]
@@ -724,10 +696,9 @@ func (h *Handler) subscribeToQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		// Ignorer les erreurs de parsing, c'est peut-être un body vide
+		// Ignore err, might be empty body
 	}
 
-	// Générer un ID de souscription (mais pas d'abonnement réel)
 	subscriptionID := GenerateID()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -738,7 +709,6 @@ func (h *Handler) subscribeToQueue(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// unsubscribeFromQueue se désinscrit d'une file d'attente
 func (h *Handler) unsubscribeFromQueue(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -764,7 +734,6 @@ func (h *Handler) unsubscribeFromQueue(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// listRoutingRules liste toutes les règles de routage d'un domaine
 func (h *Handler) listRoutingRules(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -781,7 +750,6 @@ func (h *Handler) listRoutingRules(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// addRoutingRule ajoute une règle de routage
 func (h *Handler) addRoutingRule(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -804,7 +772,6 @@ func (h *Handler) addRoutingRule(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// removeRoutingRule supprime une règle de routage
 func (h *Handler) removeRoutingRule(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	domainName := vars["domain"]
@@ -825,14 +792,12 @@ func (h *Handler) removeRoutingRule(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) getStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Récupérer les statistiques
 	stats, err := h.statsService.GetStats(ctx)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Écrire la réponse JSON
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(stats); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -840,11 +805,10 @@ func (h *Handler) getStats(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// extractHeaders extrait les en-têtes pertinents de la requête
+// extracts meaningful headers from req
 func extractHeaders(r *http.Request) map[string]string {
 	headers := make(map[string]string)
 
-	// En-têtes pertinents
 	relevantHeaders := []string{
 		"Content-Type",
 		"X-Request-ID",
@@ -860,7 +824,7 @@ func extractHeaders(r *http.Request) map[string]string {
 	return headers
 }
 
-// getCurrentResourceStats retourne les statistiques actuelles d'utilisation des ressources
+// returns ressources usage stats
 func (h *Handler) getCurrentResourceStats(w http.ResponseWriter, r *http.Request) {
 	if h.resourceMonitor == nil {
 		http.Error(w, "Resource monitoring not available", http.StatusServiceUnavailable)
@@ -878,14 +842,13 @@ func (h *Handler) getCurrentResourceStats(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(stats)
 }
 
-// getResourceStatsHistory retourne l'historique des statistiques
 func (h *Handler) getResourceStatsHistory(w http.ResponseWriter, r *http.Request) {
 	if h.resourceMonitor == nil {
 		http.Error(w, "Resource monitoring not available", http.StatusServiceUnavailable)
 		return
 	}
 
-	// Paramètre optionnel pour limiter le nombre de points retournés
+	// Optional param to limit points number
 	limitStr := r.URL.Query().Get("limit")
 	limit := 0
 
@@ -909,7 +872,6 @@ func (h *Handler) getResourceStatsHistory(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(stats)
 }
 
-// getDomainResourceStats retourne les statistiques pour un domaine spécifique
 func (h *Handler) getDomainResourceStats(w http.ResponseWriter, r *http.Request) {
 	if h.resourceMonitor == nil {
 		http.Error(w, "Resource monitoring not available", http.StatusServiceUnavailable)
@@ -926,7 +888,6 @@ func (h *Handler) getDomainResourceStats(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Vérifier si le domaine existe
 	domainStats, exists := stats.DomainStats[domainName]
 	if !exists {
 		http.Error(w, "Domain not found", http.StatusNotFound)
@@ -937,8 +898,6 @@ func (h *Handler) getDomainResourceStats(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(domainStats)
 }
 
-// GenerateID génère un ID unique
 func GenerateID() string {
-	// Implémentation simple basée sur le timestamp et un nombre aléatoire
 	return fmt.Sprintf("msg-%d-%d", time.Now().UnixNano(), rand.Intn(10000))
 }
