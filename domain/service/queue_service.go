@@ -16,7 +16,6 @@ var (
 	ErrQueueAlreadyExists = errors.New("queue already exists")
 )
 
-// QueueServiceImpl implémente le service des files d'attente
 type QueueServiceImpl struct {
 	domainRepo     outbound.DomainRepository
 	statsService   inbound.StatsService
@@ -26,7 +25,6 @@ type QueueServiceImpl struct {
 	mu             sync.RWMutex
 }
 
-// NewQueueService crée un nouveau service de files d'attente
 func NewQueueService(
 	domainRepo outbound.DomainRepository,
 	statsService inbound.StatsService,
@@ -39,7 +37,7 @@ func NewQueueService(
 		rootCtx:       rootCtx,
 	}
 
-	// init les queues existantes
+	// init existing queues
 	go svc.initializeExistingQueues()
 
 	return svc
@@ -51,7 +49,6 @@ func (s *QueueServiceImpl) SetMessageService(messageService model.MessageProvide
 	s.messageService = messageService
 }
 
-// initializeExistingQueues initialise les channel queues pour les queues existantes
 func (s *QueueServiceImpl) initializeExistingQueues() {
 	domains, err := s.domainRepo.ListDomains(s.rootCtx)
 	if err != nil {
@@ -70,25 +67,20 @@ func (s *QueueServiceImpl) initializeExistingQueues() {
 	}
 }
 
-// GetChannelQueue récupère ou crée une ChannelQueue pour une file d'attente
 func (s *QueueServiceImpl) GetChannelQueue(ctx context.Context, domainName, queueName string) (model.QueueHandler, error) {
-	// Récupérer le domaine
 	domain, err := s.domainRepo.GetDomain(ctx, domainName)
 	if err != nil {
 		return nil, ErrDomainNotFound
 	}
 
-	// Vérifier si la file d'attente existe
 	queue, exists := domain.Queues[queueName]
 	if !exists {
 		return nil, ErrQueueNotFound
 	}
 
-	// Obtenir ou créer la channel queue
 	return s.getOrCreateChannelQueue(domainName, queue)
 }
 
-// GetChannelQueue récupère ou créé une channel queue
 func (s *QueueServiceImpl) getOrCreateChannelQueue(domainName string, queue *model.Queue) (*model.ChannelQueue, error) {
 	s.mu.RLock()
 	if domainQueues, exists := s.channelQueues[domainName]; exists {
@@ -99,36 +91,34 @@ func (s *QueueServiceImpl) getOrCreateChannelQueue(domainName string, queue *mod
 	}
 	s.mu.RUnlock()
 
-	// Créer une nouvelle channel queue
+	// create new channel queue
 	s.mu.Lock()
 
-	// Vérifier à nouveau au cas où une autre goroutine l'aurait créée entre-temps
+	// Double-check in case another goroutine created it in the meantime
 	if domainQueues, exists := s.channelQueues[domainName]; exists {
 		if cq, exists := domainQueues[queue.Name]; exists {
 			return cq, nil
 		}
 	} else {
-		// Initialiser la map si elle n'existe pas
 		s.channelQueues[domainName] = make(map[string]*model.ChannelQueue)
 	}
 
-	bufferSize := 100 // default
+	bufferSize := 100 // [CHECK] todo: use config
 	if queue.Config.MaxSize > 0 {
 		bufferSize = queue.Config.MaxSize
 	}
 
-	// Créer et démarrer la nouvelle queue
 	cq := model.NewChannelQueue(queue, s.rootCtx, bufferSize, s.messageService)
 	s.channelQueues[domainName][queue.Name] = cq
 
-	// Démarrer les workers
+	// start workers
 	cq.Start(s.rootCtx)
 	s.mu.Unlock()
 
-	// Utiliser une goroutine pour enregistrer l'événement sans bloquer
+	// Use a goroutine to log the event without blocking
 	if s.statsService != nil {
 		go func(ctx context.Context, domainName string) {
-			// Utiliser un contexte avec timeout pour éviter les blocages
+			// Use a context with timeout to avoid blocking
 			timeoutCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
 
@@ -137,24 +127,21 @@ func (s *QueueServiceImpl) getOrCreateChannelQueue(domainName string, queue *mod
 				queueCount := len(domain.Queues)
 				s.statsService.RecordDomainActive(domainName, queueCount)
 			}
-		}(s.rootCtx, domainName) // Passer le contexte racine, pas Background()
+		}(s.rootCtx, domainName) // Pass the root context, not Background()
 	}
 
 	return cq, nil
 }
 
-// CreateQueue crée une nouvelle file d'attente dans un domaine
 func (s *QueueServiceImpl) CreateQueue(ctx context.Context, domainName, queueName string, config *model.QueueConfig) error {
 	log.Printf("Creating queue: %s.%s", domainName, queueName)
 
-	// Récupérer le domaine
 	domain, err := s.domainRepo.GetDomain(ctx, domainName)
 	if err != nil {
 		log.Printf("Error getting domain %s: %v", domainName, err)
 		return ErrDomainNotFound
 	}
 
-	// Vérifier si la file d'attente existe déjà
 	if domain.Queues != nil {
 		if _, exists := domain.Queues[queueName]; exists {
 			return ErrQueueAlreadyExists
@@ -163,7 +150,6 @@ func (s *QueueServiceImpl) CreateQueue(ctx context.Context, domainName, queueNam
 		domain.Queues = make(map[string]*model.Queue)
 	}
 
-	// Créer la file d'attente
 	queue := &model.Queue{
 		Name:         queueName,
 		DomainName:   domainName,
@@ -171,15 +157,13 @@ func (s *QueueServiceImpl) CreateQueue(ctx context.Context, domainName, queueNam
 		MessageCount: 0,
 	}
 
-	// Ajouter la file d'attente au domaine
 	domain.Queues[queueName] = queue
 
-	// Vérifier que Routes est initialisé
 	if domain.Routes == nil {
 		domain.Routes = make(map[string]map[string]*model.RoutingRule)
 	}
 
-	// Mettre à jour le domaine
+	// update domain
 	log.Printf("Storing domain with new queue %s", queueName)
 	if err := s.domainRepo.StoreDomain(ctx, domain); err != nil {
 		log.Printf("Error storing domain %s: %v", domainName, err)
@@ -191,17 +175,14 @@ func (s *QueueServiceImpl) CreateQueue(ctx context.Context, domainName, queueNam
 	return nil
 }
 
-// GetQueue récupère une file d'attente
 func (s *QueueServiceImpl) GetQueue(ctx context.Context, domainName, queueName string) (*model.Queue, error) {
 	log.Printf("Getting queue: %s.%s", domainName, queueName)
 
-	// Récupérer le domaine
 	domain, err := s.domainRepo.GetDomain(ctx, domainName)
 	if err != nil {
 		return nil, ErrDomainNotFound
 	}
 
-	// Récupérer la file d'attente
 	if domain.Queues == nil {
 		return nil, ErrQueueNotFound
 	}
@@ -214,32 +195,29 @@ func (s *QueueServiceImpl) GetQueue(ctx context.Context, domainName, queueName s
 	return queue, nil
 }
 
-// DeleteQueue supprime une file d'attente
 func (s *QueueServiceImpl) DeleteQueue(ctx context.Context, domainName, queueName string) error {
 	log.Printf("Deleting queue: %s.%s", domainName, queueName)
 
-	// Récupérer le domaine
 	domain, err := s.domainRepo.GetDomain(ctx, domainName)
 	if err != nil {
 		return ErrDomainNotFound
 	}
 
-	// Vérifier si la file d'attente existe
 	if domain.Queues == nil || domain.Queues[queueName] == nil {
 		return ErrQueueNotFound
 	}
 
-	// Arrêter la ChannelQueue si elle existe
+	// Stop ChannelQueue if it exists
 	s.mu.Lock()
 	if domainQueues, exists := s.channelQueues[domainName]; exists {
 		if channelQueue, exists := domainQueues[queueName]; exists {
-			// On libère le mutex pendant l'opération potentiellement longue
+			// Release the mutex during the potentially long operation
 			s.mu.Unlock()
 			log.Printf("Stopping queue: %s.%s", domainName, queueName)
 			channelQueue.Stop()
 			log.Printf("Queue stopped: %s.%s", domainName, queueName)
 
-			// On le reprend pour mettre à jour la map
+			// Reacquire it to update the map
 			s.mu.Lock()
 			delete(domainQueues, queueName)
 			if len(domainQueues) == 0 {
@@ -249,15 +227,14 @@ func (s *QueueServiceImpl) DeleteQueue(ctx context.Context, domainName, queueNam
 	}
 	s.mu.Unlock()
 
-	// Supprimer la file d'attente
+	// Delete queue
 	delete(domain.Queues, queueName)
 
-	// Supprimer les règles de routage associées
+	// Remove associated routing rules
 	if domain.Routes != nil {
 		delete(domain.Routes, queueName)
 		for srcQueue, destRoutes := range domain.Routes {
 			delete(destRoutes, queueName)
-			// Si la map est vide, la supprimer aussi
 			if len(destRoutes) == 0 {
 				delete(domain.Routes, srcQueue)
 			}
@@ -269,27 +246,26 @@ func (s *QueueServiceImpl) DeleteQueue(ctx context.Context, domainName, queueNam
 		s.statsService.RecordDomainActive(domainName, queueCount)
 	}
 
-	// Mettre à jour le domaine
+	// update domain
 	return s.domainRepo.StoreDomain(ctx, domain)
 }
 
-// StopDomainQueues arrête toutes les queues d'un domaine
 func (s *QueueServiceImpl) StopDomainQueues(ctx context.Context, domainName string) error {
 	s.mu.Lock()
 	queueMap, exists := s.channelQueues[domainName]
 	if !exists {
 		s.mu.Unlock()
-		return nil // Pas de queues pour ce domaine
+		return nil
 	}
 
-	// Copier les clés pour éviter de modifier la map pendant l'itération
+	// Copy the keys to avoid modifying the map during iteration
 	queueNames := make([]string, 0, len(queueMap))
 	for qName := range queueMap {
 		queueNames = append(queueNames, qName)
 	}
 	s.mu.Unlock()
 
-	// Arrêter chaque queue
+	// stop each queue
 	for _, qName := range queueNames {
 		s.mu.Lock()
 		cq, stillExists := queueMap[qName]
@@ -301,7 +277,7 @@ func (s *QueueServiceImpl) StopDomainQueues(ctx context.Context, domainName stri
 		}
 	}
 
-	// Supprimer toutes les références
+	// Del all refs
 	s.mu.Lock()
 	delete(s.channelQueues, domainName)
 	s.mu.Unlock()
@@ -309,17 +285,15 @@ func (s *QueueServiceImpl) StopDomainQueues(ctx context.Context, domainName stri
 	return nil
 }
 
-// ListQueues liste toutes les files d'attente d'un domaine
 func (s *QueueServiceImpl) ListQueues(ctx context.Context, domainName string) ([]*model.Queue, error) {
 	log.Printf("Listing queues for domain: %s", domainName)
 
-	// Récupérer le domaine
 	domain, err := s.domainRepo.GetDomain(ctx, domainName)
 	if err != nil {
 		return nil, ErrDomainNotFound
 	}
 
-	// Construire la liste des files d'attente
+	// Build the list of queues
 	queues := make([]*model.Queue, 0)
 	if domain.Queues != nil {
 		for _, queue := range domain.Queues {
@@ -330,12 +304,11 @@ func (s *QueueServiceImpl) ListQueues(ctx context.Context, domainName string) ([
 	return queues, nil
 }
 
-// graceful close les channel queues
 func (s *QueueServiceImpl) Cleanup() {
 	log.Println("Cleaning up queue service resources...")
 
 	s.mu.Lock()
-	// Copier les clés pour éviter de modifier la map pendant l'itération
+	// Copy the keys to avoid modifying the map during iteration
 	domainKeys := make([]string, 0, len(s.channelQueues))
 	for domainName := range s.channelQueues {
 		domainKeys = append(domainKeys, domainName)
@@ -344,7 +317,7 @@ func (s *QueueServiceImpl) Cleanup() {
 
 	var wg sync.WaitGroup
 
-	// Arrêter chaque queue en parallèle
+	// concurrent kills
 	for _, domainName := range domainKeys {
 		s.mu.RLock()
 		queueMap := s.channelQueues[domainName]
@@ -371,7 +344,6 @@ func (s *QueueServiceImpl) Cleanup() {
 		}
 	}
 
-	// Attendre avec timeout
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()

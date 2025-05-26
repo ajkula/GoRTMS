@@ -8,50 +8,46 @@ const QueueMonitor = ({ domainName, queueName }) => {
   const [error, setError] = useState(null);
   const webSocketRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const isClosingRef = useRef(false);  // Drapeau pour éviter les fermetures concurrentes
-  const reconnectTimeoutRef = useRef(null); // Pour gérer les délais de reconnexion
-  const reconnectAttemptRef = useRef(0); // Compteur de tentatives
+  const isClosingRef = useRef(false);  // Flag to prevent concurrent shutdowns
+  const reconnectTimeoutRef = useRef(null); // To handle reconnection delays
+  const reconnectAttemptRef = useRef(0); // attempt counter
 
-  // Fonction pour se connecter au WebSocket
+  // Function to connect to the WebSocket
   const connectWebSocket = async () => {
-    // Si déjà en train de se connecter, ne pas faire plusieurs tentatives
+    // If already connecting, avoid multiple connection attempts
     if (status === 'connecting') return;
     
-    // Nettoyer toute connexion existante
+    // Clean up any existing connection
     await closeExistingConnection();
 
-    // Mettre à jour l'état de l'interface
     setStatus('connecting');
     setError(null);
 
     try {
-      // Essayer d'abord de s'abonner via l'API si disponible
       const subscription = await trySubscribeToQueue();
-      
-      // Créer et configurer la connexion WebSocket
       const monitor = createMonitorConnection();
 
-      // Ajouter l'ID d'abonnement si disponible
+      // Add the subscription ID if available
       if (subscription?.subscriptionId) {
         monitor.subscriptionId = subscription.subscriptionId;
       }
 
-      // Stocker la référence pour une utilisation ultérieure
+      // Store the reference for later use
       webSocketRef.current = monitor;
-
-      // Configurer les gestionnaires d'événements WebSocket
+      
+      // Set up WebSocket event handlers
       setupWebSocketHandlers(monitor);
       
-      // Réinitialiser le compteur de tentatives en cas de succès
+      // Reset the retry counter on successful connection
       reconnectAttemptRef.current = 0;
     } catch (err) {
       handleConnectionError(err);
     }
   };
 
-  // Fermeture de connexion avec protection contre les opérations concurrentes
+  // Close connection with protection against concurrent operations
   const closeExistingConnection = async () => {
-    // Éviter les fermetures concurrentes
+    // Prevent concurrent closures
     if (isClosingRef.current || !webSocketRef.current) return;
     
     isClosingRef.current = true;
@@ -61,13 +57,13 @@ const QueueMonitor = ({ domainName, queueName }) => {
       const connection = webSocketRef.current;
       const subscriptionId = connection.subscriptionId;
       
-      // Effacer la référence immédiatement pour éviter les accès concurrents
+      // Immediately clear the reference to prevent concurrent access
       webSocketRef.current = null;
-      
-      // Tenter de se désabonner d'abord avec un timeout
+
+      // Try to unsubscribe first with a timeout
       if (subscriptionId) {
         try {
-          // Utiliser un timeout pour éviter que le désabonnement ne bloque trop longtemps
+          // Use a timeout to prevent unsubscribe from blocking too long
           const unsubPromise = api.unsubscribeFromQueue(domainName, queueName, subscriptionId);
           const timeoutPromise = new Promise((_, reject) => 
             setTimeout(() => reject(new Error('Désabonnement timeout')), 2000)
@@ -77,21 +73,21 @@ const QueueMonitor = ({ domainName, queueName }) => {
             .catch(err => console.warn(`Désabonnement ignoré: ${err.message}`));
         } catch (err) {
           console.warn('Erreur désabonnement ignorée:', err);
-          // Ne pas bloquer le reste du nettoyage
         }
       }
       
-      // Fermer la socket
+      // Close socket
       try {
         if (connection.socket && connection.socket.readyState < 2) {
-          connection.socket.onclose = null; // Détacher l'événement pour éviter les rappels
+          // Detach the event listener to avoid callbacks
+          connection.socket.onclose = null;
           connection.socket.close();
         }
       } catch (err) {
         console.warn('Erreur fermeture socket ignorée:', err);
       }
       
-      // Appeler la méthode close
+      // close connection
       try {
         if (typeof connection.close === 'function') {
           connection.close();
@@ -130,7 +126,6 @@ const QueueMonitor = ({ domainName, queueName }) => {
     console.log('Message reçu:', message);
     
     setMessages((prevMessages) => {
-      // Adapter le format du message reçu
       const adaptedMessage = {
         id: message.ID || message.id || `anon-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         content: message.Payload || message.payload || message,
@@ -138,7 +133,7 @@ const QueueMonitor = ({ domainName, queueName }) => {
         receivedAt: new Date().toISOString()
       };
       
-      // Éviter les doublons avec une meilleure détection
+      // Avoid duplicates
       if (prevMessages.some(m => m.id === adaptedMessage.id)) {
         return prevMessages;
       }
@@ -156,14 +151,14 @@ const QueueMonitor = ({ domainName, queueName }) => {
     console.error('WebSocket error:', err);
     setStatus('error');
     
-    // Vérifier si c'est une erreur fatale (comme domaine inexistant)
+    // Check if it's a fatal error (like non-existent domain)
     const errorMsg = err.message || 'Unknown error';
     const isFatalError = errorMsg.includes('domain not found') || 
                         errorMsg.includes('queue not found');
     
     if (isFatalError) {
       setError(`Connection impossible: ${errorMsg}. Please verify domain and queue exist.`);
-      // Ne pas réessayer pour les erreurs fatales
+      // Do not retry for fatal errors
       reconnectAttemptRef.current = 999;
     } else {
       setError(`Connection error: ${errorMsg}. Will retry...`);
@@ -171,19 +166,18 @@ const QueueMonitor = ({ domainName, queueName }) => {
     }
   };
 
-  // Programmer une reconnexion avec backoff exponentiel
+  // Schedule a reconnect with exponential backoff
   const scheduleReconnect = () => {
-    // Annuler toute reconnexion précédente
+    // Cancel any previous reconnection
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
     
-    // Incrémenter le compteur de tentatives
     reconnectAttemptRef.current++;
-    
-    // Calculer le délai avec backoff exponentiel (1s, 2s, 4s, 8s...)
-    // Mais pas plus de 30 secondes
-    const maxAttempts = 10; // Maximum de tentatives
+
+    // Calculate delay using exponential backoff (1s, 2s, 4s, 8s...)
+    // But do not exceed 30 seconds
+    const maxAttempts = 10;
     if (reconnectAttemptRef.current <= maxAttempts) {
       const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current - 1), 30000);
       
@@ -208,20 +202,17 @@ const QueueMonitor = ({ domainName, queueName }) => {
     monitor.socket.onopen = () => {
       setStatus('connected');
       setError(null);
-      // Réinitialiser le compteur de tentatives lors d'une connexion réussie
       reconnectAttemptRef.current = 0;
     };
 
     monitor.socket.onclose = (event) => {
-      // Ne pas changer l'état si fermeture intentionnelle (isClosingRef.current === true)
+      // Do not change the state if the closure was intentional (isClosingRef.current === true)
       if (!isClosingRef.current) {
         console.log(`WebSocket closed: code=${event.code}, reason=${event.reason}, clean=${event.wasClean}`);
         
         if (event.wasClean) {
-          // Fermeture propre
           setStatus('disconnected');
         } else {
-          // Fermeture imprévue, tenter de se reconnecter
           setStatus('error');
           setError('Connection lost. Attempting to reconnect...');
           scheduleReconnect();
@@ -234,14 +225,13 @@ const QueueMonitor = ({ domainName, queueName }) => {
     console.error('Error creating WebSocket connection:', err);
     setStatus('error');
     
-    // Vérifier si c'est une erreur fatale (comme domaine inexistant)
     const errorMsg = err.message || 'Unknown error';
     const isFatalError = errorMsg.includes('domain not found') || 
                         errorMsg.includes('queue not found');
     
     if (isFatalError) {
       setError(`Cannot connect: ${errorMsg}. Please verify domain and queue exist.`);
-      // Ne pas réessayer pour les erreurs fatales
+      // no retry
       reconnectAttemptRef.current = 999;
     } else {
       setError(`Failed to connect: ${errorMsg}. Will retry...`);
@@ -249,13 +239,13 @@ const QueueMonitor = ({ domainName, queueName }) => {
     }
   };
 
-  // Se connecter au WebSocket lors du montage du composant
+  // Connect to the WebSocket when the component is mounted
   useEffect(() => {
     connectWebSocket();
 
-    // Nettoyer à la déconnexion du composant
+    // Clean up on component unmount
     return () => {
-      // Annuler toute reconnexion programmée
+      // Cancel any scheduled reconnection
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
@@ -264,18 +254,17 @@ const QueueMonitor = ({ domainName, queueName }) => {
     };
   }, [domainName, queueName]);
 
-  // Faire défiler vers le dernier message quand de nouveaux messages arrivent
+  // Scroll to the latest message when new messages arrive
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
 
-  // Formater le contenu du message pour l'affichage
+  // Format the message for display
   const formatMessageContent = (content) => {
     try {
       if (typeof content === 'string') {
-        // Essayer de parser comme JSON pour un affichage formaté
         const parsed = JSON.parse(content);
         return <pre className="overflow-auto text-xs">{JSON.stringify(parsed, null, 2)}</pre>;
       } else if (typeof content === 'object') {
@@ -283,7 +272,7 @@ const QueueMonitor = ({ domainName, queueName }) => {
       }
       return String(content);
     } catch (e) {
-      // Si ce n'est pas du JSON valide, afficher comme texte brut
+      // If not valid JSON, display as plain text
       return <span className="break-words">{String(content)}</span>;
     }
   };
@@ -296,7 +285,7 @@ const QueueMonitor = ({ domainName, queueName }) => {
         </h2>
 
         <div className="flex items-center space-x-2">
-          {/* Indicateur de statut */}
+          {/* statut Indicator */}
           <div className="flex items-center">
             {status === 'connected' && (
               <span className="flex items-center text-green-600 text-sm">
@@ -318,10 +307,10 @@ const QueueMonitor = ({ domainName, queueName }) => {
             )}
           </div>
 
-          {/* Bouton de reconnexion */}
+          {/* reconnect btn */}
           <button
             onClick={() => {
-              // Réinitialiser le compteur pour une tentative manuelle
+              // Reset the counter for a manual attempt
               reconnectAttemptRef.current = 0;
               connectWebSocket();
             }}

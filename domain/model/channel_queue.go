@@ -24,14 +24,13 @@ type ChannelQueue struct {
 	messageProvider MessageProvider
 	domainName      string
 
-	wg        sync.WaitGroup //suivi des workers
-	workerSem chan struct{}  // Sémaphore pour limiter les goroutines concurrentes
+	wg        sync.WaitGroup // workers
+	workerSem chan struct{}  // simultaneous goroutines controling semaphore
 
-	// Gestion des erreurs
-	retryQueue     chan *MessageWithRetry //File de msg à réessayer
+	// errors handling
+	retryQueue     chan *MessageWithRetry
 	circuitBreaker *CircuitBreaker
 
-	// Map des consumer groups
 	consumerGroups map[string]*ConsumerGroupState
 	mu             sync.RWMutex
 	commandWorker  bool
@@ -42,13 +41,12 @@ type ChannelQueue struct {
 
 type ConsumerGroupState struct {
 	GroupID  string
-	Messages chan *Message // Canal spécifique au groupe pour les messages
-	Commands chan int      // Canal pour les commandes (demandes de messages)
+	Messages chan *Message // messages chan
+	Commands chan int      // commands chan
 	Position int64
 	Active   bool
 }
 
-// NewChannelQueue crée une nouvelle queue basée sur des channels
 func NewChannelQueue(
 	queue *Queue,
 	ctx context.Context,
@@ -56,7 +54,7 @@ func NewChannelQueue(
 	provider MessageProvider,
 ) *ChannelQueue {
 	if bufferSize <= 0 {
-		bufferSize = queue.Config.MaxSize // default
+		bufferSize = queue.Config.MaxSize
 		if queue.Config.MaxSize <= 0 {
 			bufferSize = 1000
 		}
@@ -64,10 +62,9 @@ func NewChannelQueue(
 
 	workerCtx, cancel := context.WithCancel(ctx)
 
-	// Déterminer le nombre de workers
 	workerCount := queue.Config.WorkerCount
 	if workerCount <= 0 {
-		// Utiliser un nombre par défaut basé sur le mode de livraison
+		// Use a default number based on the delivery mode
 		if queue.Config.DeliveryMode == BroadcastMode {
 			workerCount = 2
 		} else {
@@ -75,7 +72,6 @@ func NewChannelQueue(
 		}
 	}
 
-	// Créer le circuit breaker si activé
 	var cb *CircuitBreaker
 	if queue.Config.CircuitBreakerEnabled && queue.Config.CircuitBreakerConfig != nil {
 		cb = &CircuitBreaker{
@@ -87,9 +83,8 @@ func NewChannelQueue(
 			LastStateChange:  time.Now(),
 		}
 
-		// Valeurs par défaut si non spécifiées
 		if cb.ErrorThreshold <= 0 {
-			cb.ErrorThreshold = 0.5 // 50% par défaut
+			cb.ErrorThreshold = 0.5
 		}
 		if cb.SuccessThreshold <= 0 {
 			cb.SuccessThreshold = 5
@@ -102,7 +97,6 @@ func NewChannelQueue(
 		}
 	}
 
-	// Créer une file de retry si activée
 	var retryQueue chan *MessageWithRetry
 	if queue.Config.RetryEnabled {
 		retryQueue = make(chan *MessageWithRetry, bufferSize)
@@ -126,42 +120,37 @@ func NewChannelQueue(
 	}
 }
 
-// GetQueue return la queue sous-jacente
 func (cq *ChannelQueue) GetQueue() *Queue {
 	return cq.queue
 }
 
-// Enqueue ajoute un message à la queue
 func (cq *ChannelQueue) Enqueue(ctx context.Context, message *Message) error {
-	// Vérifier l'état du circuit breaker
+	// Check circuit breaker state
 	if cq.circuitBreaker != nil && cq.circuitBreaker.State == CircuitOpen {
 		return errors.New("circuit breaker open, message rejected")
 	}
 
-	// Tenter d'ajouter sans bloquer
 	select {
 	case <-cq.workerCtx.Done():
 		return ErrQueueClosed
 	case <-ctx.Done():
 		return ctx.Err()
 	case cq.messages <- message:
-		// Mettre à jour le compteur
 		cq.queue.MessageCount++
 
-		// Enregistrer un succès pour le circuit breaker
+		// Store success
 		if cq.circuitBreaker != nil {
 			cq.recordSuccessInCircuitBreaker()
 		}
 
 		return nil
 	default:
-		// File pleine, mais ce n'est pas une erreur critique
-		// puisque le message est déjà dans le repository
+		// fails aren't critical
 		return nil
 	}
 }
 
-// Méthode helper pour factoriser le code
+// helper method
 func (cq *ChannelQueue) recordSuccessInCircuitBreaker() {
 	cq.circuitBreaker.mu.Lock()
 	defer cq.circuitBreaker.mu.Unlock()
@@ -169,7 +158,7 @@ func (cq *ChannelQueue) recordSuccessInCircuitBreaker() {
 	cq.circuitBreaker.SuccessCount++
 	cq.circuitBreaker.TotalCount++
 
-	// Fermer le circuit si en mode semi-ouvert avec assez de succès
+	// Close the circuit if in half-open mode with enough successes
 	if cq.circuitBreaker.State == CircuitHalfOpen &&
 		cq.circuitBreaker.SuccessCount >= cq.circuitBreaker.SuccessThreshold {
 		cq.circuitBreaker.State = CircuitClosed
@@ -180,7 +169,6 @@ func (cq *ChannelQueue) recordSuccessInCircuitBreaker() {
 	}
 }
 
-// Dequeue récupère un msg de la queue
 func (cq *ChannelQueue) Dequeue(ctx context.Context) (*Message, error) {
 	select {
 	case <-cq.workerCtx.Done():
@@ -188,44 +176,41 @@ func (cq *ChannelQueue) Dequeue(ctx context.Context) (*Message, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case msg := <-cq.messages:
-		// Décrémenter le compteur car nous avons retiré un message du buffer
 		if cq.queue.MessageCount > 0 {
 			cq.queue.MessageCount--
 		}
 		return msg, nil
 	default:
-		// Si le channel est vide, retourner nil sans erreur
-		// Le service devra chercher dans le repository
-		return nil, nil // rien
+		// empty chan = need to send command
+		return nil, nil
 	}
 }
 
-// AddConsumerGroup ajoute un nouveau groupe de consommateurs
 func (cq *ChannelQueue) AddConsumerGroup(groupID string, lastIndex int64) error {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
 
 	if _, exists := cq.consumerGroups[groupID]; exists {
-		return nil // Déjà existant
+		return nil // exists
 	}
 
-	// Créer l'état du groupe avec ses propres canaux
+	// Create the group's state with its own channels
 	bufSize := cq.bufferSize
 	if bufSize <= 0 {
-		bufSize = 100 // Valeur par défaut
+		bufSize = 100
 	}
 
 	group := &ConsumerGroupState{
 		GroupID:  groupID,
 		Messages: make(chan *Message, bufSize),
-		Commands: make(chan int, 10), // Tampon pour les commandes
+		Commands: make(chan int, 10), // commands buffer
 		Position: lastIndex,
 		Active:   true,
 	}
 
 	cq.consumerGroups[groupID] = group
 
-	// Démarrer le worker de commandes si ce n'est pas déjà fait
+	// Start commands worker
 	if !cq.commandWorker {
 		cq.commandWorker = true
 		cq.wg.Add(1)
@@ -235,7 +220,6 @@ func (cq *ChannelQueue) AddConsumerGroup(groupID string, lastIndex int64) error 
 	return nil
 }
 
-// processCommands traite les commandes des consumer groups
 func (cq *ChannelQueue) processCommands() {
 	defer cq.wg.Done()
 
@@ -248,23 +232,22 @@ func (cq *ChannelQueue) processCommands() {
 			return
 
 		case <-ticker.C:
-			// Vérifier toutes les commandes des groupes
+			// Check all group commands
 			cq.mu.RLock()
 			for groupID, group := range cq.consumerGroups {
 				if !group.Active {
 					continue
 				}
 
-				// Essayer de lire une commande sans bloquer
 				select {
 				case count, ok := <-group.Commands:
 					if !ok {
 						continue
 					}
-					// Traiter la commande en dehors du verrou
+					// Process the command outside the lock
 					go cq.fillGroupChannel(groupID, count)
 				default:
-					// Pas de commande en attente, continuer
+					// noop
 				}
 			}
 			cq.mu.RUnlock()
@@ -272,7 +255,6 @@ func (cq *ChannelQueue) processCommands() {
 	}
 }
 
-// UpdateConsumerGroupPosition met à jour l'index interne du groupe
 func (q *ChannelQueue) UpdateConsumerGroupPosition(groupID string, position int64) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -284,25 +266,24 @@ func (q *ChannelQueue) UpdateConsumerGroupPosition(groupID string, position int6
 	}
 }
 
-// fillGroupChannel remplit le canal de messages d'un groupe
 func (cq *ChannelQueue) fillGroupChannel(groupID string, count int) {
-	// Vérifier si fetch en cours pour éviter les appels concurrents
+	// Check if a fetch is already in progress to avoid concurrent calls
 	cq.fetchMu.Lock()
 	if cq.pendingFetches[groupID] {
 		cq.fetchMu.Unlock()
-		return // Déjà en cours de récupération
+		return // noop
 	}
 	cq.pendingFetches[groupID] = true
 	cq.fetchMu.Unlock()
 
-	// Garantir le nettoyage à la sortie
+	// Ensure cleanup on exit
 	defer func() {
 		cq.fetchMu.Lock()
 		delete(cq.pendingFetches, groupID)
 		cq.fetchMu.Unlock()
 	}()
 
-	// Obtenir l'état du groupe de façon thread-safe
+	// Get the group state thread-safe
 	cq.mu.RLock()
 	group, exists := cq.consumerGroups[groupID]
 	if !exists || !group.Active {
@@ -312,13 +293,11 @@ func (cq *ChannelQueue) fillGroupChannel(groupID string, count int) {
 	position := group.Position
 	cq.mu.RUnlock()
 
-	// Vérifier si le canal de messages a déjà des éléments
-	// Si oui, ne pas récupérer plus de messages jusqu'à ce qu'il soit vidé
+	// Skip fetch if message channel isn't empty
 	if len(group.Messages) > 0 {
 		return
 	}
 
-	// Récupérer les messages
 	messages, err := cq.messageProvider.GetMessagesAfterIndex(
 		cq.workerCtx, cq.domainName, cq.queue.Name, position, count)
 	if err != nil {
@@ -330,22 +309,19 @@ func (cq *ChannelQueue) fillGroupChannel(groupID string, count int) {
 		return
 	}
 
-	// Traitement des messages
 	for _, msg := range messages {
 		select {
 		case <-cq.workerCtx.Done():
 			return
 		case group.Messages <- msg:
-			// Message envoyé avec succès
 		case <-time.After(100 * time.Millisecond):
-			// diagnostiquer si le canal est bloqué
+			// is channel blocked diagnostic
 			log.Printf("[WARN] Canal de messages plein pour group=%s", groupID)
-			return // Canal plein, arrêter
+			return // full, noop
 		}
 	}
 }
 
-// RemoveConsumerGroup supprime un groupe de consommateurs
 func (cq *ChannelQueue) RemoveConsumerGroup(groupID string) {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
@@ -353,7 +329,6 @@ func (cq *ChannelQueue) RemoveConsumerGroup(groupID string) {
 	if group, exists := cq.consumerGroups[groupID]; exists {
 		group.Active = false
 
-		// Fermer les canaux
 		close(group.Messages)
 		close(group.Commands)
 
@@ -361,7 +336,6 @@ func (cq *ChannelQueue) RemoveConsumerGroup(groupID string) {
 	}
 }
 
-// RequestMessages demande des messages pour un groupe
 func (cq *ChannelQueue) RequestMessages(groupID string, count int) error {
 	cq.mu.RLock()
 	group, exists := cq.consumerGroups[groupID]
@@ -371,7 +345,7 @@ func (cq *ChannelQueue) RequestMessages(groupID string, count int) error {
 		return errors.New("consumer group not active")
 	}
 
-	// Envoyer la commande pour demander des messages
+	// send command
 	select {
 	case group.Commands <- count:
 		return nil
@@ -380,7 +354,6 @@ func (cq *ChannelQueue) RequestMessages(groupID string, count int) error {
 	}
 }
 
-// ConsumeMessage consomme un message pour un groupe spécifique
 func (cq *ChannelQueue) ConsumeMessage(groupID string, timeout time.Duration) (*Message, error) {
 	cq.mu.RLock()
 	group, exists := cq.consumerGroups[groupID]
@@ -390,7 +363,6 @@ func (cq *ChannelQueue) ConsumeMessage(groupID string, timeout time.Duration) (*
 		return nil, errors.New("consumer group not active")
 	}
 
-	// Essayer de lire un message avec timeout
 	select {
 	case <-cq.workerCtx.Done():
 		return nil, ErrQueueClosed
@@ -400,11 +372,10 @@ func (cq *ChannelQueue) ConsumeMessage(groupID string, timeout time.Duration) (*
 		}
 		return msg, nil
 	case <-time.After(timeout):
-		return nil, nil // Timeout, pas d'erreur
+		return nil, nil // Timeout
 	}
 }
 
-// AddSubscriber ajoute un consumer à une queue
 func (cq *ChannelQueue) AddSubscriber(handler MessageHandler) {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
@@ -412,13 +383,12 @@ func (cq *ChannelQueue) AddSubscriber(handler MessageHandler) {
 	cq.subscribers = append(cq.subscribers, handler)
 }
 
-// RemoveSubscriber le supprime
 func (cq *ChannelQueue) RemoveSubscriber(handler MessageHandler) {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
 
 	for i, sub := range cq.subscribers {
-		// comparaison d'adresses de func (basique mais marche)
+		// Compare func addresses (basic but works)
 		if &sub == &handler {
 			cq.subscribers = append(cq.subscribers[:i], cq.subscribers[i+1:]...)
 			break
@@ -426,12 +396,10 @@ func (cq *ChannelQueue) RemoveSubscriber(handler MessageHandler) {
 	}
 }
 
-// Start démarre les workers pour traiter les messages
 func (cq *ChannelQueue) Start(ctx context.Context) {
-	// Nombre de workers basé sur lemode de livraison
 	workerCount := 1
 	if cq.queue.Config.DeliveryMode == BroadcastMode {
-		workerCount = 2 // plus pour gérer la diffusion
+		workerCount = 2
 	}
 
 	for i := 0; i < workerCount; i++ {
@@ -442,7 +410,7 @@ func (cq *ChannelQueue) Start(ctx context.Context) {
 		}(i)
 	}
 
-	// Si les retries sont activés, démarrer le worker de retry
+	// Start retry worker if retries are enabled
 	if cq.retryQueue != nil && cq.queue.Config.RetryEnabled {
 		cq.wg.Add(1)
 		go func() {
@@ -452,45 +420,42 @@ func (cq *ChannelQueue) Start(ctx context.Context) {
 	}
 }
 
-// processMessages traite les messages entrants
 func (cq *ChannelQueue) processMessages() {
 	for {
 		select {
 		case <-cq.workerCtx.Done():
-			return // Sortir proprement si le contexte est annulé
+			return // Exit cleanly if cancelled context
 		case msg, ok := <-cq.messages:
 			if !ok {
-				// Canal fermé, sortir proprement
+				// Closed, noop
 				return
 			}
 
-			// Acquérir le sémaphore (limiter la concurrence)
+			// Acquire semaphore (limit concurrency)
 			select {
 			case cq.workerSem <- struct{}{}:
-				// Sémaphore acquis, traiter le message
 				go func(m *Message) {
 					defer func() {
-						// Libérer le sémaphore
+						// release semaphore
 						<-cq.workerSem
 					}()
 
-					// Notifier les abonnés selon le mode de livraison
+					// Notify subscribers based on delivery mode
 					cq.mu.RLock()
 					subscribers := cq.subscribers
 					cq.mu.RUnlock()
 
 					switch cq.queue.Config.DeliveryMode {
 					case BroadcastMode:
-						// Envoyer à tous les abonnés
 						for _, handler := range subscribers {
-							// Cloner le message pour chaque abonné pour éviter les race conditions
+							// Clone the message for each subscriber to avoid race conditions
 							msgCopy := *m
 							if err := handler(&msgCopy); err != nil {
 								cq.handleDeliveryError(&msgCopy, handler, err)
 							}
 						}
 					case RoundRobinMode:
-						// Améliorer le round-robin avec un index moins prévisible
+						// Improve round-robin with a less predictable index
 						if len(subscribers) > 0 {
 							idx := int(m.Timestamp.UnixNano()) % len(subscribers)
 							handler := subscribers[idx]
@@ -499,7 +464,7 @@ func (cq *ChannelQueue) processMessages() {
 							}
 						}
 					case SingleConsumerMode:
-						// Envoyer seulement au premier abonné
+						// Send to the first available subscriber
 						if len(subscribers) > 0 {
 							handler := subscribers[0]
 							if err := handler(m); err != nil {
@@ -509,9 +474,9 @@ func (cq *ChannelQueue) processMessages() {
 					}
 				}(msg)
 			case <-cq.workerCtx.Done():
-				return // Sortir si le contexte est annulé pendant l'attente du sémaphore
+				return // Exit if context was canceled while waiting for the semaphore
 			case <-time.After(1 * time.Second):
-				// Si le sémaphore est bloqué trop longtemps, loguer et réessayer
+				// If semaphore is blocked too long, log and retry
 				log.Printf("Worker semaphore acquisition timed out for queue %s", cq.queue.Name)
 				continue
 			}
@@ -519,17 +484,16 @@ func (cq *ChannelQueue) processMessages() {
 	}
 }
 
-// handleDeliveryError gère les erreurs lors de la distribution des messages
 func (cq *ChannelQueue) handleDeliveryError(msg *Message, handler MessageHandler, err error) {
 	log.Printf("Error handling message %s: %v", msg.ID, err)
 
-	// Si le circuit breaker est activé, enregistrer l'échec
+	// If circuit breaker is enabled, record the failure
 	if cq.circuitBreaker != nil {
 		cq.circuitBreaker.mu.Lock()
 		cq.circuitBreaker.FailureCount++
 		cq.circuitBreaker.TotalCount++
 
-		// Vérifier si le circuit doit être ouvert
+		// Check if the circuit should be opened
 		if cq.circuitBreaker.State == CircuitClosed &&
 			cq.circuitBreaker.TotalCount >= cq.circuitBreaker.MinimumRequests {
 			errorRate := float64(cq.circuitBreaker.FailureCount) / float64(cq.circuitBreaker.TotalCount)
@@ -539,7 +503,7 @@ func (cq *ChannelQueue) handleDeliveryError(msg *Message, handler MessageHandler
 				cq.circuitBreaker.NextAttempt = time.Now().Add(cq.circuitBreaker.OpenTimeout)
 			}
 		} else if cq.circuitBreaker.State == CircuitHalfOpen {
-			// En mode semi-ouvert, toute erreur ouvre à nouveau le circuit
+			// In half-open mode, any error reopens the circuit
 			cq.circuitBreaker.State = CircuitOpen
 			cq.circuitBreaker.LastStateChange = time.Now()
 			cq.circuitBreaker.NextAttempt = time.Now().Add(cq.circuitBreaker.OpenTimeout)
@@ -547,9 +511,9 @@ func (cq *ChannelQueue) handleDeliveryError(msg *Message, handler MessageHandler
 		cq.circuitBreaker.mu.Unlock()
 	}
 
-	// Si les retries sont activés, ajouter le message à la file de retry
+	// If retries are enabled, add the message to the retry queue
 	if cq.retryQueue != nil && cq.queue.Config.RetryConfig != nil {
-		// Récupérer les infos de retry existantes ou créer un nouveau
+		// Get existing retry info or create a new one
 		retryInfo, ok := msg.Metadata["retry_info"].(*MessageWithRetry)
 		if !ok {
 			retryInfo = &MessageWithRetry{
@@ -561,38 +525,37 @@ func (cq *ChannelQueue) handleDeliveryError(msg *Message, handler MessageHandler
 
 		retryInfo.RetryCount++
 
-		// Vérifier si le nombre max de retries est atteint
+		// Check if the maximum number of retries has been reached
 		if cq.queue.Config.RetryConfig.MaxRetries > 0 &&
 			retryInfo.RetryCount > cq.queue.Config.RetryConfig.MaxRetries {
 			// Log max retries reached
 			return
 		}
 
-		// Calculer le délai de retry avec backoff exponentiel
+		// Compute retry delay using exponential backoff
 		delay := cq.calculateRetryDelay(retryInfo.RetryCount)
 		retryInfo.NextRetryAt = time.Now().Add(delay)
 
-		// Mettre à jour les métadonnées
+		// update metadata
 		if msg.Metadata == nil {
 			msg.Metadata = make(map[string]interface{})
 		}
 		msg.Metadata["retry_info"] = retryInfo
 
-		// Ajouter à la file de retry
+		// Add to retry queue
 		select {
 		case cq.retryQueue <- retryInfo:
 			// ok
 		default:
-			// File pleine, log
+			// Full, should log
 		}
 	}
 }
 
-// calculateRetryDelay calcule le délai pour une tentative
 func (cq *ChannelQueue) calculateRetryDelay(retryCount int) time.Duration {
 	config := cq.queue.Config.RetryConfig
 	if config == nil {
-		return 5 * time.Second // Valeur par défaut
+		return 5 * time.Second // default val
 	}
 
 	initialDelay := config.InitialDelay
@@ -602,13 +565,13 @@ func (cq *ChannelQueue) calculateRetryDelay(retryCount int) time.Duration {
 
 	factor := config.Factor
 	if factor <= 0 {
-		factor = 2.0 // Backoff exponentiel standard
+		factor = 2.0 // Standard exponential backoff
 	}
 
-	// Calcul du délai avec backoff exponentiel
+	// Compute delay using exponential backoff
 	delay := initialDelay * time.Duration(math.Pow(factor, float64(retryCount-1)))
 
-	// Limiter au délai maximum si défini
+	// Cap to max delay if defined
 	if config.MaxDelay > 0 && delay > config.MaxDelay {
 		delay = config.MaxDelay
 	}
@@ -616,7 +579,6 @@ func (cq *ChannelQueue) calculateRetryDelay(retryCount int) time.Duration {
 	return delay
 }
 
-// processRetries traite les messages en attente de retry
 func (cq *ChannelQueue) processRetries() {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
@@ -635,15 +597,15 @@ func (cq *ChannelQueue) processRetries() {
 
 			for _, retry := range pendingRetries {
 				if now.After(retry.NextRetryAt) {
-					// Réessayer le message
+					// Retry
 					go func(r *MessageWithRetry) {
 						if err := r.Handler(r.Message); err != nil {
-							// Échec, remettre en retry si possible
+							// Failure, requeue for retry if possible
 							cq.handleDeliveryError(r.Message, r.Handler, err)
 						}
 					}(retry)
 				} else {
-					// Pas encore temps de retry
+					// Not time to retry yet
 					remaining = append(remaining, retry)
 				}
 			}
@@ -653,28 +615,27 @@ func (cq *ChannelQueue) processRetries() {
 	}
 }
 
-// Stop arrête tous les workers et ferme la queue
 func (cq *ChannelQueue) Stop() {
-	// Annuler le contexte pour signaler l'arrêt à toutes les goroutines
+	// Cancel context to signal all goroutines to stop
 	cq.workerCancel()
 
-	// Utiliser un canal de notification plutôt qu'un timeout fixe
+	// Use a notification channel instead of a fixed timeout
 	done := make(chan struct{})
 	go func() {
 		cq.wg.Wait()
 		close(done)
 	}()
 
-	// Attendre avec timeout
+	// wait timeout
 	select {
 	case <-done:
-		// Goroutines terminées correctement
+		// Goroutines properly terminated
 		log.Printf("Queue %s stopped cleanly", cq.queue.Name)
 	case <-time.After(5 * time.Second):
-		// Timeout atteint
+		// Timeout reached
 		log.Printf("Queue %s stop timed out", cq.queue.Name)
 	}
 
-	// Ne pas fermer les canaux car cela peut causer des panics
-	// cq.workerCancel() signalera aux goroutines de se terminer
+	// Do not close channels as it may cause panics
+	// cq.workerCancel() will signal goroutines to exit
 }

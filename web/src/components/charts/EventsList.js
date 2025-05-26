@@ -26,24 +26,24 @@ const AlertItem = ({ alert }) => {
 };
 
 const EventsList = ({ events, setPage }) => {
-  // Formater les événements pour l'affichage
+  // Format the events for display
   const formattedEvents = events
     .slice(0, 5)
     .map(event => {
-    // Si l'événement est déjà formaté, l'utiliser tel quel
-    if (event.message && event.time) {
-      return event;
-    }
-    
-    // Sinon, formater l'événement
-    return {
-      id: event.id,
-      type: event.type || 'info',
-      message: formatEventMessage(event),
-      time: formatRelativeTime(event.timestamp),
-      rawEvent: event
-    };
-  });
+      // If the event is already formatted, use it as is
+      if (event.message && event.time) {
+        return event;
+      }
+
+      // Otherwise, format the event
+      return {
+        id: event.id,
+        type: event.type || 'info',
+        message: formatEventMessage(event),
+        time: formatRelativeTime(event.timestamp),
+        rawEvent: event
+      };
+    });
 
   return (
     <div>

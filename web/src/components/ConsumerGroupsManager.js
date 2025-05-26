@@ -7,11 +7,9 @@ import { useConsumerGroupActions } from '../hooks/useConsumerGroupActions';
 import { formatDuration } from '../utils/utils';
 
 const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
-  // Utiliser les hooks pour récupérer les données
   const { domains, loading: domainsLoading } = useDomains();
   const { consumerGroups, loading, error, refreshConsumerGroups } = useConsumerGroups();
   
-  // États locaux pour la gestion du formulaire et des modals
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newGroupForm, setNewGroupForm] = useState({
     domainName: '',
@@ -20,17 +18,15 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
     ttl: '1h'
   });
 
-  // Utiliser le hook useQueues pour charger les queues en fonction du domaine sélectionné
+  // Use the useQueues hook to load queues based on the selected domain
   const { queues } = useQueues(newGroupForm.domainName);
   
-  // Utiliser le hook useConsumerGroupActions pour les opérations CRUD
+  // Use the useConsumerGroupActions hook for CRUD operations
   const { createConsumerGroup, deleteConsumerGroup, loading: actionLoading, error: actionError } = 
     useConsumerGroupActions(refreshConsumerGroups);
 
-  // Calculer si le bouton de création doit être activé ou non
   const canCreateGroup = domains.length > 0;
 
-  // Gérer la création d'un nouveau groupe
   const handleCreateGroup = async (e) => {
     e.preventDefault();
 
@@ -52,11 +48,10 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
         ttl: '1h'
       });
     } catch (err) {
-      // L'erreur est déjà gérée dans le hook useConsumerGroupActions
+      // noop
     }
   };
 
-  // Gérer la suppression d'un groupe
   const handleDeleteGroup = async (domainName, queueName, groupID) => {
     if (!window.confirm(`Are you sure you want to delete consumer group "${groupID}"?`)) {
       return;
@@ -69,7 +64,6 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
     }
   };
 
-  // Vérifier si le formulaire est complet pour activer/désactiver le bouton de création
   const isFormValid = newGroupForm.domainName && newGroupForm.queueName && newGroupForm.groupID;
 
   return (
@@ -103,7 +97,7 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
         </div>
       )}
 
-      {/* Tableau des consumer groups */}
+      {/* consumer groups table */}
       <div className="bg-white shadow overflow-hidden sm:rounded-md mb-8">
         <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
           <h2 className="text-lg leading-6 font-medium text-gray-900">All Consumer Groups</h2>
@@ -197,7 +191,7 @@ const ConsumerGroupsManager = ({ onSelectGroup, onBack }) => {
         )}
       </div>
 
-      {/* Modal de création */}
+      {/* creation modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-96 max-w-full">

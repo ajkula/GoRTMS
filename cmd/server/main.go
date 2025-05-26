@@ -11,9 +11,10 @@ import (
 	"syscall"
 	"time"
 
+	_ "net/http/pprof"
+
 	"github.com/gorilla/mux"
 
-	// Imports des packages GoRTMS
 	"github.com/ajkula/GoRTMS/adapter/inbound/grpc"
 	"github.com/ajkula/GoRTMS/adapter/inbound/rest"
 	"github.com/ajkula/GoRTMS/adapter/inbound/websocket"
@@ -22,13 +23,19 @@ import (
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/service"
 
-	// Import temporaires pour la compilation
+	// Temporary imports for compilation
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
 )
 
 func main() {
 
-	// Traiter les arguments de ligne de commande
+	// Dedicated pprof server on port 6060
+	go func() {
+		log.Println("Starting pprof server on :6060")
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
+	// Handle command-line arguments
 	var configPath string
 	var generateConfig bool
 	var showVersion bool
@@ -38,13 +45,13 @@ func main() {
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
 	flag.Parse()
 
-	// Afficher les informations de version
+	// Display version information
 	if showVersion {
 		fmt.Println("GoRTMS Version 1.0.0")
 		os.Exit(0)
 	}
 
-	// Générer un fichier de configuration par défaut
+	// Generate a default configuration file
 	if generateConfig {
 		cfg := config.DefaultConfig()
 		err := config.SaveConfig(cfg, configPath)
@@ -56,36 +63,36 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Charger la configuration
+	// Load configuration
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Configurer la journalisation
-	// TODO: Configurer un logger plus avancé
+	// Set up logging
+	// TODO: Set up a more advanced logger
 
 	log.Println("Starting GoRTMS...")
 	log.Printf("Node ID: %s", cfg.General.NodeID)
 	log.Printf("Data directory: %s", cfg.General.DataDir)
 
-	// Créer le répertoire de données s'il n'existe pas
+	// Create the data directory if it doesn't exist
 	if err := os.MkdirAll(cfg.General.DataDir, 0755); err != nil {
 		log.Fatalf("Failed to create data directory: %v", err)
 	}
 
-	// Créer un contexte annulable
+	// Create a cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Initialiser les repositories (adaptateurs sortants)
+	// Initialize repositories (outgoing adapters)
 	messageRepo := memory.NewMessageRepository()
 	domainRepo := memory.NewDomainRepository()
 	consumerGroupRepo := memory.NewConsumerGroupRepository(messageRepo)
 	subscriptionReg := memory.NewSubscriptionRegistry()
 
-	// Créer les services (implémentations du domaine)
+	// Create services (domain implementations)
 	statsService := service.NewStatsService(domainRepo, messageRepo, ctx)
 	queueService := service.NewQueueService(domainRepo, statsService, ctx)
 	messageService := service.NewMessageService(
@@ -98,7 +105,7 @@ func main() {
 		statsService,
 	)
 
-	// Injecter messageService dans queueService
+	// Inject messageService into queueService
 	if queueSvc, ok := queueService.(*service.QueueServiceImpl); ok {
 		queueSvc.SetMessageService(messageService)
 	}
@@ -106,14 +113,14 @@ func main() {
 	domainService := service.NewDomainService(domainRepo, queueService, ctx)
 	routingService := service.NewRoutingService(domainRepo, ctx)
 
-	// Initialiser le ConsumerGroupService
+	// Initialize the ConsumerGroupService
 	consumerGroupService := service.NewConsumerGroupService(
 		consumerGroupRepo,
 		messageRepo,
 		ctx,
 	)
 
-	// Initialiser le service de monitoring des ressources
+	// Initialize the resource monitoring service
 	resourceMonitorService := service.NewResourceMonitorService(
 		domainRepo,
 		messageRepo,
@@ -121,12 +128,12 @@ func main() {
 		ctx,
 	)
 
-	// Créer le routeur HTTP
+	// Create HTTP router
 	router := mux.NewRouter()
 
-	// Configurer les adaptateurs entrants
+	// Configure the incoming adapters
 	if cfg.HTTP.Enabled {
-		// Adaptateur REST
+		// REST adapter
 		restHandler := rest.NewHandler(
 			messageService,
 			domainService,
@@ -139,7 +146,7 @@ func main() {
 		)
 		restHandler.SetupRoutes(router)
 
-		// Adaptateur WebSocket
+		// WebSocket adapter
 		wsHandler := websocket.NewHandler(messageService, ctx)
 		router.HandleFunc(
 			"/api/ws/domains/{domain}/queues/{queue}",
@@ -163,7 +170,7 @@ func main() {
 			return nil
 		})
 
-		// Démarrer le serveur HTTP
+		// start HTTP server
 		httpAddr := fmt.Sprintf("%s:%d", cfg.HTTP.Address, cfg.HTTP.Port)
 		server := &http.Server{
 			Addr:         httpAddr,
@@ -181,12 +188,12 @@ func main() {
 			}
 		}()
 
-		// Arrêter le serveur HTTP à la fin
+		// stop HTTP server
 		defer func() {
-			// Ordre de nettoyage important : commencer par les services qui dépendent d'autres
+			// Important cleanup order: start with services that depend on others
 			log.Println("Cleaning up services...")
 
-			// Ordre suggéré de nettoyage (des plus dépendants aux moins dépendants)
+			// Suggested cleanup order (from most dependent to least dependent)
 			if wsHandler != nil {
 				wsHandler.Cleanup()
 			}
@@ -229,7 +236,7 @@ func main() {
 		}()
 	}
 
-	// Middleware pour déboguer les requêtes
+	// Middleware for debugging requests
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Request: %s %s", r.Method, r.URL.Path)
@@ -237,7 +244,7 @@ func main() {
 		})
 	})
 
-	// Configurer l'adaptateur gRPC si activé
+	// Configure the gRPC adapter if enabled
 	if cfg.GRPC.Enabled {
 		grpcServer := grpc.NewServer(
 			messageService,
@@ -251,13 +258,13 @@ func main() {
 			log.Fatalf("Failed to start gRPC server: %v", err)
 		}
 
-		// Arrêter le serveur gRPC à la fin
+		// Stop the gRPC server at the end
 		defer grpcServer.Stop()
 	}
 
-	// TODO: Implémenter les adaptateurs pour AMQP et MQTT
+	// TODO: Implement adapters for AMQP and MQTT
 
-	// Créer les domaines prédéfinis (si configurés)
+	// Create predefined domains (if configured)
 	for _, domainCfg := range cfg.Domains {
 		log.Printf("Creating predefined domain: %s", domainCfg.Name)
 		if err := createDomainFromConfig(ctx, domainService, queueService, routingService, domainCfg); err != nil {
@@ -265,24 +272,24 @@ func main() {
 		}
 	}
 
-	// Attendre les signaux pour un arrêt gracieux
+	// Wait for signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Afficher le message de démarrage
+	// Display the startup message
 	log.Println("GoRTMS started successfully")
 
-	// Attendre le signal d'arrêt
+	// Wait for shutdown signal
 	sig := <-sigChan
 	log.Printf("Received signal %v, shutting down gracefully...", sig)
 
-	// Annuler le contexte pour arrêter toutes les goroutines
+	// Cancel the context to stop all goroutines
 	cancel()
 
 	log.Println("Server shutdown complete")
 }
 
-// createDomainFromConfig crée un domaine à partir d'une configuration
+// createDomainFromConfig creates a domain from a configuration
 func createDomainFromConfig(
 	ctx context.Context,
 	domainService inbound.DomainService,
@@ -290,7 +297,7 @@ func createDomainFromConfig(
 	routingService inbound.RoutingService,
 	config config.DomainConfig,
 ) error {
-	// Créer le domaine
+	// Create domain
 	domainConfig := &model.DomainConfig{
 		Name: config.Name,
 		Schema: &model.Schema{
@@ -298,7 +305,7 @@ func createDomainFromConfig(
 		},
 	}
 
-	// Si un schéma est défini, convertir les champs
+	// If a schema is defined, convert the fields
 	if schema, ok := config.Schema["fields"].(map[string]any); ok {
 		for field, typeVal := range schema {
 			if typeStr, ok := typeVal.(string); ok {
@@ -311,11 +318,11 @@ func createDomainFromConfig(
 		return fmt.Errorf("failed to create domain: %w", err)
 	}
 
-	// Créer les files d'attente
+	// Create the queues
 	for _, queueCfg := range config.Queues {
 		queueConfig := queueCfg.Config
 
-		// Valeurs par défaut pour la config de retry
+		// Default values for retry configuration
 		if queueConfig.RetryEnabled && queueConfig.RetryConfig != nil {
 			if queueConfig.RetryConfig.InitialDelay == 0 {
 				queueConfig.RetryConfig.InitialDelay = 1 * time.Second
@@ -328,7 +335,7 @@ func createDomainFromConfig(
 			}
 		}
 
-		// Valeurs par défaut pour circuit breaker
+		// Default values for circuit breaker
 		if queueConfig.CircuitBreakerEnabled && queueConfig.CircuitBreakerConfig != nil {
 			if queueConfig.CircuitBreakerConfig.ErrorThreshold <= 0 {
 				queueConfig.CircuitBreakerConfig.ErrorThreshold = 0.5
@@ -349,9 +356,9 @@ func createDomainFromConfig(
 		}
 	}
 
-	// Ajouter les règles de routage
+	// Add routing rules
 	for _, routeCfg := range config.Routes {
-		// Créer une règle avec un prédicat JSON simple
+		// Create a rule with a simple JSON predicate
 		rulePredicate := model.JSONPredicate{
 			Type:  routeCfg.Predicate["type"].(string),
 			Field: routeCfg.Predicate["field"].(string),

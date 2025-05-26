@@ -1,4 +1,3 @@
-// web/src/pages/Routing.js
 import React, { useState, useEffect } from 'react';
 import { PlusCircle, ChevronRight, Trash2, Loader, AlertTriangle, Columns } from 'lucide-react';
 import api from '../api';
@@ -13,7 +12,6 @@ const Routing = () => {
   const [selectedSourceQueue, setSelectedSourceQueue] = useState('');
   const [error, setError] = useState(null);
 
-  // Charger les domaines
   const fetchDomains = async () => {
     console.log('Fetching domains...');
     try {
@@ -21,11 +19,9 @@ const Routing = () => {
       setError(null);
       const domainsData = await api.getDomains();
 
-      // Si nous avons besoin de plus de détails pour chaque domaine
       const detailedDomains = await Promise.all(
         domainsData.map(async (domain) => {
           try {
-            // Essayer de récupérer les détails du domaine si l'API le permet
             const details = await api.getDomainDetails(domain.name);
             return {
               ...domain,
@@ -36,7 +32,7 @@ const Routing = () => {
             };
           } catch (err) {
             console.log(`Couldn't fetch details for domain ${domain.name}`, err);
-            return domain; // Conserver le domaine tel quel si pas de détails
+            return domain;
           }
         })
       );
@@ -60,7 +56,7 @@ const Routing = () => {
     fetchDomains();
   }, []);
 
-  // État pour le formulaire de nouvelle règle
+  // State for the new rule form
   const [newRule, setNewRule] = useState({
     sourceQueue: '',
     destinationQueue: '',
@@ -73,21 +69,19 @@ const Routing = () => {
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState(null);
 
-  // Charger les règles de routage et les files
+  // Load routing rules and queues
   const fetchData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Charger les règles de routage
       const routingRules = await api.getRoutingRules(domainName);
       setRules(routingRules);
 
-      // Charger les files d'attente pour pouvoir les sélectionner
       const queueList = await api.getQueues(domainName);
       setQueues(queueList);
 
-      // Si une file existe, préremplir le formulaire
+      // If a queue exists, pre-fill the form
       if (queueList.length > 0) {
         setNewRule(prev => ({
           ...prev,
@@ -103,7 +97,6 @@ const Routing = () => {
     }
   };
 
-  // Lors du chargement des queues, première queue par défaut
   useEffect(() => {
     if (queues.length > 0 && !selectedSourceQueue) {
       setSelectedSourceQueue(queues[0].name);
@@ -116,11 +109,11 @@ const Routing = () => {
     }
   }, [domainName]);
 
-  // Ajouter une nouvelle règle de routage
+  // Add a new routing rule
   const handleAddRule = async (e) => {
     e.preventDefault();
 
-    // Valider le formulaire
+    // Validate form
     if (!newRule.sourceQueue || !newRule.destinationQueue ||
       !newRule.predicate.field || !newRule.predicate.value) {
       setCreateError('All fields are required');
@@ -133,7 +126,7 @@ const Routing = () => {
 
       await api.addRoutingRule(domainName, newRule);
 
-      // Réinitialiser le formulaire
+      // reset form
       setNewRule({
         sourceQueue: queues.length > 0 ? queues[0].name : '',
         destinationQueue: '',
@@ -144,7 +137,6 @@ const Routing = () => {
         }
       });
 
-      // Recharger les règles
       await fetchData();
     } catch (err) {
       console.error('Error creating routing rule:', err);
@@ -154,7 +146,6 @@ const Routing = () => {
     }
   };
 
-  // Supprimer une règle de routage
   const handleDeleteRule = async (sourceQueue, destinationQueue) => {
     if (!window.confirm(`Are you sure you want to delete the routing rule from "${sourceQueue}" to "${destinationQueue}"?`)) {
       return;
@@ -162,7 +153,6 @@ const Routing = () => {
 
     try {
       await api.deleteRoutingRule(domainName, sourceQueue, destinationQueue);
-      // Recharger les règles
       await fetchData();
     } catch (err) {
       console.error('Error deleting routing rule:', err);
@@ -170,7 +160,6 @@ const Routing = () => {
     }
   };
 
-  // Mettre à jour le prédicat dans le formulaire
   const handlePredicateChange = (field, value) => {
     setNewRule(prev => ({
       ...prev,
@@ -189,7 +178,7 @@ const Routing = () => {
 
       <h2 className="text-xl font-semibold mb-4">Routing Rules</h2>
 
-      {/* Formulaire d'ajout de règle */}
+      {/* Rule addition form */}
       <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
         <h3 className="text-lg font-medium mb-4">Create New Routing Rule</h3>
 
@@ -344,7 +333,7 @@ const Routing = () => {
         </form>
       </div>
 
-      {/* Liste des règles de routage */}
+      {/* Routing rules list */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="text-lg font-medium">Current Routing Rules</h3>

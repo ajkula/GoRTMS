@@ -1,6 +1,6 @@
 
 
-// Fonction pour formater un message d'événement basé sur son type
+// Function to format an event message based on its type
 export const formatEventMessage = (event) => {
   switch (event.eventType) {
     case 'domain_created':
@@ -25,7 +25,7 @@ export const formatEventMessage = (event) => {
   }
 };
 
-// Fonction pour calculer le temps relatif
+// Function to calculate relative time
 export const formatRelativeTime = (timestamp) => {
   if (!timestamp) return 'Unknown time';
 
@@ -40,20 +40,19 @@ export const formatRelativeTime = (timestamp) => {
   if (secondsAgo < 86400) return `${Math.floor(secondsAgo / 3600)} hours ago`;
   if (secondsAgo < 172800) return '1 day ago';
 
-  // Pour les dates plus anciennes, utiliser la date formatée
+  // For older dates, use the formatted date
   const date = new Date(timestamp * 1000);
   return date.toLocaleDateString();
 };
 
-// Fonction pour formater les nombres avec des séparateurs de milliers
 export const formatNumber = (number) => {
   if (number === undefined || number === null) return '-';
   return number.toLocaleString();
 };
 
-// Fonction pour générer une couleur à partir d'une chaîne (pour les graphiques)
+// Function to generate a color from a string
 export const stringToColor = (str) => {
-  if (!str) return '#8884d8'; // Couleur par défaut
+  if (!str) return '#8884d8';
 
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -74,16 +73,16 @@ export const formatDuration = (nanoseconds) => {
     return 'No TTL';
   }
   
-  // Convertir les nanosecondes en millisecondes
+  // nanosecondes to millisecondes
   const ms = nanoseconds / 1000000;
   
-  // Différentes unités de temps
+  // Time units
   const seconds = Math.floor(ms / 1000) % 60;
   const minutes = Math.floor(ms / (1000 * 60)) % 60;
   const hours = Math.floor(ms / (1000 * 60 * 60)) % 24;
   const days = Math.floor(ms / (1000 * 60 * 60 * 24));
   
-  // Construire la chaîne de formatage
+  // build chain
   if (days > 0) {
     return `${days}d ${hours}h`;
   } else if (hours > 0) {

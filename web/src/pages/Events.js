@@ -1,11 +1,9 @@
-// src/pages/Events.js
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Filter, Search, RefreshCw, Loader, AlertTriangle } from 'lucide-react';
 import api from '../api';
 import { formatEventMessage, formatRelativeTime } from '../utils/utils';
 
 const Events = ({ onBack }) => {
-  // Pas de useNavigate, utilisation de onBack à la place
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -14,14 +12,12 @@ const Events = ({ onBack }) => {
   const [filterType, setFilterType] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Événements par page
   const EVENTS_PER_PAGE = 10;
   
   const fetchEvents = async () => {
     try {
       setLoading(true);
       
-      // Récupérer les données de l'API
       const statsData = await api.getStats();
       
       if (!statsData || !statsData.recentEvents) {
@@ -32,12 +28,12 @@ const Events = ({ onBack }) => {
       
       let allEvents = [...statsData.recentEvents];
       
-      // Filtrer par type
+      // type
       if (filterType !== 'all') {
         allEvents = allEvents.filter(event => event.type === filterType);
       }
       
-      // Filtrer par terme de recherche
+      // term
       if (searchTerm) {
         allEvents = allEvents.filter(event => 
           (event.eventType && event.eventType.toLowerCase().includes(searchTerm.toLowerCase())) || 
@@ -45,7 +41,6 @@ const Events = ({ onBack }) => {
         );
       }
       
-      // Formater tous les événements
       const formattedEvents = allEvents
       .sort((a, b) => b.timestamp - a.timestamp)
       .map(event => ({
@@ -60,10 +55,10 @@ const Events = ({ onBack }) => {
         rawEvent: event
       }));
       
-      // Calculer le nombre total de pages
+      // total nbr of pages
       setTotalPages(Math.ceil(formattedEvents.length / EVENTS_PER_PAGE));
       
-      // Paginer les résultats
+      // Paginate
       const start = (currentPage - 1) * EVENTS_PER_PAGE;
       const paginatedEvents = formattedEvents.slice(start, start + EVENTS_PER_PAGE);
       
@@ -92,7 +87,7 @@ const Events = ({ onBack }) => {
         <h1 className="text-2xl font-bold">System Events</h1>
       </div>
       
-      {/* Filtres et recherche */}
+      {/* Filters and search */}
       <div className="bg-white p-4 rounded-lg shadow-sm mb-6 flex flex-wrap items-center gap-4">
         <div className="flex items-center">
           <Filter className="h-5 w-5 text-gray-400 mr-2" />
@@ -100,7 +95,7 @@ const Events = ({ onBack }) => {
             value={filterType}
             onChange={(e) => {
               setFilterType(e.target.value);
-              setCurrentPage(1); // Réinitialiser à la première page
+              setCurrentPage(1);
             }}
             className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
           >
@@ -121,7 +116,7 @@ const Events = ({ onBack }) => {
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
-              setCurrentPage(1); // Réinitialiser à la première page
+              setCurrentPage(1);
             }}
             className="pl-10 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
           />
@@ -136,7 +131,7 @@ const Events = ({ onBack }) => {
         </button>
       </div>
       
-      {/* Liste des événements */}
+      {/* List of events */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-64">
@@ -245,12 +240,12 @@ const Events = ({ onBack }) => {
                     <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
                       {/* Pages */}
                       {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                        // Afficher jusqu'à 5 pages maximum
+                        // Display up to 5 pages maximum
                         let pageNum;
                         if (totalPages <= 5) {
                           pageNum = i + 1;
                         } else {
-                          // Pour plus de 5 pages, afficher intelligemment les pages autour de la page courante
+                          // For more than 5 pages, display pages intelligently around the current page
                           const startPage = Math.max(1, currentPage - 2);
                           pageNum = startPage + i;
                           if (pageNum > totalPages) return null;

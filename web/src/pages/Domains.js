@@ -1,4 +1,3 @@
-// web/src/pages/Domains.js
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { PlusCircle, Trash2, Loader, AlertTriangle } from 'lucide-react';
@@ -12,13 +11,12 @@ const Domains = () => {
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState(null);
 
-  // Charger les domaines
   const fetchDomains = async () => {
     try {
       setLoading(true);
       setError(null);
       const domains = await api.getDomains();
-      // Récupérer les détails de chaque domaine pour avoir les compteurs
+      // Retrieve details of each domain to get the counters
       const domainsWithDetails = await Promise.all(
         domains.map(async (domain) => {
           try {
@@ -52,7 +50,6 @@ const Domains = () => {
     fetchDomains();
   }, []);
 
-  // Créer un nouveau domaine
   const handleCreateDomain = async (e) => {
     e.preventDefault();
     if (!newDomainName.trim()) return;
@@ -62,7 +59,7 @@ const Domains = () => {
       setCreateError(null);
       await api.createDomain({ name: newDomainName });
       setNewDomainName('');
-      // Recharger la liste des domaines
+
       await fetchDomains();
     } catch (err) {
       console.error('Error creating domain:', err);
@@ -72,7 +69,6 @@ const Domains = () => {
     }
   };
 
-  // Supprimer un domaine
   const handleDeleteDomain = async (domainName) => {
     if (!window.confirm(`Are you sure you want to delete domain "${domainName}"? This will also delete all its queues and messages.`)) {
       return;
@@ -80,7 +76,7 @@ const Domains = () => {
     
     try {
       await api.deleteDomain(domainName);
-      // Recharger la liste des domaines
+
       await fetchDomains();
     } catch (err) {
       console.error(`Error deleting domain ${domainName}:`, err);
@@ -92,7 +88,7 @@ const Domains = () => {
     <div>
       <h1 className="text-2xl font-bold mb-6">Domains</h1>
       
-      {/* Formulaire de création de domaine */}
+      {/* Domain creation form */}
       <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
         <h2 className="text-lg font-medium mb-4">Create New Domain</h2>
         
@@ -130,7 +126,7 @@ const Domains = () => {
         )}
       </div>
       
-      {/* Liste des domaines */}
+      {/* List of domains */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-medium">Domain List</h2>

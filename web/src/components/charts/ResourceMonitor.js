@@ -5,7 +5,6 @@ import { useResourceStats } from '../../hooks/useResourceStats';
 import api from '../../api';
 
 const ResourceMonitor = () => {
-  // Use the custom hook to manage resource data
   const { 
     chartData, 
     currentStats, 

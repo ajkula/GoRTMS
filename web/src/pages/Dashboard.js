@@ -2,7 +2,7 @@ import React from 'react';
 import { RefreshCw, Loader, AlertTriangle } from 'lucide-react';
 import { useDashboardStats } from '../hooks/useDashboardStats';
 
-// Import des composants de charts extraits
+// charts componants 
 import StatCards from '../components/charts/StatCards';
 import MessageActivityChart from '../components/charts/MessageActivityChart';
 import DomainPieChart from '../components/charts/DomainPieChart';
@@ -14,7 +14,7 @@ import DomainUsageChart from '../components/charts/DomainUsageChart';
 import EventsList from '../components/charts/EventsList';
 
 const Dashboard = ({ setPage }) => {
-  // Utiliser le hook pour récupérer les statistiques
+  // Use stats fetch hook
   const { stats, loading, error, refreshStats } = useDashboardStats();
 
   if (loading && !stats) {

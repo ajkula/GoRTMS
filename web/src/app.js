@@ -15,7 +15,6 @@ import {
   User,
 } from 'lucide-react';
 
-// Importer les composants
 import Dashboard from './pages/Dashboard';
 import DomainsManager from './components/DomainsManager';
 import QueuesManager from './components/QueuesManager';
@@ -27,7 +26,7 @@ import ConsumerGroupDetail from './components/ConsumerGroupDetail';
 import Events from './pages/Events';
 import api from './api';
 
-// Composant Header
+// Header
 const Header = ({ toggleSidebar }) => {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -141,7 +140,7 @@ const Header = ({ toggleSidebar }) => {
   );
 };
 
-// Composant Sidebar
+// Sidebar
 const Sidebar = ({ isOpen, toggleSidebar, setPage, currentPage }) => {
   return (
     <>
@@ -251,7 +250,6 @@ const Sidebar = ({ isOpen, toggleSidebar, setPage, currentPage }) => {
   );
 };
 
-// Composant principal de l'application
 const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [page, setPage] = useState({ type: 'dashboard' });
@@ -261,7 +259,6 @@ const App = () => {
     setSidebarOpen(!sidebarOpen);
   };
 
-  // Vérifier l'état de santé de l'API
   useEffect(() => {
     const checkHealth = async () => {
       try {
@@ -274,13 +271,12 @@ const App = () => {
     };
 
     checkHealth();
-    // Vérifier toutes les 30 secondes
-    const interval = setInterval(checkHealth, 30000);
 
+    const interval = setInterval(checkHealth, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  // Navigation vers un domaine ou une file d'attente
+  // Navigation
   const handleSelectDomain = (domainName) => {
     setPage({ type: 'queues', domainName });
   };
@@ -329,7 +325,7 @@ const App = () => {
     setPage({ type: 'consumer-groups' });
   };
 
-  // Fonction pour rendre la page active
+  // page activation
   const renderPage = () => {
     switch (page.type) {
       case 'domains':

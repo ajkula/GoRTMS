@@ -4,7 +4,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 const DomainPieChart = ({ data }) => {
   const colors = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088fe', '#00C49F', '#FFBB28', '#FF8042'];
   
-  // Transformer les données pour le pie chart
+  // Transform the data for the pie chart
   const chartData = data
   .filter(domain => Boolean(Number(domain.messageCount)))
   .map((domain, index) => ({

@@ -11,219 +11,219 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config contient la configuration globale du service
+// Config holds the global service configuration
 type Config struct {
-	// Configuration générale
+	// General configuration
 	General struct {
-		// NodeID est l'identifiant unique de ce nœud
+		// NodeID is this node's unique identifier
 		NodeID string `yaml:"nodeId"`
 
-		// DataDir est le répertoire de stockage des données
+		// DataDir is the data storage directory
 		DataDir string `yaml:"dataDir"`
 
-		// LogLevel est le niveau de journalisation
+		// LogLevel is the logging level
 		LogLevel string `yaml:"logLevel"`
 
-		// Development indique si le mode développement est activé
+		// Development enables development mode
 		Development bool `yaml:"development"`
 	} `yaml:"general"`
 
-	// Configuration du stockage
+	// Storage configuration
 	Storage struct {
-		// Engine est le moteur de stockage à utiliser
+		// Engine specifies the storage engine
 		Engine string `yaml:"engine"`
 
-		// Path est le chemin vers le répertoire de stockage
+		// Path to the storage directory
 		Path string `yaml:"path"`
 
-		// RetentionDays est le nombre de jours de rétention des messages
+		// RetentionDays is the number of days to retain messages
 		RetentionDays int `yaml:"retentionDays"`
 
-		// Sync indique si les écritures doivent être synchronisées
+		// Sync determines if writes are synchronized
 		Sync bool `yaml:"sync"`
 
-		// MaxSizeMB est la taille maximale du stockage en Mo
+		// MaxSizeMB is the max storage size in MB
 		MaxSizeMB int `yaml:"maxSizeMB"`
 	} `yaml:"storage"`
 
-	// Configuration du serveur HTTP
+	// HTTP server configuration
 	HTTP struct {
-		// Enabled indique si le serveur HTTP est activé
+		// Enabled enables the HTTP server
 		Enabled bool `yaml:"enabled"`
 
-		// Address est l'adresse d'écoute du serveur HTTP
+		// Address to bind the HTTP server
 		Address string `yaml:"address"`
 
-		// Port est le port d'écoute du serveur HTTP
+		// Port to bind the HTTP server
 		Port int `yaml:"port"`
 
-		// TLS indique si le TLS est activé
+		// TLS enables TLS
 		TLS bool `yaml:"tls"`
 
-		// CertFile est le chemin vers le certificat TLS
+		// CertFile is the TLS certificate path
 		CertFile string `yaml:"certFile"`
 
-		// KeyFile est le chemin vers la clé privée TLS
+		// KeyFile is the TLS private key path
 		KeyFile string `yaml:"keyFile"`
 
-		// CORS est la configuration CORS
+		// CORS configuration
 		CORS struct {
-			// Enabled indique si le CORS est activé
+			// Enabled enables CORS
 			Enabled bool `yaml:"enabled"`
 
-			// AllowedOrigins est la liste des origines autorisées
+			// AllowedOrigins is the list of allowed origins
 			AllowedOrigins []string `yaml:"allowedOrigins"`
 		} `yaml:"cors"`
 
-		// JWT est la configuration JWT
+		// JWT configuration
 		JWT struct {
-			// Secret est la clé secrète pour signer les tokens
+			// Secret is the signing key for tokens
 			Secret string `yaml:"secret"`
 
-			// ExpirationMinutes est la durée de validité des tokens en minutes
+			// ExpirationMinutes is the token validity duration
 			ExpirationMinutes int `yaml:"expirationMinutes"`
 		} `yaml:"jwt"`
 	} `yaml:"http"`
 
-	// Configuration du serveur AMQP
+	// AMQP server configuration
 	AMQP struct {
-		// Enabled indique si le serveur AMQP est activé
+		// Enabled enables the AMQP server
 		Enabled bool `yaml:"enabled"`
 
-		// Address est l'adresse d'écoute du serveur AMQP
+		// Address to bind the AMQP server
 		Address string `yaml:"address"`
 
-		// Port est le port d'écoute du serveur AMQP
+		// Port to bind the AMQP server
 		Port int `yaml:"port"`
 	} `yaml:"amqp"`
 
-	// Configuration du serveur MQTT
+	// MQTT server configuration
 	MQTT struct {
-		// Enabled indique si le serveur MQTT est activé
+		// Enabled enables the MQTT server
 		Enabled bool `yaml:"enabled"`
 
-		// Address est l'adresse d'écoute du serveur MQTT
+		// Address to bind the MQTT server
 		Address string `yaml:"address"`
 
-		// Port est le port d'écoute du serveur MQTT
+		// Port to bind the MQTT server
 		Port int `yaml:"port"`
 	} `yaml:"mqtt"`
 
-	// Configuration du serveur gRPC
+	// gRPC server configuration
 	GRPC struct {
-		// Enabled indique si le serveur gRPC est activé
+		// Enabled enables the gRPC server
 		Enabled bool `yaml:"enabled"`
 
-		// Address est l'adresse d'écoute du serveur gRPC
+		// Address to bind the gRPC server
 		Address string `yaml:"address"`
 
-		// Port est le port d'écoute du serveur gRPC
+		// Port to bind the gRPC server
 		Port int `yaml:"port"`
 	} `yaml:"grpc"`
 
-	// Configuration de la sécurité
+	// Security configuration
 	Security struct {
-		// EnableAuthentication indique si l'authentification est activée
+		// EnableAuthentication enables authentication
 		EnableAuthentication bool `yaml:"enableAuthentication"`
 
-		// EnableAuthorization indique si l'autorisation est activée
+		// EnableAuthorization enables authorization
 		EnableAuthorization bool `yaml:"enableAuthorization"`
 
-		// AdminUsername est le nom d'utilisateur de l'administrateur
+		// AdminUsername is the admin username
 		AdminUsername string `yaml:"adminUsername"`
 
-		// AdminPassword est le mot de passe de l'administrateur
+		// AdminPassword is the admin password
 		AdminPassword string `yaml:"adminPassword"`
 	} `yaml:"security"`
 
-	// Configuration du monitoring
+	// Monitoring configuration
 	Monitoring struct {
-		// Enabled indique si le monitoring est activé
+		// Enabled enables monitoring
 		Enabled bool `yaml:"enabled"`
 
-		// Address est l'adresse d'écoute du serveur de monitoring
+		// Address to bind the monitoring server
 		Address string `yaml:"address"`
 
-		// Port est le port d'écoute du serveur de monitoring
+		// Port to bind the monitoring server
 		Port int `yaml:"port"`
 
-		// Prometheus indique si l'export Prometheus est activé
+		// Prometheus enables Prometheus export
 		Prometheus bool `yaml:"prometheus"`
 	} `yaml:"monitoring"`
 
-	// Configuration du cluster
+	// Cluster configuration
 	Cluster struct {
-		// Enabled indique si le mode cluster est activé
+		// Enabled enables cluster mode
 		Enabled bool `yaml:"enabled"`
 
-		// Peers est la liste des pairs du cluster
+		// Peers is the list of cluster peers
 		Peers []string `yaml:"peers"`
 
-		// HeartbeatInterval est l'intervalle entre les heartbeats
+		// HeartbeatInterval is the interval between heartbeats
 		HeartbeatInterval time.Duration `yaml:"heartbeatInterval"`
 
-		// ElectionTimeout est le timeout pour les élections
+		// ElectionTimeout is the timeout for elections
 		ElectionTimeout time.Duration `yaml:"electionTimeout"`
 	} `yaml:"cluster"`
 
-	// Configuration des domaines prédéfinis
+	// Predefined domain configurations
 	Domains []DomainConfig `yaml:"domains"`
 }
 
-// DomainConfig contient la configuration d'un domaine
+// DomainConfig holds the configuration for a domain
 type DomainConfig struct {
-	// Name est le nom du domaine
+	// Name is the domain name
 	Name string `yaml:"name"`
 
-	// Schema est le schéma de validation
+	// Schema is the validation schema
 	Schema map[string]interface{} `yaml:"schema"`
 
-	// Queues est la liste des files d'attente
+	// Queues is the list of queues
 	Queues []QueueConfig `yaml:"queues"`
 
-	// Routes est la liste des règles de routage
+	// Routes is the list of routing rules
 	Routes []RoutingRule `yaml:"routes"`
 }
 
-// QueueConfig est la configuration d'une file d'attente
+// QueueConfig holds the configuration for a queue
 type QueueConfig struct {
-	// Name est le nom de la file d'attente
+	// Name is the queue name
 	Name string `yaml:"name"`
 
-	// Config est la configuration de la file d'attente
+	// Config is the queue configuration
 	Config model.QueueConfig `yaml:"config"`
 }
 
-// RoutingRule est une règle de routage
+// RoutingRule defines a routing rule
 type RoutingRule struct {
-	// SourceQueue est la file d'attente source
+	// SourceQueue is the source queue
 	SourceQueue string `yaml:"sourceQueue"`
 
-	// DestinationQueue est la file d'attente destination
+	// DestinationQueue is the destination queue
 	DestinationQueue string `yaml:"destinationQueue"`
 
-	// Predicate est le prédicat de routage
+	// Predicate defines the routing condition
 	Predicate map[string]interface{} `yaml:"predicate"`
 }
 
-// DefaultConfig retourne une configuration par défaut
+// DefaultConfig returns a default configuration
 func DefaultConfig() *Config {
 	c := &Config{}
 
-	// Configuration générale
+	// General configuration
 	c.General.NodeID = "node1"
 	c.General.DataDir = "./data"
 	c.General.LogLevel = "info"
 	c.General.Development = false
 
-	// Configuration du stockage
+	// Storage configuration
 	c.Storage.Engine = "memory"
 	c.Storage.Path = "./data/storage"
 	c.Storage.RetentionDays = 7
 	c.Storage.Sync = true
 	c.Storage.MaxSizeMB = 1024
 
-	// Configuration du serveur HTTP
+	// HTTP server configuration
 	c.HTTP.Enabled = true
 	c.HTTP.Address = "0.0.0.0"
 	c.HTTP.Port = 8080
@@ -235,34 +235,34 @@ func DefaultConfig() *Config {
 	c.HTTP.JWT.Secret = "changeme"
 	c.HTTP.JWT.ExpirationMinutes = 60
 
-	// Configuration du serveur AMQP
+	// AMQP server configuration
 	c.AMQP.Enabled = false
 	c.AMQP.Address = "0.0.0.0"
 	c.AMQP.Port = 5672
 
-	// Configuration du serveur MQTT
+	// MQTT server configuration
 	c.MQTT.Enabled = false
 	c.MQTT.Address = "0.0.0.0"
 	c.MQTT.Port = 1883
 
-	// Configuration du serveur gRPC
+	// gRPC server configuration
 	c.GRPC.Enabled = false
 	c.GRPC.Address = "0.0.0.0"
 	c.GRPC.Port = 50051
 
-	// Configuration de la sécurité
+	// Security configuration
 	c.Security.EnableAuthentication = false
 	c.Security.EnableAuthorization = false
 	c.Security.AdminUsername = "admin"
 	c.Security.AdminPassword = "admin"
 
-	// Configuration du monitoring
+	// monitoring configuration
 	c.Monitoring.Enabled = true
 	c.Monitoring.Address = "0.0.0.0"
 	c.Monitoring.Port = 9090
 	c.Monitoring.Prometheus = true
 
-	// Configuration du cluster
+	// cluster configuration
 	c.Cluster.Enabled = false
 	c.Cluster.Peers = []string{}
 	c.Cluster.HeartbeatInterval = 100 * time.Millisecond
@@ -271,28 +271,28 @@ func DefaultConfig() *Config {
 	return c
 }
 
-// LoadConfig charge la configuration à partir d'un fichier
+// LoadConfig loads the configuration from a file
 func LoadConfig(path string) (*Config, error) {
-	// Vérifier si le fichier existe
+	// Check if the file exists
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil, fmt.Errorf("config file not found: %s", path)
 	}
 
-	// Lire le fichier
+	// Read file
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Charger la configuration par défaut
+	// Load the default configuration
 	config := DefaultConfig()
 
-	// Décoder le fichier YAML
+	// Decode the YAML file
 	if err := yaml.Unmarshal(data, config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Compléter les chemins relatifs
+	// Complete relative paths
 	if !filepath.IsAbs(config.General.DataDir) {
 		dir, err := filepath.Abs(filepath.Dir(path))
 		if err != nil {
@@ -305,7 +305,7 @@ func LoadConfig(path string) (*Config, error) {
 		config.Storage.Path = filepath.Join(config.General.DataDir, config.Storage.Path)
 	}
 
-	// Valider la configuration
+	// Validate the configuration
 	if err := validateConfig(config); err != nil {
 		return nil, err
 	}
@@ -313,21 +313,21 @@ func LoadConfig(path string) (*Config, error) {
 	return config, nil
 }
 
-// SaveConfig sauvegarde la configuration dans un fichier
+// SaveConfig saves the configuration to a file
 func SaveConfig(config *Config, path string) error {
-	// Encoder la configuration en YAML
+	// Encode the configuration to YAML
 	data, err := yaml.Marshal(config)
 	if err != nil {
 		return fmt.Errorf("failed to encode config: %w", err)
 	}
 
-	// Créer le répertoire parent si nécessaire
+	// Create parent directory if necessary
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// Écrire le fichier
+	// Write file
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
@@ -335,21 +335,21 @@ func SaveConfig(config *Config, path string) error {
 	return nil
 }
 
-// validateConfig valide la configuration
+// validateConfig validates the configuration
 func validateConfig(config *Config) error {
-	// Vérifier le niveau de journalisation
+	// Check the log level
 	logLevel := strings.ToLower(config.General.LogLevel)
 	if logLevel != "debug" && logLevel != "info" && logLevel != "warn" && logLevel != "error" {
 		return fmt.Errorf("invalid log level: %s", config.General.LogLevel)
 	}
 
-	// Vérifier le moteur de stockage
+	// Check the storage engine
 	engine := strings.ToLower(config.Storage.Engine)
 	if engine != "memory" && engine != "file" && engine != "sqlite" && engine != "badger" {
 		return fmt.Errorf("invalid storage engine: %s", config.Storage.Engine)
 	}
 
-	// Vérifier les ports
+	// check ports
 	if config.HTTP.Enabled && (config.HTTP.Port < 1 || config.HTTP.Port > 65535) {
 		return fmt.Errorf("invalid HTTP port: %d", config.HTTP.Port)
 	}
@@ -366,7 +366,7 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("invalid gRPC port: %d", config.GRPC.Port)
 	}
 
-	// Vérifier les configurations TLS
+	// Check the TLS configurations
 	if config.HTTP.TLS {
 		if config.HTTP.CertFile == "" || config.HTTP.KeyFile == "" {
 			return fmt.Errorf("TLS enabled but certificate or key file not specified")

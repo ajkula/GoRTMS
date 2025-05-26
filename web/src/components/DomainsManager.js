@@ -10,18 +10,16 @@ const DomainsManager = ({ onSelectDomain }) => {
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState(null);
 
-  // Charger les domaines
   const fetchDomains = async () => {
     try {
       setLoading(true);
       setError(null);
       const domainsData = await api.getDomains();
       
-      // Si nous avons besoin de plus de détails pour chaque domaine
       const detailedDomains = await Promise.all(
         domainsData.map(async (domain) => {
           try {
-            // Essayer de récupérer les détails du domaine si l'API le permet
+            // Try to get more details
             const details = await api.getDomainDetails(domain.name);
 
             return {
@@ -33,7 +31,7 @@ const DomainsManager = ({ onSelectDomain }) => {
             };
           } catch (err) {
             console.log(`Couldn't fetch details for domain ${domain.name}`, err);
-            return domain; // Conserver le domaine tel quel si pas de détails
+            return domain;
           }
         })
       );
@@ -51,7 +49,6 @@ const DomainsManager = ({ onSelectDomain }) => {
     fetchDomains();
   }, []);
 
-  // Créer un nouveau domaine
   const handleCreateDomain = async (e) => {
     e.preventDefault();
     if (!newDomainName.trim()) return;
@@ -81,7 +78,6 @@ const DomainsManager = ({ onSelectDomain }) => {
     }
   };
 
-  // Supprimer un domaine
   const handleDeleteDomain = async (domainName) => {
     if (!window.confirm(`Are you sure you want to delete domain "${domainName}"? This will also delete all its queues and messages.`)) {
       return;
@@ -100,7 +96,7 @@ const DomainsManager = ({ onSelectDomain }) => {
     <div>
       <h1 className="text-2xl font-bold mb-6">Domains</h1>
       
-      {/* Formulaire de création de domaine */}
+      {/* domain create form */}
       <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
         <h2 className="text-lg font-medium mb-4">Create New Domain</h2>
         
@@ -138,7 +134,7 @@ const DomainsManager = ({ onSelectDomain }) => {
         )}
       </div>
       
-      {/* Liste des domaines */}
+      {/* domains list */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-medium">Domain List</h2>

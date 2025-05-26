@@ -15,7 +15,6 @@ var (
 	ErrSubscriptionNotFound = errors.New("subscription not found")
 )
 
-// Subscription représente un abonnement à une file d'attente
 type Subscription struct {
 	ID         string
 	DomainName string
@@ -23,18 +22,16 @@ type Subscription struct {
 	Handler    model.MessageHandler
 }
 
-// SubscriptionRegistry implémente un registry d'abonnements en mémoire
 type SubscriptionRegistry struct {
-	// Map des abonnements par ID
+	// Map of subscriptions by ID
 	subscriptions map[string]*Subscription
 
-	// Map des abonnements par file d'attente
+	// Map of subscriptions by queue
 	queueSubscriptions map[string]map[string]*Subscription
 
 	mu sync.RWMutex
 }
 
-// NewSubscriptionRegistry crée un nouveau registry d'abonnements
 func NewSubscriptionRegistry() outbound.SubscriptionRegistry {
 	return &SubscriptionRegistry{
 		subscriptions:      make(map[string]*Subscription),
@@ -42,7 +39,6 @@ func NewSubscriptionRegistry() outbound.SubscriptionRegistry {
 	}
 }
 
-// RegisterSubscription enregistre un nouvel abonnement
 func (r *SubscriptionRegistry) RegisterSubscription(
 	domainName, queueName string,
 	handler model.MessageHandler,
@@ -50,10 +46,10 @@ func (r *SubscriptionRegistry) RegisterSubscription(
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Générer un ID unique
+	// Generate a unique ID
 	id := generateSubscriptionID()
 
-	// Créer l'abonnement
+	// Create the subscription
 	subscription := &Subscription{
 		ID:         id,
 		DomainName: domainName,
@@ -61,45 +57,44 @@ func (r *SubscriptionRegistry) RegisterSubscription(
 		Handler:    handler,
 	}
 
-	// Stocker l'abonnement
+	// Store the subscription
 	r.subscriptions[id] = subscription
 
-	// Créer la clé de file d'attente
+	// Create the queue key
 	queueKey := fmt.Sprintf("%s:%s", domainName, queueName)
 
-	// Créer la map si nécessaire
+	// Create the map if necessary
 	if _, exists := r.queueSubscriptions[queueKey]; !exists {
 		r.queueSubscriptions[queueKey] = make(map[string]*Subscription)
 	}
 
-	// Associer l'abonnement à la file d'attente
+	// Associate the subscription with the queue
 	r.queueSubscriptions[queueKey][id] = subscription
 
 	return id, nil
 }
 
-// UnregisterSubscription supprime un abonnement
 func (r *SubscriptionRegistry) UnregisterSubscription(
 	subscriptionID string,
 ) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Récupérer l'abonnement
+	// Retrieve the subscription
 	subscription, exists := r.subscriptions[subscriptionID]
 	if !exists {
 		return ErrSubscriptionNotFound
 	}
 
-	// Supprimer l'abonnement
+	// Remove the subscription
 	delete(r.subscriptions, subscriptionID)
 
-	// Supprimer de la map des files d'attente
+	// Remove from the queue map
 	queueKey := fmt.Sprintf("%s:%s", subscription.DomainName, subscription.QueueName)
 	if queueSubs, exists := r.queueSubscriptions[queueKey]; exists {
 		delete(queueSubs, subscriptionID)
 
-		// Supprimer la map des files d'attente si vide
+		// Delete the queue map if it's empty
 		if len(queueSubs) == 0 {
 			delete(r.queueSubscriptions, queueKey)
 		}
@@ -108,7 +103,6 @@ func (r *SubscriptionRegistry) UnregisterSubscription(
 	return nil
 }
 
-// NotifySubscribers notifie tous les abonnés d'un message
 func (r *SubscriptionRegistry) NotifySubscribers(
 	domainName, queueName string,
 	message *model.Message,
@@ -116,42 +110,41 @@ func (r *SubscriptionRegistry) NotifySubscribers(
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Créer la clé de file d'attente
+	// Create the queue key
 	queueKey := fmt.Sprintf("%s:%s", domainName, queueName)
 
-	// Récupérer les abonnements
+	// Retrieve the subscriptions
 	queueSubs, exists := r.queueSubscriptions[queueKey]
 	if !exists {
-		return nil // Pas d'abonnés, c'est OK
+		return nil // No subs
 	}
 
-	// Notifier chaque abonné dans une goroutine
+	// Notify each subscriber in a goroutine
 	var wg sync.WaitGroup
 	for _, subscription := range queueSubs {
 		wg.Add(1)
 		go func(sub *Subscription, msg *model.Message) {
 			defer wg.Done()
 
-			// Clone le message pour éviter les problèmes de concurrence
+			// Clone the message to avoid concurrency issues
 			messageCopy := *msg
 
-			// Appeler le handler
+			// Call the handler
 			if err := sub.Handler(&messageCopy); err != nil {
-				// Log l'erreur mais continue
+				// Log the error but continue
 				fmt.Printf("Error notifying subscriber %s: %v\n", sub.ID, err)
 			}
 		}(subscription, message)
 	}
 
-	// Attendre que toutes les notifications soient terminées
-	// Note: Dans un système de production, on pourrait utiliser un timeout
+	// Wait for all notifications to finish
+	// Note: In a production system, we might use a timeout
 	wg.Wait()
 
 	return nil
 }
 
-// generateSubscriptionID génère un ID unique pour un abonnement
 func generateSubscriptionID() string {
-	// Générer un ID aléatoire
+	// Generate a random ID
 	return fmt.Sprintf("sub-%d-%d", time.Now().UnixNano(), rand.Intn(10000))
 }

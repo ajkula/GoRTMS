@@ -1,7 +1,7 @@
 const API_BASE_URL = '/api';
 
 const api = {
-  // Fonction utilitaire pour gérer les erreurs et parser les réponses JSON
+  // Utility function to handle errors and parse JSON responses
   async fetchJSON(url, options = {}) {
     if (!url) {
       console.error('API fetch error: URL is undefined');
@@ -21,14 +21,13 @@ const api = {
     }
   },
 
-  // Domaines
   async getDomains() {
     try {
       const data = await this.fetchJSON(`${API_BASE_URL}/domains`);
       return data.domains || [];
     } catch (error) {
       console.error('Error fetching domains:', error);
-      return []; // Retourner un tableau vide en cas d'erreur
+      return [];
     }
   },
 
@@ -50,21 +49,18 @@ const api = {
     });
   },
 
-  // Files d'attente
   async getQueues(domainName) {
     try {
       const data = await this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues`);
-      // Garantir que les données de configuration sont correctement extraites
       return data.queues || [];
     } catch (error) {
       console.error(`Error fetching queues for domain ${domainName}:`, error);
-      return []; // Retourner un tableau vide en cas d'erreur
+      return [];
     }
   },
 
   async getQueue(domainName, queueName) {
     const data = await this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}`);
-    // Assurez-vous que la config est correctement parsée
     return {
       name: data.name,
       messageCount: data.messageCount,
@@ -96,13 +92,13 @@ const api = {
 
 
     try {
-      // Cette API est juste pour l'enregistrement initial
+      // This API is only for initial registration
       const response = await fetch(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/subscribe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({}), // Corps vide ou avec callbackUrl si nécessaire
+        body: JSON.stringify({}),
       });
 
       if (!response.ok) {
@@ -125,7 +121,7 @@ const api = {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ subscriptionId }), // Passer l'ID d'abonnement dans le corps
+        body: JSON.stringify({ subscriptionId }),
       });
 
       if (!response.ok) {
@@ -141,7 +137,6 @@ const api = {
 
   // Messages
   async publishMessage(domainName, queueName, message) {
-    // Si le message a content et headers, extraire content pour le payload principal
     let payload = message;
     let headers = { 'Content-Type': 'application/json' };
 
@@ -174,7 +169,7 @@ const api = {
       return data.messages || [];
     } catch (error) {
       console.error(`Error consuming messages from ${domainName}/${queueName}:`, error);
-      return []; // Retourner un tableau vide en cas d'erreur
+      return [];
     }
   },
 
@@ -185,7 +180,7 @@ const api = {
       return data.rules || [];
     } catch (error) {
       console.error(`Error fetching routing rules for domain ${domainName}:`, error);
-      return []; // Retourner un tableau vide en cas d'erreur
+      return [];
     }
   },
 
@@ -203,7 +198,6 @@ const api = {
     });
   },
 
-  // Tester les règles de routage
   async testRouting(domainName, message) {
     return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/routes/test`, {
       method: 'POST',
@@ -212,7 +206,7 @@ const api = {
     });
   },
 
-  // WebSocket pour le moniteur en temps réel
+  // real-time monitoring webSocket
   createQueueMonitor(domainName, queueName, onMessage, onError) {
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -223,14 +217,13 @@ const api = {
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          // Vérifier le format du message et adapter si nécessaire
           if (data.type === 'message' && data.payload) {
             onMessage({
               id: data.id,
               timestamp: data.timestamp,
               headers: data.headers || {},
               content: data.payload,
-              ...data.payload // Pour accès direct aux propriétés
+              ...data.payload
             });
           } else {
             onMessage(data);
@@ -253,7 +246,6 @@ const api = {
     } catch (error) {
       console.error('Error creating WebSocket:', error);
       if (onError) onError(error);
-      // Retourner un objet minimal pour éviter les erreurs
       return {
         socket: null,
         close: () => console.log('No WebSocket connection to close')
@@ -261,13 +253,11 @@ const api = {
     }
   },
 
-  // Statistiques
   async getStats() {
     try {
       return await this.fetchJSON(`${API_BASE_URL}/stats`);
     } catch (error) {
       console.error('Error fetching stats:', error);
-      // Retourner des données par défaut en cas d'erreur
       return {
         domains: 0,
         queues: 0,
@@ -278,7 +268,6 @@ const api = {
     }
   },
 
-  // Récupérer les statistiques actuelles
   async getCurrentStats() {
     try {
       return await this.fetchJSON(`${API_BASE_URL}/resources/current`);
@@ -296,7 +285,6 @@ const api = {
     }
   },
 
-  // Récupérer l'historique des statistiques
   async getStatsHistory(limit = 60) {
     try {
       return await this.fetchJSON(`/api/resources/history?limit=${limit}`);
@@ -306,7 +294,6 @@ const api = {
     }
   },
 
-  // Récupérer les statistiques pour un domaine spécifique
   async getDomainStats(domainName) {
     try {
       return await this.fetchJSON(`/api/resources/domains/${domainName}`);
@@ -321,7 +308,7 @@ const api = {
     }
   },
 
-  // Consumer Groups - API complète
+  // Consumer Groups
   async getAllConsumerGroups() {
     return this.fetchJSON(`${API_BASE_URL}/consumer-groups`);
   },
@@ -377,14 +364,14 @@ const api = {
       console.log(`Fetching pending messages: ${domainName}/${queueName}/${groupID}`);
       const data = await this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}/messages`);
       console.log("Pending messages received:", data);
-      // Gestion de la structure de données variée
       return Array.isArray(data) ? data : (data.messages || []);
     } catch (error) {
       console.error(`Error fetching pending messages for group ${groupID}:`, error);
-      return []; // Retourner un tableau vide en cas d'erreur
+      return [];
     }
   },
 
+  // TODO
   // async acknowledgeMessage(domainName, queueName, groupID, messageID) {
   //   return this.fetchJSON(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/consumer-groups/${groupID}/messages/${messageID}/ack`, {
   //     method: 'POST'
@@ -405,19 +392,19 @@ const api = {
     });
   },
 
-  // Formater les données pour les graphiques
+  // Format data for charts
   formatHistoryForCharts(historyData) {
     return historyData.map(stats => ({
       time: new Date(stats.timestamp * 1000).toLocaleTimeString(),
       timestamp: stats.timestamp,
-      memoryUsageMB: Math.round(stats.memoryUsage / (1024 * 1024)), // Convertir en MB
+      memoryUsageMB: Math.round(stats.memoryUsage / (1024 * 1024)), // convert to MB
       goroutines: stats.goroutines,
-      gcPauseMs: stats.gcPauseNs / 1000000, // Convertir en ms
+      gcPauseMs: stats.gcPauseNs / 1000000, // convert to ms
       heapObjects: stats.heapObjects
     }));
   },
 
-  // Formater la taille mémoire pour l'affichage
+  // Format memory size for display
   formatMemorySize(bytes) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
@@ -425,7 +412,6 @@ const api = {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   },
 
-  // Vérification de santé
   async healthCheck() {
     try {
       return await this.fetchJSON('/health');

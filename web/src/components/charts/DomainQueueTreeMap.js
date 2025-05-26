@@ -1,35 +1,34 @@
 import React, { useMemo } from 'react';
 import { ResponsiveContainer, Treemap, Tooltip } from 'recharts';
 
-// Fonction pour obtenir la couleur basée sur l'utilisation
+// Function to get the color based on usage
 const getUsageColor = (usage) => {
-  if (usage >= 90) return '#ef4444'; // Rouge pour utilisation critique
-  if (usage >= 75) return '#f97316'; // Orange pour utilisation élevée
-  if (usage >= 50) return '#eab308'; // Jaune pour utilisation moyenne
-  return '#22c55e';                  // Vert pour utilisation faible
+  if (usage >= 90) return '#ef4444'; // Red for critical usage
+  if (usage >= 75) return '#f97316'; // Orange for high usage
+  if (usage >= 50) return '#eab308'; // Yellow for medium usage
+  return '#22c55e';                  // Green for low usage
 };
 
 const DomainQueueTreeMap = ({ data }) => {
-  // Transformer les données pour le treemap
+  // Transform data for the treemap
   const treemapData = useMemo(() => {
-    // Simplifions la structure - utilisons un format plus plat avec des couleurs calculées
+    // using a flatter format with computed colors
     return data.map(queue => ({
       name: queue.name,
       size: queue.messageCount || 1,
       domain: queue.domain,
       usage: queue.usage || 0,
-      // Ajouter la couleur directement dans les données
       fill: getUsageColor(queue.usage || 0)
     }));
   }, [data]);
 
-  // Obtenir les domaines uniques pour les légendes
+  // Get unique domains for the legends
   const domains = useMemo(() => {
     const uniqueDomains = [...new Set(data.map(queue => queue.domain))];
     return uniqueDomains;
   }, [data]);
 
-  // Générer la légende d'utilisation
+  // Generate the usage legend
   const usageLegend = [
     { label: "Critique (>90%)", color: getUsageColor(95) },
     { label: "Élevée (>75%)", color: getUsageColor(80) },
@@ -49,7 +48,7 @@ const DomainQueueTreeMap = ({ data }) => {
               dataKey="size"
               nameKey="name"
               stroke="#fff"
-              // Utiliser la propriété de style pour spécifier les couleurs
+              // Use the style property to specify the colors
               content={({
                 x, y, width, height, name, fill
               }) => (
@@ -109,7 +108,7 @@ const DomainQueueTreeMap = ({ data }) => {
         </div>
       )}
 
-      {/* Légende d'utilisation en ligne */}
+      {/* Inline usage legend */}
       <div className="mt-4 text-center">
         <div className="inline-block text-center">
           <span className="text-sm font-medium text-gray-700">Utilisation:</span>&nbsp;&nbsp;
@@ -125,7 +124,7 @@ const DomainQueueTreeMap = ({ data }) => {
         </div>
       </div>
 
-      {/* Légende des domaines en ligne */}
+      {/* Inline domain legend */}
       {domains.length > 0 && (
         <div className="mt-3 text-center">
           <div className="inline-block text-center">

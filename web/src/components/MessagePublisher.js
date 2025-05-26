@@ -11,7 +11,7 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
   const [headers, setHeaders] = useState([{ key: '', value: '' }]);
   const [success, setSuccess] = useState(false);
 
-  // Valider le JSON lors de la modification du contenu
+  // Validate the JSON when editing the content
   const handleContentChange = (content) => {
     setMessageContent(content);
 
@@ -31,26 +31,22 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
     }
   };
 
-  // Ajouter un en-tête
-  const addHeader = () => {
-    setHeaders([...headers, { key: '', value: '' }]);
+  const addHeader = ({ key, value }) => {
+    if (key !== undefined && value !== undefined) setHeaders([...headers, { key, value }]);
   };
 
-  // Supprimer un en-tête
   const removeHeader = (index) => {
     const newHeaders = [...headers];
     newHeaders.splice(index, 1);
     setHeaders(newHeaders);
   };
 
-  // Mettre à jour un en-tête
   const updateHeader = (index, field, value) => {
     const newHeaders = [...headers];
     newHeaders[index][field] = value;
     setHeaders(newHeaders);
   };
 
-  // Générer un exemple de message
   const generateSampleMessage = () => {
     const samples = [
       {
@@ -88,7 +84,6 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
     setJsonError(null);
   };
 
-  // Publier le message
   const handlePublish = async (e) => {
     e.preventDefault();
 
@@ -100,16 +95,14 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
       setPublishing(true);
       setError(null);
 
-      // Construire l'objet message
       let content;
       try {
         content = JSON.parse(messageContent);
       } catch (err) {
-        // Si ce n'est pas un JSON valide, utiliser le texte brut
+        // If it's not valid JSON, use plain text instead
         content = messageContent;
       }
 
-      // Construire l'objet d'en-têtes
       const messageHeaders = {};
       headers.forEach(header => {
         if (header.key.trim() && header.value.trim()) {
@@ -122,10 +115,8 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
         headers: Object.keys(messageHeaders).length > 0 ? messageHeaders : undefined
       };
 
-      // Publier le message
       const result = await api.publishMessage(domainName, queueName, message);
 
-      // Notifier le parent
       if (onMessagePublished) {
         onMessagePublished(message);
       }
@@ -155,7 +146,7 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
 
       <div className="p-6">
         <form onSubmit={handlePublish}>
-          {/* Contenu du message */}
+          {/* message content */}
           <div className="mb-4">
             <label htmlFor="message-content" className="block text-sm font-medium text-gray-700 mb-1">
               Message Content (JSON)
@@ -178,7 +169,7 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
             )}
           </div>
 
-          {/* En-têtes */}
+          {/* headers */}
           <div className="mb-6">
             <div className="flex justify-between items-center mb-2">
               <label className="block text-sm font-medium text-gray-700">Headers (optional)</label>
@@ -238,7 +229,7 @@ const MessagePublisher = ({ domainName, queueName, onMessagePublished }) => {
             </div>
           )}
 
-          {/* Bouton de publication */}
+          {/* publish bouton */}
           <div className="flex justify-end">
             <button
               type="submit"

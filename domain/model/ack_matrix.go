@@ -5,31 +5,31 @@ import (
 )
 
 /*
-AckMatrix implémente un système de suivi des acquittements de messages par groupes de consommateurs.
+AckMatrix implements a message acknowledgment tracking system by consumer groups.
 
-Architecture générale:
-1. Repository = source unique de vérité pour les messages
-2. ChannelQueue = buffer temporaire pour la distribution des messages
-3. AckMatrix = suivi des messages acquittés par chaque consumer group
-4. Le système de double canal sépare les commandes et les messages
+High-level architecture:
+1. Repository = single source of truth for all messages
+2. ChannelQueue = temporary buffer for message delivery
+3. AckMatrix = tracks which consumer groups have acknowledged which messages
+4. A dual-channel system separates commands from messages
 
-Un message n'est définitivement supprimé du repository que lorsque tous les consumer
-groups actifs l'ont acquitté. Si un consumer group est supprimé, ses acquittements
-sont automatiquement considérés comme complets.
+A message is only permanently deleted from the repository once all active
+consumer groups have acknowledged it. If a consumer group is removed,
+its acknowledgments are automatically considered complete.
 */
 
-// AckMatrix suit quels consumer groups ont traité quels messages
+// AckMatrix tracks which consumer groups have processed which messages.
 type AckMatrix struct {
 	mu sync.RWMutex
-	// Messages en attente d'acquittement (matrice creuse)
-	messages map[string]map[string]bool // messageID → (groupID → acquitté)
+	// Messages pending acknowledgment (sparse matrix)
+	messages map[string]map[string]bool // messageID → (groupID → acknowledged)
 	// Groupes de consommateurs actifs
-	activeGroups map[string]bool // groupID → statut actif
-	// Nombre total de groupes actifs
+	activeGroups map[string]bool // groupID → active status
+	// Total number of active groups
 	groupCount int
 }
 
-// NewAckMatrix crée une nouvelle matrice d'acquittement
+// NewAckMatrix creates a new acknowledgment matrix.
 func NewAckMatrix() *AckMatrix {
 	return &AckMatrix{
 		messages:     make(map[string]map[string]bool),
@@ -37,7 +37,7 @@ func NewAckMatrix() *AckMatrix {
 	}
 }
 
-// RegisterGroup enregistre un nouveau groupe de consommateurs
+// RegisterGroup registers a new consumer group.
 func (m *AckMatrix) RegisterGroup(groupID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -46,7 +46,8 @@ func (m *AckMatrix) RegisterGroup(groupID string) {
 	m.groupCount = len(m.activeGroups)
 }
 
-// RemoveGroup supprime un groupe et retourne les IDs de messages complètement acquittés
+// RemoveGroup removes a consumer group and returns the IDs of messages
+// that are now fully acknowledged as a result.
 func (m *AckMatrix) RemoveGroup(groupID string) []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -54,13 +55,13 @@ func (m *AckMatrix) RemoveGroup(groupID string) []string {
 	delete(m.activeGroups, groupID)
 	m.groupCount = len(m.activeGroups)
 
-	// Trouver les messages qui peuvent maintenant être supprimés
+	// Find messages that can now be deleted
 	messagesToDelete := []string{}
 	for msgID, acks := range m.messages {
-		// Marquer ce groupe comme acquitté (puisqu'il est parti)
+		// Mark this group as acknowledged (since it's gone)
 		acks[groupID] = true
 
-		// Vérifier si tous les groupes restants ont acquitté
+		// Check if all remaining groups have acknowledged
 		allAcked := true
 		for g := range m.activeGroups {
 			if !acks[g] {
@@ -74,7 +75,7 @@ func (m *AckMatrix) RemoveGroup(groupID string) []string {
 		}
 	}
 
-	// Supprimer les messages entièrement acquittés de la matrice
+	// Remove fully acknowledged messages from the matrix
 	for _, msgID := range messagesToDelete {
 		delete(m.messages, msgID)
 	}
@@ -82,26 +83,26 @@ func (m *AckMatrix) RemoveGroup(groupID string) []string {
 	return messagesToDelete
 }
 
-// Acknowledge marque un message comme acquitté par un groupe
-// Retourne true si le message est maintenant entièrement acquitté
+// Acknowledge marks a message as acknowledged by a group.
+// Returns true if the message is now fully acknowledged.
 func (m *AckMatrix) Acknowledge(messageID, groupID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Vérifier que le groupe existe
+	// Ensure the group exists
 	if !m.activeGroups[groupID] {
 		return false
 	}
 
-	// Initialiser le suivi pour ce message si nécessaire
+	// Initialize tracking for this message if needed
 	if _, exists := m.messages[messageID]; !exists {
 		m.messages[messageID] = make(map[string]bool, m.groupCount)
 	}
 
-	// Marquer comme acquitté
+	// Mark as acknowledged
 	m.messages[messageID][groupID] = true
 
-	// Vérifier si tous les groupes ont acquitté
+	// Check if all groups have acknowledged
 	allAcked := true
 	for g := range m.activeGroups {
 		if !m.messages[messageID][g] {
@@ -110,7 +111,7 @@ func (m *AckMatrix) Acknowledge(messageID, groupID string) bool {
 		}
 	}
 
-	// Si entièrement acquitté, supprimer du suivi
+	// Remove from tracking if fully acknowledged
 	if allAcked {
 		delete(m.messages, messageID)
 	}
@@ -118,14 +119,14 @@ func (m *AckMatrix) Acknowledge(messageID, groupID string) bool {
 	return allAcked
 }
 
-// Exposer le nombre de groupes actifs
+// Expose the number of currently active groups.
 func (m *AckMatrix) GetActiveGroupCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.groupCount
 }
 
-// GetPendingMessageCount retourne le nombre de messages en attente pour un groupe
+// GetPendingMessageCount returns the number of unacknowledged messages for a given group.
 func (m *AckMatrix) GetPendingMessageCount(groupID string) int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -139,12 +140,12 @@ func (m *AckMatrix) GetPendingMessageCount(groupID string) int {
 	return count
 }
 
-// GetPendingMessageCount retourne le nombre de messages en attente pour un groupe
+// GetPendingMessageIDs returns the IDs of messages pending acknowledgment for a given group.
 func (m *AckMatrix) GetPendingMessageIDs(groupID string) []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	ids := make([]string, m.GetPendingMessageCount(groupID))
+	ids := make([]string, 0)
 	for id, acks := range m.messages {
 		if !acks[groupID] {
 			ids = append(ids, id)

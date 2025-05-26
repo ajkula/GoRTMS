@@ -6,57 +6,57 @@ import (
 	"time"
 )
 
-// Message représente un message dans le système
+// Message represents a message in the system
 type Message struct {
-	ID        string            // Identifiant unique du message
-	Topic     string            // Sujet du message
-	Payload   []byte            // Contenu du message
-	Headers   map[string]string // En-têtes du message
-	Metadata  map[string]any    // Métadonnées pour le routage et le traitement
-	Timestamp time.Time         // Horodatage de création du message
+	ID        string            // Unique identifier of the message
+	Topic     string            // Topic of the message
+	Payload   []byte            // Message content
+	Headers   map[string]string // Message headers
+	Metadata  map[string]any    // Metadata for routing and processing
+	Timestamp time.Time         // Message creation timestamp
 }
 
-// MessageHandler est une fonction de rappel pour traiter les messages
+// MessageHandler is a callback function for processing messages
 type MessageHandler func(*Message) error
 
-// Queue représente une file d'attente de messages
+// Queue represents a message queue
 type Queue struct {
-	Name         string      // Nom de la file
-	DomainName   string      // Nom du domaine parent
-	Config       QueueConfig // Configuration de la file
-	MessageCount int         // Nombre de messages dans la file
+	Name         string      // Queue name
+	DomainName   string      // Parent domain name
+	Config       QueueConfig // Queue configuration
+	MessageCount int         // Number of messages in the queue
 }
 
-// QueueConfig contient la configuration d'une file d'attente
+// QueueConfig contains the configuration for a message queue
 type QueueConfig struct {
-	// IsPersistent indique si les messages doivent être persistés
-	//  lorsqu'ils sont supprimés du repo via une dépendance
+	// IsPersistent indicates whether messages should be persisted
+	// when deleted from the repo via a dependency
 	IsPersistent bool `yaml:"isPersistent"`
 
-	// MaxSize définit la taille maximale de la file d'attente (0 = illimité)
+	// MaxSize defines the maximum queue size (0 = unlimited)
 	MaxSize int `yaml:"maxSize"`
 
-	// TTL définit la durée de vie des messages (0 = illimité)
+	// TTL defines the time-to-live for messages (0 = unlimited)
 	TTL time.Duration `yaml:"ttl"`
 
-	// DeliveryMode définit le mode de distribution des messages aux consommateurs
+	// DeliveryMode defines how messages are delivered to consumers
 	DeliveryMode DeliveryMode `yaml:"deliveryMode"`
 
-	// Nouveaux champs
+	// New fields
 	WorkerCount int `yaml:"workerCount"`
 
-	// RetryEnabled active le mécanisme de retry
+	// RetryEnabled enables the retry mechanism
 	RetryEnabled bool `yaml:"retryEnabled"`
 
-	// RetryConfig définit la config. des retries
+	// RetryConfig defines the retry settings
 	RetryConfig *RetryConfig `yaml:"retryConfig,omitempty"`
 
-	// CircuitBreakerEnabled active le circuit breaker
+	// CircuitBreakerEnabled enables the circuit breaker
 	CircuitBreakerEnabled bool                  `yaml:"circuitBreakerEnabled"`
 	CircuitBreakerConfig  *CircuitBreakerConfig `yaml:"circuitBreakerConfig,omitempty"`
 }
 
-// CircuitBreakerConfig définit la configuration du circuit breaker
+// CircuitBreakerConfig defines the circuit breaker configuration
 type CircuitBreakerConfig struct {
 	ErrorThreshold   float64       `yaml:"errorThreshold"`
 	MinimumRequests  int           `yaml:"minimumRequests"`
@@ -64,45 +64,45 @@ type CircuitBreakerConfig struct {
 	SuccessThreshold int           `yaml:"successThreshold"`
 }
 
-// QueueHandler définit les opérations pour une implémentation de queue concurrente
+// QueueHandler defines the operations for a concurrent queue implementation
 type QueueHandler interface {
-	// Enqueue ajoute un message à la queue de manière thread-safe
+	// Enqueue adds a message to the queue in a thread-safe way
 	Enqueue(ctx context.Context, message *Message) error
 
-	// Dequeue récupère un message de la queue de manière thread-safe
+	// Dequeue retrieves a message from the queue in a thread-safe way
 	Dequeue(ctx context.Context) (*Message, error)
 
-	// GetQueue retourne la structure Queue associée
+	// GetQueue returns the associated Queue structure
 	GetQueue() *Queue
 
-	// Start démarre les workers pour traiter les messages
+	// Start starts workers to process messages
 	Start(ctx context.Context)
 
-	// Stop arrête les workers et libère les ressources
+	// Stop stops workers and releases resources
 	Stop()
 
-	// pour le système à double canal
+	// For dual-channel system
 	AddConsumerGroup(groupID string, lastIndex int64) error
 	RemoveConsumerGroup(groupID string)
 	RequestMessages(groupID string, count int) error
 	ConsumeMessage(groupID string, timeout time.Duration) (*Message, error)
 }
 
-// RetryConfig définit laconfig desretentatives pour les messages échoués
+// RetryConfig defines the configuration for retrying failed messages
 type RetryConfig struct {
 	MaxRetries int
 
-	// définit le délai avant la première tentative
+	// Delay before the first attempt
 	InitialDelay time.Duration
 
-	// Delai max entre tentatives
+	// Maximum delay between attempts
 	MaxDelay time.Duration
 
-	// Factor définit lefacteurde multiplication pour le backoff exponentiel
+	// Factor defines the multiplier for exponential backoff
 	Factor float64
 }
 
-// MessageWithRetry représente un message avec des informations de retry
+// MessageWithRetry represents a message with retry information
 type MessageWithRetry struct {
 	Message     *Message
 	RetryCount  int
@@ -113,88 +113,88 @@ type MessageWithRetry struct {
 type CircuitBreakerState int
 
 const (
-	// CircuitClosed= circuitfermé,lesmsg passentnormalement
+	// CircuitClosed = closed circuit, messages pass through normally
 	CircuitClosed CircuitBreakerState = iota
 
-	// CircuitOpen = circuit ouvert, les msg sont rejetés
+	// CircuitOpen = open circuit, messages are rejected
 	CircuitOpen
 
-	// CircuitHalfOpen = circuit en mode test
+	// CircuitHalfOpen = circuit in test mode
 	CircuitHalfOpen
 )
 
-// CircuitBreaker implémente lepatterndu même nom pour protéger contre les surcharges
+// CircuitBreaker implements the pattern of the same name to protect against overload
 type CircuitBreaker struct {
-	ErrorThreshold   float64             // Seuil d'erreurs pour ouvrir
-	SuccessThreshold int                 // nbr de succès pour fermer
-	MinimumRequests  int                 // Nombre min de req avant d'appliquer
-	OpenTimeout      time.Duration       // Durée d'ouverture
-	State            CircuitBreakerState // Etat actuel
-	FailureCount     int                 // compteur d'échecs
-	SuccessCount     int                 // Compteur de succès
-	TotalCount       int                 // Compteur total
-	LastStateChange  time.Time           // Derniere modif. d'état
-	NextAttempt      time.Time           // Prochaine tentative après ouverture
-	mu               sync.RWMutex        // Mutex de thread-safety
+	ErrorThreshold   float64             // Error threshold to open the circuit
+	SuccessThreshold int                 // Number of successes to close the circuit
+	MinimumRequests  int                 // Minimum number of requests before applying logic
+	OpenTimeout      time.Duration       // Duration the circuit remains open
+	State            CircuitBreakerState // Current state
+	FailureCount     int                 // Failure counter
+	SuccessCount     int                 // Success counter
+	TotalCount       int                 // Total attempts counter
+	LastStateChange  time.Time           // Last state change timestamp
+	NextAttempt      time.Time           // Next attempt time after opening
+	mu               sync.RWMutex        // Mutex for thread-safety
 }
 
-// DeliveryMode définit comment les messages sont distribués aux consommateurs
+// DeliveryMode defines how messages are distributed to consumers
 type DeliveryMode int
 
 const (
-	// BroadcastMode envoie le message à tous les consommateurs
+	// BroadcastMode sends the message to all consumers
 	BroadcastMode DeliveryMode = iota
 
-	// RoundRobinMode distribue les messages de manière équilibrée entre les consommateurs
+	// RoundRobinMode distributes messages evenly among consumers
 	RoundRobinMode
 
-	// SingleConsumerMode n'envoie le message qu'à un seul consommateur
+	// SingleConsumerMode sends the message to only one consumer
 	SingleConsumerMode
 )
 
-// Domain représente un domaine qui encapsule des files d'attente et des règles
+// Domain represents a domain that encapsulates queues and rules
 type Domain struct {
-	Name   string                             // Nom du domaine
-	Schema *Schema                            // Schéma de validation
-	Queues map[string]*Queue                  // Map des files d'attente
-	Routes map[string]map[string]*RoutingRule // Map des règles de routage (sourceQueue -> destQueue -> rule)
+	Name   string                             // Domain name
+	Schema *Schema                            // Validation schema
+	Queues map[string]*Queue                  // Map of queues
+	Routes map[string]map[string]*RoutingRule // Map of routing rules (sourceQueue -> destQueue -> rule)
 }
 
-// DomainConfig contient la configuration d'un domaine
+// DomainConfig contains the configuration of a domain
 type DomainConfig struct {
-	Name         string                 // Nom du domaine
-	Schema       *Schema                // Schéma de validation
-	QueueConfigs map[string]QueueConfig // Configurations des files d'attente
-	RoutingRules []*RoutingRule         // Règles de routage
+	Name         string                 // Domain name
+	Schema       *Schema                // Validation schema
+	QueueConfigs map[string]QueueConfig // Queue configurations
+	RoutingRules []*RoutingRule         // Routing rules
 }
 
 type SchemaInfo struct {
 	Fields map[string]string `json:"fields,omitempty"`
-	// Pas de champ Validation car c'est une fonction
-	HasValidation bool `json:"hasValidation,omitempty"` // Optionnel, juste pour information
+	// No Validation field since it's a function
+	HasValidation bool `json:"hasValidation,omitempty"` // Optional, for information only
 }
 
-// SystemEvent représente un événement système
+// SystemEvent represents a system event
 type SystemEvent struct {
 	ID        string    `json:"id"`
 	Type      string    `json:"type"`      // "info", "warning", "error"
 	EventType string    `json:"eventType"` // "domain_active", "queue_capacity", "connection_lost"
-	Resource  string    `json:"resource"`  // Le nom de la ressource concernée
-	Data      any       `json:"data"`      // Données supplémentaires (comme le pourcentage de capacité)
-	Timestamp time.Time `json:"-"`         // Pour usage interne
-	UnixTime  int64     `json:"timestamp"` // Timestamp Unix pour le client
+	Resource  string    `json:"resource"`  // Name of the affected resource
+	Data      any       `json:"data"`      // Additional data (e.g., capacity percentage)
+	Timestamp time.Time `json:"-"`         // For internal use
+	UnixTime  int64     `json:"timestamp"` // Unix timestamp for the client
 }
 
-// Schema définit la structure des messages pour un domaine
+// Schema defines the structure of messages for a domain
 type Schema struct {
-	// Fields définit les champs obligatoires dans le payload
+	// Fields defines the required fields in the payload
 	Fields map[string]FieldType
 
-	// Validation contient une fonction de validation personnalisée
+	// Validation contains a custom validation function
 	Validation func([]byte) error
 }
 
-// FieldType définit le type d'un champ dans le schéma
+// FieldType defines the type of a field in the schema
 type FieldType string
 
 const (
@@ -205,29 +205,29 @@ const (
 	ArrayType   FieldType = "array"
 )
 
-// RoutingRule définit une règle de routage pour les messages
+// RoutingRule defines a routing rule for messages
 type RoutingRule struct {
-	// SourceQueue est la file d'attente source
+	// SourceQueue is the source queue
 	SourceQueue string
 
-	// DestinationQueue est la file d'attente destination
+	// DestinationQueue is the target queue
 	DestinationQueue string
 
-	// Predicate est une fonction ou un objet qui détermine si un message doit être routé
+	// Predicate is a function or object that determines if a message should be routed
 	Predicate any
 }
 
-// PredicateFunc est une fonction qui détermine si un message doit être routé
+// PredicateFunc is a function that determines whether a message should be routed
 type PredicateFunc func(*Message) bool
 
-// JSONPredicate représente un prédicat sous forme de JSON pour faciliter la configuration
+// JSONPredicate represents a predicate in JSON form for easier configuration
 type JSONPredicate struct {
-	Type  string `json:"type"`  // Type d'opération: eq, ne, gt, lt, etc.
-	Field string `json:"field"` // Champ à évaluer
-	Value any    `json:"value"` // Valeur à comparer
+	Type  string `json:"type"`  // Operation type: eq, ne, gt, lt, etc.
+	Field string `json:"field"` // Field to evaluate
+	Value any    `json:"value"` // Value to compare
 }
 
-// Allow vérifie si une opération peut être exécutée
+// Allow checks if an operation is allowed
 func (cb *CircuitBreaker) Allow() bool {
 	cb.mu.RLock()
 	defer cb.mu.RUnlock()
@@ -236,7 +236,7 @@ func (cb *CircuitBreaker) Allow() bool {
 
 	switch cb.State {
 	case CircuitOpen:
-		// Si le timeout est passé, passer en mode semi-ouvert
+		// If timeout has passed, switch to half-open
 		if now.After(cb.NextAttempt) {
 			cb.mu.RUnlock()
 			cb.mu.Lock()
@@ -252,7 +252,7 @@ func (cb *CircuitBreaker) Allow() bool {
 		return false
 
 	case CircuitHalfOpen:
-		// En mode semi-ouvert, limiter le nombre de requêtes
+		// In half-open mode, limit the number of requests
 		return cb.TotalCount < 5
 
 	default: // CircuitClosed
@@ -260,7 +260,7 @@ func (cb *CircuitBreaker) Allow() bool {
 	}
 }
 
-// Reset réinitialise le circuit breaker
+// Reset resets the circuit breaker
 func (cb *CircuitBreaker) Reset() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()

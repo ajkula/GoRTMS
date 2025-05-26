@@ -10,7 +10,7 @@ const RoutingTester = ({ domainName, sourceQueue, rules }) => {
   const [testResults, setTestResults] = useState(null);
   const [error, setError] = useState(null);
 
-  // Valider le JSON
+  // Validate JSON
   const handleMessageChange = (content) => {
     setTestMessage(content);
     
@@ -30,7 +30,7 @@ const RoutingTester = ({ domainName, sourceQueue, rules }) => {
     }
   };
 
-  // Tester le routage
+  // Test routing
   const handleTestRouting = async (e) => {
     e.preventDefault();
     
@@ -46,18 +46,17 @@ const RoutingTester = ({ domainName, sourceQueue, rules }) => {
         payload: JSON.parse(testMessage)
       };
       
-      // Cette API n'existe pas encore dans le backend, vous devrez peut-être l'implémenter
       const results = await api.testRouting(domainName, messageObj);
       setTestResults(results);
     } catch (err) {
       console.error('Error testing routing:', err);
       setError(err.message || 'Failed to test routing rules');
-      // Simuler des résultats pour la démonstration
+
       setTestResults({
         sourceQueue: sourceQueue,
         matches: rules.map(rule => ({
           rule: rule,
-          matches: Math.random() > 0.5, // Simulation aléatoire
+          matches: Math.random() > 0.5,
           destinationQueue: rule.DestinationQueue
         }))
       });
@@ -66,15 +65,13 @@ const RoutingTester = ({ domainName, sourceQueue, rules }) => {
     }
   };
 
-  // Générer un exemple de message basé sur les règles existantes
   const generateSampleMessage = () => {
     if (rules.length === 0) {
-      // Message par défaut si pas de règles
       setTestMessage('{\n  "type": "test",\n  "priority": "high"\n}');
       return;
     }
     
-    // Trouver une règle pour générer un message qui matchera
+    // Find a rule to generate a message that will match
     const rule = rules[0];
     let sampleMessage = {};
     
@@ -82,10 +79,8 @@ const RoutingTester = ({ domainName, sourceQueue, rules }) => {
       let fieldParts = rule.Predicate.field.split('.');
       
       if (fieldParts.length === 1) {
-        // Champ simple
         let value = rule.Predicate.value;
         
-        // Convertir la valeur si nécessaire
         if (!isNaN(value)) {
           value = parseFloat(value);
         } else if (value === 'true' || value === 'false') {
@@ -94,14 +89,14 @@ const RoutingTester = ({ domainName, sourceQueue, rules }) => {
         
         sampleMessage[rule.Predicate.field] = value;
       } else {
-        // Champ imbriqué (ex: user.name)
+        // Nested field (e.g., user.name)
         let current = sampleMessage;
         for (let i = 0; i < fieldParts.length - 1; i++) {
           current[fieldParts[i]] = {};
           current = current[fieldParts[i]];
         }
         
-        // Dernier niveau avec la valeur
+        // Last level with the value
         let value = rule.Predicate.value;
         if (!isNaN(value)) {
           value = parseFloat(value);
@@ -110,7 +105,7 @@ const RoutingTester = ({ domainName, sourceQueue, rules }) => {
       }
     }
     
-    // Ajouter d'autres champs d'exemple
+    // Add other example fields
     sampleMessage.timestamp = new Date().toISOString();
     sampleMessage.id = `test-${Math.floor(Math.random() * 1000)}`;
     

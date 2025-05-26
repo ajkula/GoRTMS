@@ -6,8 +6,6 @@ import (
 	"log"
 	"time"
 
-	"slices"
-
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
@@ -65,17 +63,13 @@ func (s *ConsumerGroupServiceImpl) ListConsumerGroups(
 }
 
 func (s *ConsumerGroupServiceImpl) ListAllGroups(ctx context.Context) ([]*model.ConsumerGroup, error) {
-
 	if repo, ok := s.consumerGroupRepo.(interface {
 		GetAllGroups(ctx context.Context) ([]*model.ConsumerGroup, error)
 	}); ok {
 		return repo.GetAllGroups(ctx)
 	}
 
-	// add GetAllGroups method to repository.
-
 	allGroups := []*model.ConsumerGroup{}
-
 	return allGroups, nil
 }
 
@@ -84,22 +78,24 @@ func (s *ConsumerGroupServiceImpl) CreateConsumerGroup(
 	domainName, queueName, groupID string,
 	ttl time.Duration,
 ) error {
-	// register consumer group
+	// Register consumer group (creates the instance)
 	if err := s.consumerGroupRepo.RegisterConsumer(ctx, domainName, queueName, groupID, ""); err != nil {
 		return err
 	}
 
-	// store TTL if exists
+	// Set TTL if provided
 	if ttl > 0 {
-		if storeTTLRepo, ok := s.consumerGroupRepo.(interface {
-			StoreTTL(ctx context.Context, domainName, queueName, groupID string, ttl time.Duration) error
+		if repo, ok := s.consumerGroupRepo.(interface {
+			GetGroupDetails(
+				ctx context.Context,
+				domainName, queueName, groupID string,
+			) (*model.ConsumerGroup, error)
 		}); ok {
-			if err := storeTTLRepo.StoreTTL(ctx, domainName, queueName, groupID, ttl); err != nil {
+			group, err := repo.GetGroupDetails(ctx, domainName, queueName, groupID)
+			if err != nil {
 				return err
 			}
-		} else {
-			// Fallback
-			log.Printf("WARNING: StoreTTL not implemented in repository, TTL will not be stored")
+			group.SetTTL(ttl)
 		}
 	}
 
@@ -129,19 +125,7 @@ func (s *ConsumerGroupServiceImpl) UpdateConsumerGroupTTL(
 	domainName, queueName, groupID string,
 	ttl time.Duration,
 ) error {
-	_, err := s.GetGroupDetails(ctx, domainName, queueName, groupID)
-	if err != nil {
-		return err
-	}
-
-	// Update TTL from repo
-	if storeTTLRepo, ok := s.consumerGroupRepo.(interface {
-		StoreTTL(ctx context.Context, domainName, queueName, groupID string, ttl time.Duration) error
-	}); ok {
-		return storeTTLRepo.StoreTTL(ctx, domainName, queueName, groupID, ttl)
-	}
-
-	return errors.New("TTL update not supported by repository")
+	return s.consumerGroupRepo.SetGroupTTL(ctx, domainName, queueName, groupID, ttl)
 }
 
 func (s *ConsumerGroupServiceImpl) CleanupStaleGroups(
@@ -167,107 +151,15 @@ func (s *ConsumerGroupServiceImpl) GetGroupDetails(
 		return group, nil
 	}
 
-	// Or build manually from available informations
-	position, err := s.consumerGroupRepo.GetPosition(ctx, domainName, queueName, groupID)
-	if err != nil {
-		groups, err := s.consumerGroupRepo.ListGroups(ctx, domainName, queueName)
-		if err != nil {
-			return nil, err
-		}
-
-		groupExists := slices.Contains(groups, groupID)
-
-		if !groupExists {
-			return nil, ErrConsumerGroupNotFound
-		}
-	}
-
-	// Consumer IDs
-	consumerIDs := []string{}
-	if repo, ok := s.consumerGroupRepo.(interface {
-		GetConsumerIDs(ctx context.Context, domainName, queueName, groupID string) ([]string, error)
-	}); ok {
-		ids, err := repo.GetConsumerIDs(ctx, domainName, queueName, groupID)
-		if err != nil {
-			log.Printf("Warning: Could not retrieve consumer IDs: %v", err)
-		} else {
-			consumerIDs = ids
-		}
-	}
-
-	// TTL
-	var ttl time.Duration
-	if repo, ok := s.consumerGroupRepo.(interface {
-		GetTTL(ctx context.Context, domainName, queueName, groupID string) (time.Duration, error)
-	}); ok {
-		t, err := repo.GetTTL(ctx, domainName, queueName, groupID)
-		if err != nil {
-			log.Printf("Warning: Could not retrieve TTL: %v", err)
-		} else {
-			ttl = t
-		}
-	}
-
-	// timestamps
-	var createdAt, lastActivity time.Time
-	if repo, ok := s.consumerGroupRepo.(interface {
-		GetCreationTime(ctx context.Context, domainName, queueName, groupID string) (time.Time, error)
-		GetLastActivity(ctx context.Context, domainName, queueName, groupID string) (time.Time, error)
-	}); ok {
-		createdAt, err = repo.GetCreationTime(ctx, domainName, queueName, groupID)
-		if err != nil {
-			log.Printf("[ERROR] Getting creation date: %s", err)
-		}
-		lastActivity, err = repo.GetLastActivity(ctx, domainName, queueName, groupID)
-		if err != nil {
-			log.Printf("[ERROR] Getting last activity: %s", err)
-		}
-	}
-
-	// Count pending messages
-	messageCount := 0
-	matrix := s.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
-	if matrix != nil {
-		messageCount = matrix.GetPendingMessageCount(groupID)
-	}
-
-	group := &model.ConsumerGroup{
-		DomainName:   domainName,
-		QueueName:    queueName,
-		GroupID:      groupID,
-		Position:     position,
-		ConsumerIDs:  consumerIDs,
-		TTL:          ttl,
-		CreatedAt:    createdAt,
-		LastActivity: lastActivity,
-		MessageCount: messageCount,
-	}
-
-	// Finally update last activity
-	if updater, ok := s.consumerGroupRepo.(interface {
-		UpdateLastActivity(ctx context.Context, domainName, queueName, groupID string, t time.Time) error
-	}); ok {
-		now := time.Now()
-		if err := updater.UpdateLastActivity(ctx, domainName, queueName, groupID, now); err != nil {
-			log.Printf("Warning: Failed to update last activity: %v", err)
-		} else {
-			group.LastActivity = now
-		}
-	}
-
-	return group, nil
+	empty := &model.ConsumerGroup{}
+	return empty, errors.New("could not get group details")
 }
 
 func (s *ConsumerGroupServiceImpl) UpdateLastActivity(
 	ctx context.Context,
 	domainName, queueName, groupID, consumerID string,
 ) error {
-	if updater, ok := s.consumerGroupRepo.(interface {
-		UpdateLastActivity(ctx context.Context, domainName, queueName, groupID string, t time.Time) error
-	}); ok {
-		return updater.UpdateLastActivity(ctx, domainName, queueName, groupID, time.Now())
-	}
-	return nil // Don't Error
+	return s.consumerGroupRepo.UpdateLastActivity(ctx, domainName, queueName, groupID)
 }
 
 func (s *ConsumerGroupServiceImpl) GetPendingMessages(ctx context.Context, domainName, queueName, groupID string) ([]*model.Message, error) {

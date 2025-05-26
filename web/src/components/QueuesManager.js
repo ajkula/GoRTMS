@@ -13,7 +13,6 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
   const [queueConfig, setQueueConfig] = useState({ ...defaultQueueConfig });
   const [createError, setCreateError] = useState(null);
 
-  // Charger les files d'attente pour le domaine spécifié
   const fetchQueues = async () => {
     try {
       setLoading(true);
@@ -33,7 +32,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
     fetchQueues();
   }, [domainName]);
 
-  // Créer une nouvelle file d'attente
+  // Create a new queue
   const handleCreateQueue = async (e) => {
     e.preventDefault();
     if (!newQueueName.trim()) return;
@@ -42,7 +41,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
       setCreateLoading(true);
       setCreateError(null);
 
-      // Préparation de la configuration complète
+      // Prepare the full configuration
       const completeConfig = {
         name: newQueueName,
         config: {
@@ -54,24 +53,24 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
         }
       };
 
-      // Ajouter la configuration de retry si activée
+      // Add retry configuration if enabled
       if (queueConfig.retryEnabled) {
         completeConfig.config.retryEnabled = true;
         completeConfig.config.retryConfig = queueConfig.retryConfig;
       }
-
-      // Ajouter la configuration du circuit breaker si activée
+      
+      // Add circuit breaker configuration if enabled
       if (queueConfig.circuitBreakerEnabled) {
         completeConfig.config.circuitBreakerEnabled = true;
         completeConfig.config.circuitBreakerConfig = queueConfig.circuitBreakerConfig;
       }
-
+      
       await api.createQueue(domainName, completeConfig);
-
-      // Réinitialiser le formulaire
+      
+      // Reset the form
       setNewQueueName('');
       setQueueConfig({ ...defaultQueueConfig });
-
+      
       await fetchQueues();
     } catch (err) {
       console.error('Error creating queue:', err);
@@ -80,8 +79,8 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
       setCreateLoading(false);
     }
   };
-
-  // Supprimer une file d'attente
+  
+  // Delete a queue
   const handleDeleteQueue = async (queueName) => {
     if (!window.confirm(`Are you sure you want to delete queue "${queueName}"? This will also delete all its messages.`)) {
       return;
@@ -95,7 +94,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
       alert(`Failed to delete queue: ${err.message || 'Unknown error'}`);
     }
   };
-
+  
   return (
     <div>
       <div className="flex items-center mb-6">
@@ -117,7 +116,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
         </button>
       </div>
 
-      {/* Formulaire de création de file d'attente */}
+      {/* Queue creation form */}
       <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
         <h2 className="text-lg font-medium mb-4">Create New Queue</h2>
 
@@ -162,7 +161,7 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
         )}
       </div>
 
-      {/* Liste des files d'attente */}
+      {/* Queue list */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-medium">Queue List</h2>

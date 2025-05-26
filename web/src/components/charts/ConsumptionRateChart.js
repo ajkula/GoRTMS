@@ -2,16 +2,16 @@ import React, { useMemo } from 'react';
 import { XAxis, YAxis, CartesianGrid, Tooltip, Legend, Area, ComposedChart, Line, ResponsiveContainer } from 'recharts';
 
 const ConsumptionRateChart = ({ data }) => {
-  // Prétraiter les données pour éviter les erreurs
+  // Preprocess the data to avoid errors
   const chartData = useMemo(() => {
     return data.map(item => {
-      // S'assurer que chaque élément a un timestamp valide
+      // Ensure each item has a valid timestamp
       return {
         ...item,
-        timestamp: item.timestamp || Date.now() / 1000, // Utiliser l'heure actuelle si non défini
+        timestamp: item.timestamp || Date.now() / 1000, // Use the current time if not defined
         published: item.published || 0,
         consumed: item.consumed || 0,
-        // Calculer le différentiel (positif = plus de messages publiés que consommés)
+        // Compute the differential (positive = more messages published than consumed)
         differential: (item.published || 0) - (item.consumed || 0)
       };
     });
@@ -42,13 +42,13 @@ const ConsumptionRateChart = ({ data }) => {
               <YAxis />
               <Tooltip 
                 labelFormatter={(value) => {
-                  // Vérifier si value est valide
+                  // Check if value is valid
                   if (value === undefined || value === null) return 'Unknown time';
                   const date = new Date(value * 1000);
                   return `Time: ${date.toLocaleTimeString()}`;
                 }}
                 formatter={(value, name) => {
-                  // Valeur par défaut en cas de undefined/null
+                  // Use default value if undefined or null
                   const val = value || 0;
                   return [val.toFixed(2), name];
                 }}

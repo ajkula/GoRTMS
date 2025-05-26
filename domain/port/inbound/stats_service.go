@@ -4,18 +4,18 @@ import (
 	"context"
 )
 
-// StatsService définit les opérations pour les statistiques du système
+// StatsService defines operations for system statistics
 type StatsService interface {
-	// GetStats récupère les statistiques du système
+	// GetStats returns system statistics
 	GetStats(ctx context.Context) (any, error)
 
-	// TrackMessagePublished enregistre un message publié dans les métriques
+	// TrackMessagePublished records a published message in metrics
 	TrackMessagePublished(domainName, queueName string)
 
-	// TrackMessageConsumed enregistre un message consommé dans les métriques
+	// TrackMessageConsumed records a consumed message in metrics
 	TrackMessageConsumed(domainName, queueName string)
 
-	// Méthodes spécialisées pour différents types d'événements
+	// Specialized methods for different event types
 	RecordDomainCreated(name string)
 	RecordDomainDeleted(name string)
 	RecordQueueCreated(domain, queue string)

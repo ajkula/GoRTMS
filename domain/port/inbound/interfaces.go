@@ -7,7 +7,7 @@ import (
 	"github.com/ajkula/GoRTMS/domain/model"
 )
 
-// ConsumeOptions définit les options pour la consommation
+// ConsumeOptions defines options for consuming messages
 type ConsumeOptions struct {
 	StartFromID string
 	ConsumerID  string
@@ -15,72 +15,73 @@ type ConsumeOptions struct {
 	MaxCount    int
 }
 
-// MessageService définit les opérations sur les messages
+// MessageService defines operations for messages
 type MessageService interface {
-	// PublishMessage publie un message dans une file d'attente
+	// PublishMessage publishes a message to a queue
 	PublishMessage(domainName, queueName string, message *model.Message) error
 
-	// SubscribeToQueue s'abonne à une file d'attente
+	// SubscribeToQueue subscribes to a queue
 	SubscribeToQueue(domainName, queueName string, handler model.MessageHandler) (string, error)
 
-	// UnsubscribeFromQueue se désinscrit d'une file d'attente
+	// UnsubscribeFromQueue unsubscribes from a queue
 	UnsubscribeFromQueue(domainName, queueName string, subscriptionID string) error
 
-	// ConsumeMessageWithGroup consomme un message avec gestion des offsets
+	// ConsumeMessageWithGroup consumes a message with offset management
 	ConsumeMessageWithGroup(ctx context.Context,
 		domainName, queueName, groupID string, options *ConsumeOptions,
 	) (*model.Message, error)
 
+	// GetMessagesAfterIndex returns messages from a given index
 	GetMessagesAfterIndex(ctx context.Context, domainName, queueName string, startIndex int64, limit int) ([]*model.Message, error)
 }
 
-// DomainService définit les opérations sur les domaines
+// DomainService defines operations for domains
 type DomainService interface {
-	// CreateDomain crée un nouveau domaine
+	// CreateDomain creates a new domain
 	CreateDomain(ctx context.Context, config *model.DomainConfig) error
 
-	// GetDomain récupère un domaine existant
+	// GetDomain retrieves an existing domain
 	GetDomain(ctx context.Context, name string) (*model.Domain, error)
 
-	// DeleteDomain supprime un domaine
+	// DeleteDomain deletes a domain
 	DeleteDomain(ctx context.Context, name string) error
 
-	// ListDomains liste tous les domaines
+	// ListDomains lists all domains
 	ListDomains(ctx context.Context) ([]*model.Domain, error)
 }
 
-// QueueService définit les opérations sur les files d'attente
+// QueueService defines operations for queues
 type QueueService interface {
-	// CreateQueue crée une nouvelle file d'attente
+	// CreateQueue creates a new queue
 	CreateQueue(ctx context.Context, domainName, queueName string, config *model.QueueConfig) error
 
-	// GetQueue récupère une file d'attente existante
+	// GetQueue retrieves an existing queue
 	GetQueue(ctx context.Context, domainName, queueName string) (*model.Queue, error)
 
-	// DeleteQueue supprime une file d'attente
+	// DeleteQueue deletes a queue
 	DeleteQueue(ctx context.Context, domainName, queueName string) error
 
-	// ListQueues liste toutes les files d'attente d'un domaine
+	// ListQueues lists all queues in a domain
 	ListQueues(ctx context.Context, domainName string) ([]*model.Queue, error)
 
-	// GetChannelQueue récupère ou crée une ChannelQueue pour une file d'attente existante
+	// GetChannelQueue retrieves or creates a ChannelQueue for an existing queue
 	GetChannelQueue(ctx context.Context, domainName, queueName string) (model.QueueHandler, error)
 
-	//StopDomainQueues arrête toutes les queues d'un domaine
+	// StopDomainQueues stops all queues for a domain
 	StopDomainQueues(ctx context.Context, domainName string) error
 
-	// Cleanup nettoie les ressources utilisées par le service
+	// Cleanup releases resources used by the service
 	Cleanup()
 }
 
-// RoutingService définit les opérations sur les règles de routage
+// RoutingService defines operations for routing rules
 type RoutingService interface {
-	// AddRoutingRule ajoute une règle de routage
+	// AddRoutingRule adds a routing rule
 	AddRoutingRule(ctx context.Context, domainName string, rule *model.RoutingRule) error
 
-	// RemoveRoutingRule supprime une règle de routage
+	// RemoveRoutingRule removes a routing rule
 	RemoveRoutingRule(ctx context.Context, domainName string, sourceQueue, destQueue string) error
 
-	// ListRoutingRules liste toutes les règles de routage d'un domaine
+	// ListRoutingRules lists all routing rules for a domain
 	ListRoutingRules(ctx context.Context, domainName string) ([]*model.RoutingRule, error)
 }

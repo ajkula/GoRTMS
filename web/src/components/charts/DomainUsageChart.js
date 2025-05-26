@@ -4,7 +4,6 @@ import { stringToColor } from '../../utils/utils';
 import { useResourceStats } from '../../hooks/useResourceStats';
 
 const DomainUsageChart = () => {
-  // Use the existing useResourceStats hook
   const { currentStats, loading, error, refresh } = useResourceStats();
   
   // Transform domain stats data for chart display

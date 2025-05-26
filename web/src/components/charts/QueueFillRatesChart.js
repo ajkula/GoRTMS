@@ -39,15 +39,13 @@ const QueueFillRatesChart = ({ data }) => {
     setDisplayData(chartData);
   }, [data]);
 
-  // Fonction pour déterminer la couleur en fonction du taux de remplissage
   const getBarFill = (percent) => {
-    if (percent >= 90) return '#ef4444'; // Rouge
+    if (percent >= 90) return '#ef4444'; // Red
     if (percent >= 75) return '#f97316'; // Orange
-    if (percent >= 50) return '#eab308'; // Jaune
-    return '#22c55e';                    // Vert
+    if (percent >= 50) return '#eab308'; // Yellow
+    return '#22c55e';                    // Green
   };
 
-  // Composant personnalisé pour la légende
   const CustomizedLegend = (props) => {
     const { payload } = props;
     

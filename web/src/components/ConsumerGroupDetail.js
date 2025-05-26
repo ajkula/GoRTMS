@@ -16,7 +16,7 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
     return !dateStr || dateStr === "0001-01-01T00:00:00Z";
   }
 
-  // Charger les détails du consumer group
+  // Load the consumer group details
   const fetchGroupDetails = async () => {
     try {
       setLoading(true);
@@ -26,10 +26,10 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
       const groupData = await api.getConsumerGroup(domainName, queueName, groupID);
       console.log("Received group data:", groupData);
 
-      // Normaliser les données pour gérer les différentes casses
+      // Normalize the data to handle different casing
       const normalizedGroup = {
         ...groupData,
-        // Assurez-vous que ces propriétés existent quelle que soit la casse
+        // Ensure these properties exist regardless of case
         consumerIDs: groupData.ConsumerIDs || groupData.consumerIDs || [],
         lastActivity: groupData.LastActivity || groupData.lastActivity,
         createdAt: groupData.CreatedAt || groupData.createdAt,
@@ -41,12 +41,12 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
       setTTL(formatDuration(groupData.TTL) || '0');
       setTTLInput(formatDuration(groupData.TTL) || '0');
 
-      // Charger les messages en attente pour ce groupe
+      // Load pending messages for this group
       console.log(`Fetching pending messages for ${domainName}/${queueName}/${groupID}`);
       const messages = await api.getPendingMessages(domainName, queueName, groupID);
       console.log("Received pending messages:", messages);
 
-      // S'assurer que messages est un tableau
+      // Make sure messages is an array
       setPendingMessages(Array.isArray(messages) ? messages : (messages.messages || []));
     } catch (err) {
       console.error('Error fetching consumer group details:', err);
@@ -59,12 +59,12 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
   useEffect(() => {
     fetchGroupDetails();
 
-    // Rafraîchir périodiquement
+    // Refresh periodicaly
     // const interval = setInterval(fetchGroupDetails, 10000);
     // return () => clearInterval(interval);
   }, [domainName, queueName, groupID]);
 
-  // Mettre à jour le TTL avec gestion d'erreur améliorée
+  // Update the TTL with improved error handling
   const handleUpdateTTL = async () => {
     try {
       setLoading(true);
@@ -81,10 +81,10 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
     }
   };
 
-  // Accès sécurisé aux propriétés du groupe
+  // Safe access to group properties
   const validConsumerIds = group?.consumerIDs?.filter(id => id !== '') || [];
 
-  // Supprimer un consumer du groupe
+  // Remove a consumer from the group
   const handleRemoveConsumer = async (consumerID) => {
     if (!window.confirm(`Remove consumer "${consumerID}" from group?`)) {
       return;
@@ -107,20 +107,19 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
       setLoading(true);
       setError(null);
 
-      // Essayer de supprimer le groupe existant (peut-être bloqué)
+      // Try to delete the existing group (may be blocked)
       try {
         await api.deleteConsumerGroup(domainName, queueName, groupID);
       } catch (err) {
         console.log("Groupe non supprimé ou déjà inexistant, on continue:", err);
       }
 
-      // Recréer le groupe avec les mêmes paramètres
+      // Recreate the group with the same parameters
       await api.createConsumerGroup(domainName, queueName, {
         groupID: groupID,
-        ttl: ttl || "1h" // Utiliser le TTL actuel ou 1h par défaut
+        ttl: ttl || "1h"
       });
 
-      // Rafraîchir les données
       await fetchGroupDetails();
 
     } catch (err) {
@@ -186,7 +185,7 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
         </div>
       )}
 
-      {/* Information générale */}
+      {/* General information */}
       <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
         <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
           <h3 className="text-lg leading-6 font-medium text-gray-900">
@@ -276,7 +275,7 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
         </div>
       </div>
 
-      {/* Liste des consommateurs */}
+      {/* Consumers list */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white shadow sm:rounded-lg">
           <div className="px-4 py-5 sm:px-6">
@@ -319,7 +318,7 @@ const ConsumerGroupDetail = ({ domainName, queueName, groupID, onBack }) => {
           </div>
         </div>
 
-        {/* Messages en attente */}
+        {/* Pedning messages */}
         <div className="bg-white shadow sm:rounded-lg">
           <div className="px-4 py-5 sm:px-6">
             <h3 className="text-lg leading-6 font-medium text-gray-900 flex items-center">

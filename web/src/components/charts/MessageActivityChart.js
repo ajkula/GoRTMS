@@ -2,16 +2,16 @@ import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const MessageActivityChart = ({ data }) => {
-  // Convertir les données pour utiliser des chaînes de temps formatées comme clé
+  // Convert data to use formatted time strings as keys
   const processedData = data.map(item => {
     const date = new Date(item.timestamp * 1000);
     const timeString = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
     
     return {
-      time: timeString, // Utiliser une chaîne de temps formatée au lieu du timestamp brut
+      time: timeString, // Use a formatted time string instead of the raw timestamp
       published: item.publishedTotal || 0,
       consumed: item.consumedTotal || 0,
-      // Conserver le timestamp original pour le tooltip
+      // Keep the original timestamp for the tooltip
       timestamp: item.timestamp
     };
   });
@@ -28,7 +28,7 @@ const MessageActivityChart = ({ data }) => {
               margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" /> {/* Utiliser la chaîne de temps formatée */}
+              <XAxis dataKey="time" />
               <YAxis />
               <Tooltip 
                 labelFormatter={(value) => {

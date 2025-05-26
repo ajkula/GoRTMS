@@ -7,109 +7,123 @@ import (
 	"github.com/ajkula/GoRTMS/domain/model"
 )
 
-// MessageRepository définit les opérations de stockage pour les messages
+// MessageRepository defines storage operations for messages
 type MessageRepository interface {
-	// StoreMessage stocke un message
+	// StoreMessage saves a message
 	StoreMessage(ctx context.Context, domainName, queueName string, message *model.Message) error
 
-	// GetMessage récupère un message par son ID
+	// GetMessage fetches a message by its ID
 	GetMessage(ctx context.Context, domainName, queueName, messageID string) (*model.Message, error)
 
-	// DeleteMessage supprime un message
+	// DeleteMessage removes a message
 	DeleteMessage(ctx context.Context, domainName, queueName, messageID string) error
 
-	// GetMessagesAfterIndex récupère les messages à partir d'un index donné
-	// Si startIndex=0, comportement équivalent à l'ancienne méthode GetMessages
+	// GetMessagesAfterIndex fetches messages starting from a given index
+	// If startIndex = 0, same as the old GetMessages method
 	GetMessagesAfterIndex(
 		ctx context.Context,
 		domainName, queueName string, startIndex int64,
 		limit int,
 	) ([]*model.Message, error)
+
+	// Get the index of a message by its ID
 	GetIndexByMessageID(ctx context.Context, domainName, queueName, messageID string) (int64, error)
 
-	// GetOrCreateAckMatrix récupère ou crée une matrice d'acquittement pour une queue
+	// Get or create the acknowledgment matrix for a queue
 	GetOrCreateAckMatrix(domainName, queueName string) *model.AckMatrix
 
-	// AcknowledgeMessage marque un message comme acquitté par un groupe
-	// Retourne true si le message est entièrement acquitté par tous les groupes
+	// AcknowledgeMessage marks a message as acknowledged by a group
+	// Returns true if acknowledged by all groups
 	AcknowledgeMessage(
 		ctx context.Context,
 		domainName, queueName, groupID, messageID string,
 	) (bool, error)
 
-	// ClearQueueIndices nettoie toutes les références d'index pour une queue spécifique
+	// Clear all index references for a specific queue
 	ClearQueueIndices(
 		ctx context.Context,
 		domainName, queueName string,
 	)
+
+	// Cleanup old message index references
 	CleanupMessageIndices(
 		ctx context.Context,
 		domainName, queueName string,
 		minPosition int64,
 	)
 
+	// Get the number of messages in a queue
 	GetQueueMessageCount(domainName, queueName string) int
 }
 
-// DomainRepository définit les opérations de stockage pour les domaines
+// DomainRepository defines storage operations for domains
 type DomainRepository interface {
-	// StoreDomain stocke un domaine
+	// StoreDomain saves a domain
 	StoreDomain(ctx context.Context, domain *model.Domain) error
 
-	// GetDomain récupère un domaine par son nom
+	// GetDomain fetches a domain by name
 	GetDomain(ctx context.Context, name string) (*model.Domain, error)
 
-	// DeleteDomain supprime un domaine
+	// DeleteDomain removes a domain
 	DeleteDomain(ctx context.Context, name string) error
 
-	// ListDomains liste tous les domaines
+	// ListDomains lists all domains
 	ListDomains(ctx context.Context) ([]*model.Domain, error)
 }
 
-// QueueRepository définit les opérations de stockage pour les files d'attente
+// QueueRepository defines storage operations for queues
 type QueueRepository interface {
-	// StoreQueue stocke une file d'attente
+	// StoreQueue saves a queue
 	StoreQueue(ctx context.Context, domainName string, queue *model.Queue) error
 
-	// GetQueue récupère une file d'attente par son nom
+	// GetQueue fetches a queue by name
 	GetQueue(ctx context.Context, domainName, queueName string) (*model.Queue, error)
 
-	// DeleteQueue supprime une file d'attente
+	// DeleteQueue removes a queue
 	DeleteQueue(ctx context.Context, domainName, queueName string) error
 
-	// ListQueues liste toutes les files d'attente d'un domaine
+	// ListQueues lists all queues in a domain
 	ListQueues(ctx context.Context, domainName string) ([]*model.Queue, error)
 }
 
-// SubscriptionRegistry définit les opérations pour gérer les abonnements
+// SubscriptionRegistry defines operations to manage subscriptions
 type SubscriptionRegistry interface {
-	// RegisterSubscription enregistre un nouvel abonnement
+	// RegisterSubscription registers a new subscription
 	RegisterSubscription(domainName, queueName string, handler model.MessageHandler) (string, error)
 
-	// UnregisterSubscription supprime un abonnement
+	// UnregisterSubscription removes a subscription
 	UnregisterSubscription(subscriptionID string) error
 
-	// NotifySubscribers notifie tous les abonnés d'un message
+	// NotifySubscribers sends a message to all subscribers
 	NotifySubscribers(domainName, queueName string, message *model.Message) error
 }
 
-// ConsumerGroupRepository définit les opérations pour les groupes
+// ConsumerGroupRepository defines operations for consumer groups
 type ConsumerGroupRepository interface {
-	//StoreOffset enregistre unoffset pour un groupe
+	// StorePosition saves a group offset
 	StorePosition(ctx context.Context, domainName, queueNamme, groupID string, index int64) error
 
-	// GetOffset récup. le dernier offset d'un group
+	// GetPosition retrieves a group's last offset
 	GetPosition(ctx context.Context, domainName, queueName, groupID string) (int64, error)
 
-	// RegisterConsumer enregistre unconsumer dans un groupe
+	// RegisterConsumer adds a consumer to a group
 	RegisterConsumer(ctx context.Context, domainName, queueName, groupID, consumerID string) error
 
-	// RemoveConsumer supprime un consumerd'un groupe
+	// RemoveConsumer removes a consumer from a group
 	RemoveConsumer(ctx context.Context, domainName, queueName, groupID, consumerID string) error
 
-	// ListGroups liste tous les groupes pour une queue
+	// ListGroups lists all groups for a queue
 	ListGroups(ctx context.Context, domainName, queueName string) ([]string, error)
 
+	// Delete a group
 	DeleteGroup(ctx context.Context, domainName, queueName, groupID string) error
+
+	// Cleanup inactive groups older than given duration
 	CleanupStaleGroups(ctx context.Context, olderThan time.Duration) error
+
+	// Set TTL for a group
+	SetGroupTTL(ctx context.Context, domainName, queueName, groupID string, ttl time.Duration) error
+
+	// Update last activity timestamp for a group
+	UpdateLastActivity(ctx context.Context, domainName, queueName, groupID string) error
 }
