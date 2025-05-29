@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +17,7 @@ import (
 	"github.com/ajkula/GoRTMS/adapter/inbound/grpc"
 	"github.com/ajkula/GoRTMS/adapter/inbound/rest"
 	"github.com/ajkula/GoRTMS/adapter/inbound/websocket"
+	"github.com/ajkula/GoRTMS/adapter/outbound/logging"
 	"github.com/ajkula/GoRTMS/adapter/outbound/storage/memory"
 	"github.com/ajkula/GoRTMS/config"
 	"github.com/ajkula/GoRTMS/domain/model"
@@ -28,12 +28,6 @@ import (
 )
 
 func main() {
-
-	// Dedicated pprof server on port 6060
-	go func() {
-		log.Println("Starting pprof server on :6060")
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
 
 	// Handle command-line arguments
 	var configPath string
@@ -70,38 +64,46 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Set up logging
-	// TODO: Set up a more advanced logger
+	// Initialize structured logger
+	logger := logging.NewSlogAdapter(cfg)
 
-	log.Println("Starting GoRTMS...")
-	log.Printf("Node ID: %s", cfg.General.NodeID)
-	log.Printf("Data directory: %s", cfg.General.DataDir)
+	logger.Info("Starting GoRTMS...")
+	logger.Info("Node ID", "nodeID", cfg.General.NodeID)
+	logger.Info("Data directory", "dataDir", cfg.General.DataDir)
 
 	// Create the data directory if it doesn't exist
 	if err := os.MkdirAll(cfg.General.DataDir, 0755); err != nil {
-		log.Fatalf("Failed to create data directory: %v", err)
+		logger.Error("Failed to create data directory", "ERROR", err)
 	}
 
 	// Create a cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Dedicated pprof server on port 6060
+	go func() {
+		logger.Info("Starting pprof server on port", "port", cfg.HTTP.Port)
+		err := http.ListenAndServe("localhost:6060", nil)
+		logger.Error("Error starting pprof server", "ERROR", err)
+	}()
+
 	// Initialize repositories (outgoing adapters)
-	messageRepo := memory.NewMessageRepository()
-	domainRepo := memory.NewDomainRepository()
+	messageRepo := memory.NewMessageRepository(logger)
+	domainRepo := memory.NewDomainRepository(logger)
 	consumerGroupRepo := memory.NewConsumerGroupRepository(messageRepo)
 	subscriptionReg := memory.NewSubscriptionRegistry()
 
 	// Create services (domain implementations)
-	statsService := service.NewStatsService(domainRepo, messageRepo, ctx)
-	queueService := service.NewQueueService(domainRepo, statsService, ctx)
+	statsService := service.NewStatsService(ctx, domainRepo, messageRepo)
+	queueService := service.NewQueueService(ctx, domainRepo, statsService)
 	messageService := service.NewMessageService(
+		ctx,
+		logger,
 		domainRepo,
 		messageRepo,
 		consumerGroupRepo,
 		subscriptionReg,
 		queueService,
-		ctx,
 		statsService,
 	)
 
@@ -135,6 +137,7 @@ func main() {
 	if cfg.HTTP.Enabled {
 		// REST adapter
 		restHandler := rest.NewHandler(
+			logger,
 			messageService,
 			domainService,
 			queueService,
@@ -159,14 +162,14 @@ func main() {
 		router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
 			pathTemplate, err := route.GetPathTemplate()
 			if err != nil {
-				log.Println("ROUTE ERROR:", err)
+				logger.Error("ROUTE ERROR", "ERROR", err)
 				return nil
 			}
 			methods, err := route.GetMethods()
 			if err != nil {
 				methods = []string{"ANY"}
 			}
-			log.Printf("ROUTE: %s [%v]", pathTemplate, methods)
+			logger.Info("ROUTE", "PATH", pathTemplate, "METHOD", methods)
 			return nil
 		})
 
@@ -180,18 +183,18 @@ func main() {
 		}
 
 		go func() {
-			log.Printf("HTTP server listening on %s", httpAddr)
+			logger.Info("HTTP server listening", "URL", httpAddr)
 			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				_, shutdownCancel := context.WithTimeout(ctx, 1*time.Second)
 				defer shutdownCancel()
-				log.Fatalf("HTTP server error: %v", err)
+				logger.Error("HTTP server", "ERROR", err)
 			}
 		}()
 
 		// stop HTTP server
 		defer func() {
 			// Important cleanup order: start with services that depend on others
-			log.Println("Cleaning up services...")
+			logger.Info("Cleaning up services...")
 
 			// Suggested cleanup order (from most dependent to least dependent)
 			if wsHandler != nil {
@@ -232,14 +235,18 @@ func main() {
 				}
 			}
 
-			log.Println("All services cleaned up")
+			if slogAdapter, ok := logger.(*logging.SlogAdapter); ok {
+				slogAdapter.Shutdown()
+			}
+
+			logger.Info("All services cleaned up")
 		}()
 	}
 
 	// Middleware for debugging requests
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			log.Printf("Request: %s %s", r.Method, r.URL.Path)
+			logger.Info("Request", "METHOD", r.Method, "PATH", r.URL.Path)
 			next.ServeHTTP(w, r)
 		})
 	})
@@ -255,7 +262,7 @@ func main() {
 		)
 		grpcAddr := fmt.Sprintf("%s:%d", cfg.GRPC.Address, cfg.GRPC.Port)
 		if err := grpcServer.Start(grpcAddr); err != nil {
-			log.Fatalf("Failed to start gRPC server: %v", err)
+			logger.Error("Failed to start gRPC server", "erroe", err)
 		}
 
 		// Stop the gRPC server at the end
@@ -266,9 +273,11 @@ func main() {
 
 	// Create predefined domains (if configured)
 	for _, domainCfg := range cfg.Domains {
-		log.Printf("Creating predefined domain: %s", domainCfg.Name)
+		logger.Info("Creating predefined domain", "domainName", domainCfg.Name)
 		if err := createDomainFromConfig(ctx, domainService, queueService, routingService, domainCfg); err != nil {
-			log.Printf("Failed to create domain %s: %v", domainCfg.Name, err)
+			logger.Error("Failed to create domain",
+				"domainName", domainCfg.Name,
+				"ERROR", err)
 		}
 	}
 
@@ -277,16 +286,16 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Display the startup message
-	log.Println("GoRTMS started successfully")
+	logger.Info("GoRTMS started successfully")
 
 	// Wait for shutdown signal
 	sig := <-sigChan
-	log.Printf("Received signal %v, shutting down gracefully...", sig)
+	logger.Info("Received signal, shutting down gracefully...", "signal", sig)
 
 	// Cancel the context to stop all goroutines
 	cancel()
 
-	log.Println("Server shutdown complete")
+	logger.Info("Server shutdown complete")
 }
 
 // createDomainFromConfig creates a domain from a configuration

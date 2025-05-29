@@ -51,3 +51,9 @@ cluster:
     heartbeatInterval: 100ms
     electionTimeout: 1s
 domains: []
+logging:
+    level: DEBUG
+    channelSize: 1000
+    format: json
+    output: stdout
+    filePath: ""

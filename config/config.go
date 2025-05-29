@@ -168,6 +168,14 @@ type Config struct {
 
 	// Predefined domain configurations
 	Domains []DomainConfig `yaml:"domains"`
+
+	Logging struct {
+		Level       string `yaml:"level"` // "ERROR", "WARN", "INFO", "DEBUG"
+		ChannelSize int    `yaml:"channelSize"`
+		Format      string `yaml:"format"`
+		Output      string `yaml:"output"`
+		FilePath    string `yaml:"filePath"`
+	} `yaml:"logging"`
 }
 
 // DomainConfig holds the configuration for a domain
@@ -267,6 +275,13 @@ func DefaultConfig() *Config {
 	c.Cluster.Peers = []string{}
 	c.Cluster.HeartbeatInterval = 100 * time.Millisecond
 	c.Cluster.ElectionTimeout = 1000 * time.Millisecond
+
+	// Logging configuration defaults
+	c.Logging.Level = "INFO"
+	c.Logging.ChannelSize = 1000
+	c.Logging.Format = "json"
+	c.Logging.Output = "stdout"
+	c.Logging.FilePath = ""
 
 	return c
 }

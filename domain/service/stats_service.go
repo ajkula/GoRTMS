@@ -115,9 +115,9 @@ type StatsServiceImpl struct {
 }
 
 func NewStatsService(
+	rootCtx context.Context,
 	domainRepo outbound.DomainRepository,
 	messageRepo outbound.MessageRepository,
-	rootCtx context.Context,
 ) inbound.StatsService {
 	metrics := &MetricsStore{
 		messageRates:    make([]MessageRate, 0, maxPoints),

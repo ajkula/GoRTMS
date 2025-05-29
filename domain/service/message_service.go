@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"strings"
 	"sync"
@@ -26,13 +25,14 @@ var (
 var _ model.MessageProvider = (*MessageServiceImpl)(nil)
 
 type MessageServiceImpl struct {
+	rootCtx           context.Context
+	logger            outbound.Logger
 	domainRepo        outbound.DomainRepository
 	messageRepo       outbound.MessageRepository
 	consumerGroupRepo outbound.ConsumerGroupRepository
 	subscriptionReg   outbound.SubscriptionRegistry
 	queueService      inbound.QueueService
 	statsService      inbound.StatsService
-	rootCtx           context.Context
 
 	// Periodic clean counter
 	messageCountSinceLastCleanup int
@@ -40,21 +40,23 @@ type MessageServiceImpl struct {
 }
 
 func NewMessageService(
+	rootCtx context.Context,
+	logger outbound.Logger,
 	domainRepo outbound.DomainRepository,
 	messageRepo outbound.MessageRepository,
 	consumerGroupRepo outbound.ConsumerGroupRepository,
 	subscriptionReg outbound.SubscriptionRegistry,
 	queueService inbound.QueueService,
-	rootCtx context.Context,
 	statsService ...inbound.StatsService,
 ) inbound.MessageService {
 	impl := &MessageServiceImpl{
+		rootCtx:           rootCtx,
+		logger:            logger,
 		domainRepo:        domainRepo,
 		messageRepo:       messageRepo,
 		consumerGroupRepo: consumerGroupRepo,
 		subscriptionReg:   subscriptionReg,
 		queueService:      queueService,
-		rootCtx:           rootCtx,
 	}
 
 	if len(statsService) > 0 {
@@ -166,7 +168,7 @@ func (s *MessageServiceImpl) PublishMessage(
 				}
 				match = s.evaluateJSONPredicate(jsonPred, message)
 			default:
-				log.Printf("Unknown predicate type: %T", rule.Predicate)
+				s.logger.Warn("Unknown predicate type", "predicate", rule.Predicate)
 			}
 
 			if match {
@@ -178,7 +180,7 @@ func (s *MessageServiceImpl) PublishMessage(
 			}
 		}
 	} else {
-		log.Printf("No routes found for queue %s", queueName)
+		s.logger.Info("No routes found for queue", "queue", queueName)
 	}
 
 	return nil
@@ -202,7 +204,7 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 	// Cast to ChannelQueue to access specific methods
 	chQueue, ok := channelQueue.(*model.ChannelQueue)
 	if !ok {
-		return nil, errors.New("[ERROR] unexpected queue type")
+		return nil, errors.New("unexpected queue type")
 	}
 
 	position, err := s.consumerGroupRepo.GetPosition(ctx, domainName, queueName, groupID)
@@ -221,7 +223,10 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 	// Check group chan for messages
 	message, err := chQueue.ConsumeMessage(groupID, 10*time.Millisecond)
 	if err != nil {
-		log.Printf("[ERROR] End=%s ConsumeMessageWithGroup chQueue.ConsumeMessage(%s, 50*time.Millisecond) ERR: %v", time.Since(now), groupID, err)
+		s.logger.Error("ConsumeMessageWithGroup chQueue.ConsumeMessage",
+			"duration", time.Since(now).String(),
+			"group", groupID,
+			"ERROR", err)
 	}
 
 	if message == nil {
@@ -240,7 +245,11 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 		// [CHECK] Waits for a message with full timeout duration = not working
 		message, err = chQueue.ConsumeMessage(groupID, timeout)
 		if err != nil {
-			log.Printf("[ERROR] End=%s ConsumeMessageWithGroup chQueue.ConsumeMessage(%s, %d) ERR: %s", time.Since(now), groupID, timeout, err)
+			s.logger.Error("ConsumeMessageWithGroup chQueue.ConsumeMessage",
+				"duration", time.Since(now).String(),
+				"group", groupID,
+				"timeout", timeout,
+				"ERROR", err)
 		}
 	}
 
@@ -250,18 +259,24 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 			UpdateLastActivity(ctx context.Context, domainName, queueName, groupID string) error
 		}); ok {
 			if err = repo.UpdateLastActivity(ctx, domainName, queueName, groupID); err != nil {
-				log.Printf("[ERROR] End=%s ConsumeMessageWithGroup updating last activity: %s", time.Since(now), err)
+				s.logger.Error("ConsumeMessageWithGroup updating last activity",
+					"duration", time.Since(now).String(),
+					"ERROR", err)
 			}
 		}
 
 		index, err := s.messageRepo.GetIndexByMessageID(ctx, domainName, queueName, message.ID)
 		if err != nil {
-			log.Printf("[ERROR] End=%s ConsumeMessageWithGroup s.messageRepo.GetIndexByMessageID (error=%s)", time.Since(now), err)
+			s.logger.Error("ConsumeMessageWithGroup s.messageRepo.GetIndexByMessageID",
+				"duration", time.Since(now).String(),
+				"ERROR", err)
 		} else {
 			// Store next msg index as Pos
 			newPosition := index + 1
 			if err := s.consumerGroupRepo.StorePosition(ctx, domainName, queueName, groupID, newPosition); err != nil {
-				log.Printf("[ERROR] End=%s ConsumeMessageWithGroup StorePosition (error=%s)", time.Since(now), err)
+				s.logger.Error("ConsumeMessageWithGroup StorePosition",
+					"duration", time.Since(now).String(),
+					"ERROR", err)
 				return nil, err
 			}
 
@@ -281,7 +296,9 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 			// Acquitter automatiquement
 			fullyAcked, err := s.messageRepo.AcknowledgeMessage(ctx, domainName, queueName, groupID, message.ID)
 			if err != nil {
-				log.Printf("[ERROR] End=%s ConsumeMessageWithGroup AcknowledgeMessage (error=%s)", time.Since(now), err)
+				s.logger.Error("ConsumeMessageWithGroup AcknowledgeMessage",
+					"duration", time.Since(now).String(),
+					"ERROR", err)
 			}
 
 			// delete if fully ack
@@ -289,9 +306,12 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 				if err := s.messageRepo.DeleteMessage(ctx, domainName, queueName, message.ID); err != nil {
 					// Ignore "message not found" error
 					if err.Error() == "message not found" {
-						log.Printf("[ERROR] Message already deleted: %s", message.ID)
+						s.logger.Error("Message already deleted",
+							"message", message.ID)
 					} else {
-						log.Printf("[ERROR] Message not deleted: %s, Err: %v", message.ID, err)
+						s.logger.Error("Message not deleted",
+							"message", message.ID,
+							"ERROR", err)
 					}
 				}
 			}
@@ -331,11 +351,13 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 					}
 				}
 			}
-			log.Printf("[GOROUTINE] End=%s ConsumeMessageWithGroup Finished  *****************", time.Since(now))
+			s.logger.Debug("[GOROUTINE] ConsumeMessageWithGroup Finished",
+				"duration", time.Since(now).String())
 		}(bgCtx, domainName, queueName, groupID, msgCopy.ID, now)
 
 	}
-	log.Printf("[DEBUG] End=%s ConsumeMessageWithGroup Finished  *****************", time.Since(now))
+	s.logger.Debug("ConsumeMessageWithGroup Finished",
+		"duration", time.Since(now).String())
 
 	return message, nil
 }
@@ -473,10 +495,10 @@ func (s *MessageServiceImpl) startCleanupTasks(ctx context.Context) {
 
 						if inactivityInfo.firstEmptyTime.IsZero() {
 							inactivityInfo.firstEmptyTime = now
-							log.Printf("Queue %s.%s sans consumer groups, début du tracking", domain.Name, queueName)
+							s.logger.Debug("Queue " + domain.Name + "." + queueName + " sans consumer groups, début du tracking")
 						} else if now.Sub(inactivityInfo.firstEmptyTime) > 24*time.Hour && !inactivityInfo.checked {
 							// without any consumer groups for more than 24h, clean
-							log.Printf("Nettoyage de la queue %s.%s (inactive depuis >24h)", domain.Name, queueName)
+							s.logger.Debug("Nettoyage de la queue " + domain.Name + "." + queueName + " (inactive depuis >24h")
 
 							messages, _ := s.messageRepo.GetMessagesAfterIndex(ctx, domain.Name, queueName, 0, 1000)
 							for _, msg := range messages {
@@ -498,6 +520,6 @@ func (s *MessageServiceImpl) startCleanupTasks(ctx context.Context) {
 }
 
 func (s *MessageServiceImpl) Cleanup() {
-	log.Println("Cleaning up message service ressource...")
+	s.logger.Info("Cleaning up message service ressource...")
 	// managed by QueueService
 }

@@ -3,7 +3,6 @@ package memory
 import (
 	"context"
 	"errors"
-	"log"
 	"sync"
 
 	"github.com/ajkula/GoRTMS/domain/model"
@@ -12,12 +11,14 @@ import (
 
 type DomainRepository struct {
 	domains map[string]*model.Domain
+	logger  outbound.Logger
 	mutex   sync.RWMutex
 }
 
-func NewDomainRepository() outbound.DomainRepository {
+func NewDomainRepository(logger outbound.Logger) outbound.DomainRepository {
 	return &DomainRepository{
 		domains: make(map[string]*model.Domain),
+		logger:  logger,
 	}
 }
 
@@ -28,9 +29,9 @@ func (r *DomainRepository) StoreDomain(ctx context.Context, domain *model.Domain
 	// Check if it's an update or a creation
 	_, exists := r.domains[domain.Name]
 	if exists {
-		log.Printf("Updating existing domain: %s", domain.Name)
+		r.logger.Debug("Updating", "domain", domain.Name)
 	} else {
-		log.Printf("Creating new domain: %s", domain.Name)
+		r.logger.Debug("Creating", "domain", domain.Name)
 		r.domains[domain.Name] = domain
 	}
 

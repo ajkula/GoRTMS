@@ -23,6 +23,7 @@ import (
 
 // REST API handler
 type Handler struct {
+	logger               outbound.Logger
 	messageService       inbound.MessageService
 	domainService        inbound.DomainService
 	queueService         inbound.QueueService
@@ -34,6 +35,7 @@ type Handler struct {
 }
 
 func NewHandler(
+	logger outbound.Logger,
 	messageService inbound.MessageService,
 	domainService inbound.DomainService,
 	queueService inbound.QueueService,
@@ -44,6 +46,7 @@ func NewHandler(
 	consumerGroupRepo outbound.ConsumerGroupRepository,
 ) *Handler {
 	return &Handler{
+		logger:               logger,
 		messageService:       messageService,
 		domainService:        domainService,
 		queueService:         queueService,
@@ -99,7 +102,7 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 
 	// system ressources routes
 	if h.resourceMonitor != nil {
-		log.Println("Setting up resource monitoring routes")
+		h.logger.Info("Setting up resource monitoring routes")
 		router.HandleFunc("/api/resources/current", h.getCurrentResourceStats).Methods("GET")
 		router.HandleFunc("/api/resources/history", h.getResourceStatsHistory).Methods("GET")
 		router.HandleFunc("/api/resources/domains/{domain}", h.getDomainResourceStats).Methods("GET")
@@ -232,13 +235,6 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 		response.Schema = schemaInfo
 	}
 
-	log.Printf("Domain Queues type: %T", domain.Queues)
-	log.Printf("Queue count: %d", len(domain.Queues))
-	for qName, q := range domain.Queues {
-		log.Printf("Queue %s: Implementation config: %T, MessageCount: %d",
-			qName, q.Config, q.MessageCount)
-	}
-
 	// Add queues
 	for queueName, queue := range domain.Queues {
 		response.Queues = append(response.Queues, QueueInfo{
@@ -296,16 +292,15 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log response
-	respBytes, err := json.MarshalIndent(response, "", "  ")
-	if err != nil {
-		log.Printf("Error marshaling response: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	log.Printf("Domain response: %s", string(respBytes))
+	// respBytes, err := json.MarshalIndent(response, "", "  ")
+	// if err != nil {
+	// 	h.logger.Error("Error marshaling response", "ERROR", err)
+	// 	http.Error(w, "Internal server error", http.StatusInternalServerError)
+	// 	return
+	// }
 
 	w.Header().Set("Content-Type", "application/json")
-	log.Printf("lareponse: %v", response)
+	h.logger.Debug("Domain response", "response", response)
 	json.NewEncoder(w).Encode(response)
 }
 
@@ -363,7 +358,7 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 	// Read raw req body
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Printf("Error reading request body: %v", err)
+		h.logger.Error("Error reading request body", "ERROR", err)
 		http.Error(w, "Failed to read request", http.StatusBadRequest)
 		return
 	}
@@ -371,7 +366,7 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	// Log req body
-	log.Printf("Queue creation request body: %s", string(bodyBytes))
+	h.logger.Debug("Queue creation request", "body", string(bodyBytes))
 
 	var request struct {
 		Name   string          `json:"name"`
@@ -379,7 +374,7 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		log.Printf("Error decoding request JSON: %v", err)
+		h.logger.Error("Error decoding request JSON", "ERROR", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -387,7 +382,7 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 	// decode manually
 	var configMap map[string]any
 	if err := json.Unmarshal(request.Config, &configMap); err != nil {
-		log.Printf("Error decoding config: %v", err)
+		h.logger.Error("Error decoding config", "ERROR", err)
 		http.Error(w, "Invalid config format", http.StatusBadRequest)
 		return
 	}
@@ -408,7 +403,7 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 	if ttlStr, ok := configMap["ttl"].(string); ok {
 		ttl, err := time.ParseDuration(ttlStr)
 		if err != nil {
-			log.Printf("Error parsing TTL duration: %v", err)
+			h.logger.Error("Error parsing TTL duration", "ERROR", err)
 			// use default instead
 		} else {
 			config.TTL = ttl
@@ -425,12 +420,12 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 		case "singleConsumer":
 			config.DeliveryMode = model.SingleConsumerMode
 		default:
-			log.Printf("Unknown delivery mode: %s, using default", modeStr)
+			h.logger.Warn("Unknown delivery mode, using default", "mode", modeStr)
 			config.DeliveryMode = model.BroadcastMode
 		}
 	}
 
-	log.Printf("Creating queue with config: %+v", config)
+	h.logger.Debug("Creating queue", "config", config)
 
 	// Process retry config
 	if retryEnabled, ok := configMap["retryEnabled"].(bool); ok && retryEnabled {
@@ -491,7 +486,7 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.queueService.CreateQueue(r.Context(), domainName, request.Name, config); err != nil {
-		log.Printf("Error from service: %v", err)
+		h.logger.Error("Error from service", "ERROR", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -555,7 +550,7 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 
 	var payload map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		log.Printf("Error decoding request body: %v", err)
+		h.logger.Error("Error decoding request body", "ERROR", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -565,21 +560,29 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 	// Convert to JSON
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("Error marshalling payload: %v", err)
+		h.logger.Error("Error marshalling payload", "ERROR", err)
 		http.Error(w, "Failed to encode payload", http.StatusInternalServerError)
 		return
 	}
 
 	_, err = h.queueService.GetQueue(r.Context(), domainName, queueName)
 	if err != nil {
-		log.Printf("Error retrieving queue '%s': %v", queueName, err)
+		h.logger.Error("Error retrieving queue",
+			"queue", queueName,
+			"ERROR", err)
 		http.Error(w, fmt.Sprintf("Queue not found: %s", err), http.StatusNotFound)
 		return
 	}
 
+	id := GenerateID()
+	ID, exists := payload["id"].(string)
+	if exists {
+		id = ID
+	}
+
 	// Create message
 	message := &model.Message{
-		ID:        GenerateID(),
+		ID:        id,
 		Payload:   payloadBytes,
 		Headers:   extractHeaders(r),
 		Timestamp: time.Now(),
@@ -587,7 +590,7 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Publish message
 	if err := h.messageService.PublishMessage(domainName, queueName, message); err != nil {
-		log.Printf("Error publishing message: %v", err)
+		h.logger.Error("Error publishing message", "ERROR", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -621,7 +624,10 @@ func (h *Handler) consumeMessages(w http.ResponseWriter, r *http.Request) {
 		maxCount, _ = strconv.Atoi(maxCountStr)
 	}
 
-	log.Printf("Received request with groupID: %s, consumerID: %s, maxCount: %d", groupID, consumerID, maxCount)
+	h.logger.Debug("Received request",
+		"group", groupID,
+		"consumer", consumerID,
+		"maxCount", maxCount)
 
 	// long polling if timeout is set TODO: check this part
 	ctx := r.Context()
@@ -833,7 +839,7 @@ func (h *Handler) getCurrentResourceStats(w http.ResponseWriter, r *http.Request
 
 	stats, err := h.resourceMonitor.GetCurrentStats(r.Context())
 	if err != nil {
-		log.Printf("Error getting current resource stats: %v", err)
+		h.logger.Error("Error getting current resource stats", "ERROR", err)
 		http.Error(w, "Failed to get resource statistics", http.StatusInternalServerError)
 		return
 	}
@@ -863,7 +869,7 @@ func (h *Handler) getResourceStatsHistory(w http.ResponseWriter, r *http.Request
 
 	stats, err := h.resourceMonitor.GetStatsHistory(r.Context(), limit)
 	if err != nil {
-		log.Printf("Error getting resource stats history: %v", err)
+		h.logger.Error("Error getting resource stats history", "ERROR", err)
 		http.Error(w, "Failed to get resource statistics history", http.StatusInternalServerError)
 		return
 	}
@@ -883,7 +889,7 @@ func (h *Handler) getDomainResourceStats(w http.ResponseWriter, r *http.Request)
 
 	stats, err := h.resourceMonitor.GetCurrentStats(r.Context())
 	if err != nil {
-		log.Printf("Error getting current resource stats: %v", err)
+		h.logger.Error("Error getting current resource stats", "ERROR", err)
 		http.Error(w, "Failed to get resource statistics", http.StatusInternalServerError)
 		return
 	}

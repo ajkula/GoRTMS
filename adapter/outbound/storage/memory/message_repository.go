@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 
 	"slices"
@@ -28,14 +27,17 @@ type MessageRepository struct {
 	// Map of acknowledgment matrices per queue
 	ackMatrices map[string]*model.AckMatrix
 	ackMu       sync.RWMutex
+
+	logger outbound.Logger
 }
 
-func NewMessageRepository() outbound.MessageRepository {
+func NewMessageRepository(logger outbound.Logger) outbound.MessageRepository {
 	return &MessageRepository{
 		messages:         make(map[string]map[string]map[string]*model.Message),
 		indexToID:        make(map[string]map[string]map[int64]string),
 		nextIndexCounter: make(map[string]map[string]int64),
 		ackMatrices:      make(map[string]*model.AckMatrix),
+		logger:           logger,
 	}
 }
 
@@ -101,7 +103,6 @@ func (r *MessageRepository) GetMessage(
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Check if the domain and queue exist
 	if _, exists := r.messages[domainName]; !exists {
 		return nil, ErrQueueNotFound
 	}
@@ -109,7 +110,6 @@ func (r *MessageRepository) GetMessage(
 		return nil, ErrQueueNotFound
 	}
 
-	// Retrieve the message
 	message, exists := r.messages[domainName][queueName][messageID]
 	if !exists {
 		return nil, ErrMessageNotFound
@@ -118,10 +118,6 @@ func (r *MessageRepository) GetMessage(
 	return message, nil
 }
 
-// GetMessagesAfterIndex retrieves messages starting from a given index
-// Replaces the old GetMessages and GetMessagesAfterID methods:
-// - For the equivalent of GetMessages, use startIndex=0
-// - For the equivalent of GetMessagesAfterID, convert the ID to an index first
 func (r *MessageRepository) GetMessagesAfterIndex(
 	ctx context.Context,
 	domainName, queueName string,
@@ -131,7 +127,6 @@ func (r *MessageRepository) GetMessagesAfterIndex(
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Check if the domain and queue exist
 	if _, exists := r.indexToID[domainName]; !exists {
 		return []*model.Message{}, nil
 	}
@@ -139,7 +134,6 @@ func (r *MessageRepository) GetMessagesAfterIndex(
 		return []*model.Message{}, nil
 	}
 
-	// Collect all available indexes and sort them
 	var indexes []int64
 	for idx := range r.indexToID[domainName][queueName] {
 		if idx >= startIndex {
@@ -169,7 +163,7 @@ func (r *MessageRepository) GetMessagesAfterIndex(
 
 	// Delete obsolete indexes after the iteration
 	for _, idx := range obsoleteIndexes {
-		log.Printf("Suppression de l'index obsolète %d", idx)
+		r.logger.Debug("Suppression de l'index obsolète", "index", idx)
 		delete(r.indexToID[domainName][queueName], idx)
 	}
 
@@ -257,7 +251,9 @@ func (r *MessageRepository) ClearQueueIndices(
 	if domainIndices, exists := r.indexToID[domainName]; exists {
 		// Reset the map for this queue
 		domainIndices[queueName] = make(map[int64]string)
-		log.Printf("Indices réinitialisés pour %s.%s", domainName, queueName)
+		r.logger.Debug("Indices réinitialisés",
+			"domain", domainName,
+			"queue", queueName)
 	}
 }
 
@@ -290,7 +286,11 @@ func (r *MessageRepository) CleanupMessageIndices(
 
 	removedCount := initialSize - len(indexMap)
 	if removedCount > 0 {
-		log.Printf("[DEBUG] Nettoyage incrémental des indices pour %s.%s: %d indices supprimés (< %d), %d restants",
-			domainName, queueName, removedCount, minPosition, len(indexMap))
+		r.logger.Debug("Nettoyage incrémental des indices",
+			"domain", domainName,
+			"queue", queueName,
+			"removedCount", removedCount,
+			"minPosition", minPosition,
+			"remaining", len(indexMap))
 	}
 }

@@ -26,9 +26,9 @@ type QueueServiceImpl struct {
 }
 
 func NewQueueService(
+	rootCtx context.Context,
 	domainRepo outbound.DomainRepository,
 	statsService inbound.StatsService,
-	rootCtx context.Context,
 ) inbound.QueueService {
 	svc := &QueueServiceImpl{
 		domainRepo:    domainRepo,
