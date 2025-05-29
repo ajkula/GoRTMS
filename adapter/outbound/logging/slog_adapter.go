@@ -94,7 +94,6 @@ func (s *SlogAdapter) sendLog(level LogLevel, msg string, args ...any) {
 		Args:  args,
 		Time:  time.Now(),
 	}:
-	// successful
 	default:
 		// chan full
 		// TODO: increase "dropped logs" stats
@@ -106,13 +105,13 @@ func (s *SlogAdapter) shouldLog(level LogLevel) bool {
 	case "ERROR":
 		return level == LevelError
 	case "WARN":
-		return level <= LevelWarn // ERROR + WARN
+		return level <= LevelWarn
 	case "INFO":
-		return level <= LevelInfo // ERROR + WARN + INFO
+		return level <= LevelInfo
 	case "DEBUG":
-		return level <= LevelDebug // Everything
+		return level <= LevelDebug
 	default:
-		return level == LevelError // Fallback to ERROR only
+		return level == LevelError
 	}
 }
 

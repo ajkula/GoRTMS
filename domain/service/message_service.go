@@ -351,7 +351,7 @@ func (s *MessageServiceImpl) ConsumeMessageWithGroup(
 					}
 				}
 			}
-			s.logger.Debug("[GOROUTINE] ConsumeMessageWithGroup Finished",
+			s.logger.Debug("ConsumeMessageWithGroup Post Treatment Finished",
 				"duration", time.Since(now).String())
 		}(bgCtx, domainName, queueName, groupID, msgCopy.ID, now)
 

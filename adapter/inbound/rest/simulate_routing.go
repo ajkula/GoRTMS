@@ -3,13 +3,13 @@ package rest
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ajkula/GoRTMS/domain/model"
+	"github.com/ajkula/GoRTMS/domain/port/outbound"
 	"github.com/gorilla/mux"
 )
 
@@ -23,7 +23,7 @@ func (h *Handler) testRoutingRules(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		log.Printf("Error decoding test routing request: %v", err)
+		h.logger.Error("Error decoding test routing request", "ERROR", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -82,7 +82,7 @@ func (h *Handler) testRoutingRules(w http.ResponseWriter, r *http.Request) {
 	matches := make([]MatchResult, 0, len(sourceRules))
 	for _, rule := range sourceRules {
 		// Evaluate the predicate to see if the rule applies
-		isMatch := evaluatePredicate(rule.Predicate, testMessage)
+		isMatch := evaluatePredicate(h.logger, rule.Predicate, testMessage)
 
 		matches = append(matches, MatchResult{
 			Rule:             rule,
@@ -101,10 +101,10 @@ func (h *Handler) testRoutingRules(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-func evaluatePredicate(predicate interface{}, message *model.Message) bool {
+func evaluatePredicate(logger outbound.Logger, predicate any, message *model.Message) bool {
 	// if JSON
 	if jsonPred, ok := predicate.(model.JSONPredicate); ok {
-		return evaluateJSONPredicate(jsonPred, message)
+		return evaluateJSONPredicate(logger, jsonPred, message)
 	}
 
 	// if map
@@ -114,7 +114,7 @@ func evaluatePredicate(predicate interface{}, message *model.Message) bool {
 			Field: mapPred["field"].(string),
 			Value: mapPred["value"],
 		}
-		return evaluateJSONPredicate(jsonPred, message)
+		return evaluateJSONPredicate(logger, jsonPred, message)
 	}
 
 	// if func
@@ -122,16 +122,16 @@ func evaluatePredicate(predicate interface{}, message *model.Message) bool {
 		return predFunc(message)
 	}
 
-	log.Printf("Unsupported predicate type: %T", predicate)
+	logger.Warn("Unsupported predicate type", "predicate", fmt.Sprintf("%T", predicate))
 	return false
 }
 
-func evaluateJSONPredicate(predicate model.JSONPredicate, message *model.Message) bool {
+func evaluateJSONPredicate(logger outbound.Logger, predicate model.JSONPredicate, message *model.Message) bool {
 
 	// decode payload
 	var payload map[string]interface{}
 	if err := json.Unmarshal(message.Payload, &payload); err != nil {
-		log.Printf("Error decoding message payload for predicate evaluation: %v", err)
+		logger.Error("Error decoding message payload for predicate evaluation", "ERROR", err)
 		return false
 	}
 
@@ -158,13 +158,13 @@ func evaluateJSONPredicate(predicate model.JSONPredicate, message *model.Message
 	case "contains": // contains substring or element
 		return contains(fieldValue, predicate.Value)
 	default:
-		log.Printf("Unsupported predicate operation: %s", predicate.Type)
+		logger.Warn("Unsupported predicate operation", "type", predicate.Type)
 		return false
 	}
 }
 
 // extracts a nested value from a map
-func getNestedValue(data map[string]interface{}, path []string) interface{} {
+func getNestedValue(data map[string]any, path []string) any {
 	if len(path) == 0 {
 		return nil
 	}
@@ -173,7 +173,7 @@ func getNestedValue(data map[string]interface{}, path []string) interface{} {
 		return data[path[0]]
 	}
 
-	if nestedData, ok := data[path[0]].(map[string]interface{}); ok {
+	if nestedData, ok := data[path[0]].(map[string]any); ok {
 		return getNestedValue(nestedData, path[1:])
 	}
 
@@ -181,12 +181,12 @@ func getNestedValue(data map[string]interface{}, path []string) interface{} {
 }
 
 // Helper functions for comparisons
-func isEqual(a, b interface{}) bool {
+func isEqual(a, b any) bool {
 	// Basic implementation, to be improved to handle different types
 	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
 }
 
-func isGreaterThan(a, b interface{}) bool {
+func isGreaterThan(a, b any) bool {
 	// Convert to numbers if possible
 	aFloat, aOk := toFloat64(a)
 	bFloat, bOk := toFloat64(b)
@@ -199,26 +199,26 @@ func isGreaterThan(a, b interface{}) bool {
 	return fmt.Sprintf("%v", a) > fmt.Sprintf("%v", b)
 }
 
-func isGreaterThanOrEqual(a, b interface{}) bool {
+func isGreaterThanOrEqual(a, b any) bool {
 	return isEqual(a, b) || isGreaterThan(a, b)
 }
 
-func isLessThan(a, b interface{}) bool {
+func isLessThan(a, b any) bool {
 	return !isGreaterThanOrEqual(a, b)
 }
 
-func isLessThanOrEqual(a, b interface{}) bool {
+func isLessThanOrEqual(a, b any) bool {
 	return !isGreaterThan(a, b)
 }
 
-func contains(a, b interface{}) bool {
+func contains(a, b any) bool {
 	aStr := fmt.Sprintf("%v", a)
 	bStr := fmt.Sprintf("%v", b)
 	return strings.Contains(aStr, bStr)
 }
 
 // toFloat64 tries to convert a value to float64
-func toFloat64(v interface{}) (float64, bool) {
+func toFloat64(v any) (float64, bool) {
 	switch value := v.(type) {
 	case float64:
 		return value, true

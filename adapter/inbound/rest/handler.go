@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -555,7 +554,7 @@ func (h *Handler) publishMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Message payload: %+v", payload)
+	h.logger.Debug("Message payload", "payload", fmt.Sprintf("%+v", payload))
 
 	// Convert to JSON
 	payloadBytes, err := json.Marshal(payload)

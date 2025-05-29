@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 )
 
 type ConsumerGroupRepository struct {
+	logger outbound.Logger
 	// Map Domain -> Queue -> GroupID -> Consumer Group
 	groups      map[string]map[string]map[string]*model.ConsumerGroup
 	messageRepo outbound.MessageRepository
@@ -20,8 +20,12 @@ type ConsumerGroupRepository struct {
 }
 
 // Makes a repository
-func NewConsumerGroupRepository(messageRepo outbound.MessageRepository) outbound.ConsumerGroupRepository {
+func NewConsumerGroupRepository(
+	logger outbound.Logger,
+	messageRepo outbound.MessageRepository,
+) outbound.ConsumerGroupRepository {
 	return &ConsumerGroupRepository{
+		logger:      logger,
 		groups:      make(map[string]map[string]map[string]*model.ConsumerGroup),
 		messageRepo: messageRepo,
 	}
@@ -65,17 +69,14 @@ func (r *ConsumerGroupRepository) GetPosition(
 
 	// if Pos exists
 	if _, exists := r.groups[domainName]; !exists {
-		log.Printf("Domain not found in positions: %v", domainName)
 		return 0, nil
 	}
 	if _, exists := r.groups[domainName][queueName]; !exists {
-		log.Printf("Queue not found in domain: %v", queueName)
 		return 0, nil
 	}
 
 	group, exists := r.groups[domainName][queueName][groupID]
 	if !exists {
-		log.Printf("Group not found in queue: %v", groupID)
 		return 0, nil
 	}
 
@@ -223,11 +224,12 @@ func (r *ConsumerGroupRepository) CleanupStaleGroups(ctx context.Context, olderT
 	case <-lockAcquired:
 		defer r.mu.Unlock()
 	case <-cleanupCtx.Done():
-		log.Printf("[WARN] Timeout while acquiring lock for CleanupStaleGroups")
-		return fmt.Errorf("timeout while acquiring lock for cleanup")
+		warning := fmt.Errorf("timeout while acquiring lock for cleanup")
+		r.logger.Warn(warning.Error())
+		return warning
 	}
 
-	log.Printf("[DEBUG] Starting cleanup of stale consumer groups (older than %s)", olderThan)
+	r.logger.Debug("Starting cleanup of stale consumer groups", "olderThan", olderThan.String())
 
 	cleanupCount := 0
 
@@ -235,7 +237,7 @@ func (r *ConsumerGroupRepository) CleanupStaleGroups(ctx context.Context, olderT
 		for queueName, queueGroups := range domainGroups {
 			for groupID, group := range queueGroups {
 				if group.IsExpired(olderThan) {
-					log.Printf("[INFO] Removing stale consumer group %s.%s.%s", domainName, queueName, groupID)
+					r.logger.Info("Removing stale consumer group " + domainName + "." + queueName + "." + groupID)
 
 					// Clean AckMatrix
 					ackMatrix := r.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
@@ -258,7 +260,7 @@ func (r *ConsumerGroupRepository) CleanupStaleGroups(ctx context.Context, olderT
 		}
 	}
 
-	log.Printf("[INFO] Cleanup completed: removed %d inactive groups", cleanupCount)
+	r.logger.Info("Cleanup completed removing inactive groups", "cleanupCount", cleanupCount)
 	return nil
 }
 

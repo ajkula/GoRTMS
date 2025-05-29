@@ -54,11 +54,12 @@ func (h *Handler) getConsumerGroup(w http.ResponseWriter, r *http.Request) {
 	queueName := vars["queue"]
 	groupID := vars["group"]
 
-	log.Printf("[DEBUG] Getting consumer group details for %s.%s.%s", domainName, queueName, groupID)
+	h.logger.Debug("Getting consumer group details for " + domainName + "." + queueName + "." + groupID)
 
 	group, err := h.consumerGroupService.GetGroupDetails(r.Context(), domainName, queueName, groupID)
 	if err != nil {
-		log.Printf("[ERROR] getting consumer group %s.%s.%s: %v", domainName, queueName, groupID, err)
+		h.logger.Error("Error getting consumer group "+domainName+"."+queueName+"."+groupID,
+			"ERROR", err)
 
 		// Filter error types
 		if err.Error() == "consumer group not found" {
@@ -74,7 +75,7 @@ func (h *Handler) getConsumerGroup(w http.ResponseWriter, r *http.Request) {
 		UpdateLastActivity(ctx context.Context, domainName, queueName, groupID, consumerID string) error
 	}); ok {
 		if err := updater.UpdateLastActivity(r.Context(), domainName, queueName, groupID, ""); err != nil {
-			log.Printf("Warning: Failed to update last activity: %v", err)
+			h.logger.Warn("Failed to update last activity", "ERROR", err)
 		}
 	}
 
@@ -151,14 +152,14 @@ func (h *Handler) updateConsumerGroupTTL(w http.ResponseWriter, r *http.Request)
 	queueName := vars["queue"]
 	groupID := vars["group"]
 
-	log.Printf("[DEBUG] Updating TTL for consumer group %s.%s.%s", domainName, queueName, groupID)
+	h.logger.Debug("Updating TTL for consumer group " + domainName + "." + queueName + "." + groupID)
 
 	var request struct {
 		TTL string `json:"ttl"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		log.Printf("[ERROR] Invalid request body: %v", err)
+		h.logger.Error("Invalid request body", "ERROR", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -169,7 +170,7 @@ func (h *Handler) updateConsumerGroupTTL(w http.ResponseWriter, r *http.Request)
 	if request.TTL != "" && request.TTL != "0" {
 		ttl, err = time.ParseDuration(request.TTL)
 		if err != nil {
-			log.Printf("[ERROR] Invalid TTL format: %v", err)
+			h.logger.Error("Invalid TTL format", "ERROR", err)
 			http.Error(w, "Invalid TTL format", http.StatusBadRequest)
 			return
 		}
@@ -178,14 +179,14 @@ func (h *Handler) updateConsumerGroupTTL(w http.ResponseWriter, r *http.Request)
 	// group check
 	_, err = h.consumerGroupService.GetGroupDetails(r.Context(), domainName, queueName, groupID)
 	if err != nil {
-		log.Printf("[ERROR] getting consumer group: %v", err)
+		h.logger.Error("Error getting consumer group", "ERROR", err)
 		http.Error(w, "Consumer group not found or error: "+err.Error(), http.StatusNotFound)
 		return
 	}
 
 	// TTL update
 	if err := h.consumerGroupService.UpdateConsumerGroupTTL(r.Context(), domainName, queueName, groupID, ttl); err != nil {
-		log.Printf("[ERROR] updating TTL: %v", err)
+		h.logger.Error("Error updating TTL", "ERROR", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -195,11 +196,11 @@ func (h *Handler) updateConsumerGroupTTL(w http.ResponseWriter, r *http.Request)
 		UpdateLastActivity(ctx context.Context, domainName, queueName, groupID, consumerID string) error
 	}); ok {
 		if err := updater.UpdateLastActivity(r.Context(), domainName, queueName, groupID, ""); err != nil {
-			log.Printf("Warning: Failed to update last activity: %v", err)
+			h.logger.Warn("Failed to update last activity", "ERROR", err)
 		}
 	}
 
-	log.Printf("[DEBUG] TTL updated successfully for consumer group %s.%s.%s", domainName, queueName, groupID)
+	h.logger.Error("TTL updated successfully for consumer group " + domainName + "." + queueName + "." + groupID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -213,11 +214,11 @@ func (h *Handler) getPendingMessages(w http.ResponseWriter, r *http.Request) {
 	queueName := vars["queue"]
 	groupID := vars["group"]
 
-	log.Printf("API request: Getting pending messages for group %s.%s.%s", domainName, queueName, groupID)
+	h.logger.Debug("Getting pending messages for group " + domainName + "." + queueName + "." + groupID)
 
 	messages, err := h.consumerGroupService.GetPendingMessages(r.Context(), domainName, queueName, groupID)
 	if err != nil {
-		log.Printf("Error getting pending messages: %v", err)
+		h.logger.Error("Error getting pending messages", "ERROR", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

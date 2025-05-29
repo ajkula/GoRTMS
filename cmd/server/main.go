@@ -90,11 +90,11 @@ func main() {
 	// Initialize repositories (outgoing adapters)
 	messageRepo := memory.NewMessageRepository(logger)
 	domainRepo := memory.NewDomainRepository(logger)
-	consumerGroupRepo := memory.NewConsumerGroupRepository(messageRepo)
+	consumerGroupRepo := memory.NewConsumerGroupRepository(logger, messageRepo)
 	subscriptionReg := memory.NewSubscriptionRegistry()
 
 	// Create services (domain implementations)
-	statsService := service.NewStatsService(ctx, domainRepo, messageRepo)
+	statsService := service.NewStatsService(ctx, logger, domainRepo, messageRepo)
 	queueService := service.NewQueueService(ctx, domainRepo, statsService)
 	messageService := service.NewMessageService(
 		ctx,

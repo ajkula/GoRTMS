@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -98,6 +97,8 @@ type MetricsStore struct {
 	// Root context
 	rootCtx context.Context
 
+	logger outbound.Logger
+
 	// Mutex for concurrent access
 	mu sync.RWMutex
 }
@@ -116,16 +117,18 @@ type StatsServiceImpl struct {
 
 func NewStatsService(
 	rootCtx context.Context,
+	logger outbound.Logger,
 	domainRepo outbound.DomainRepository,
 	messageRepo outbound.MessageRepository,
 ) inbound.StatsService {
 	metrics := &MetricsStore{
+		rootCtx:         rootCtx,
+		logger:          logger,
 		messageRates:    make([]MessageRate, 0, maxPoints),
 		publishCounters: make(map[string]map[string]int),
 		consumeCounters: make(map[string]map[string]int),
 		queueAlerts:     make(map[string]map[string]QueueAlert),
 		lastCollected:   time.Now(),
-		rootCtx:         rootCtx,
 	}
 
 	service := &StatsServiceImpl{
@@ -370,7 +373,7 @@ func (s *StatsServiceImpl) RecordConnectionLost(domain, queue, consumerId string
 func (s *StatsServiceImpl) checkQueueAlerts() {
 	domains, err := s.domainRepo.ListDomains(s.metrics.rootCtx)
 	if err != nil {
-		log.Printf("Error fetching domains for alerts: %v", err)
+		s.metrics.logger.Error("Error fetching domains for alerts", "ERROR", err)
 		return
 	}
 
@@ -464,7 +467,7 @@ func (s *StatsServiceImpl) checkQueueAlerts() {
 }
 
 func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
-	log.Println("Getting system statistics")
+	s.metrics.logger.Error("Getting system statistics")
 
 	domains, err := s.domainRepo.ListDomains(ctx)
 	if err != nil {
@@ -646,7 +649,7 @@ func sortQueuesByUsage(queues []QueueStats) {
 }
 
 func (s *StatsServiceImpl) Cleanup() {
-	log.Println("Stats service cleanup starting")
+	s.metrics.logger.Info("Stats service cleanup starting")
 
 	// Signal the stop of metrics collection
 	// and wait for it to finish
@@ -670,10 +673,10 @@ func (s *StatsServiceImpl) Cleanup() {
 	// wait with timeout
 	select {
 	case <-cleanupDone:
-		log.Println("Stats service resources cleaned up")
+		s.metrics.logger.Info("Stats service resources cleaned up")
 	case <-time.After(5 * time.Second):
-		log.Println("Stats service cleanup timed out, forcing shutdown")
+		s.metrics.logger.Info("Stats service cleanup timed out, forcing shutdown")
 	}
 
-	log.Println("Stats service cleanup complete")
+	s.metrics.logger.Info("Stats service cleanup complete")
 }
