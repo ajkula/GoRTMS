@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
 
 	"github.com/ajkula/GoRTMS/domain/model"
@@ -17,20 +16,23 @@ var (
 )
 
 type ConsumerGroupServiceImpl struct {
+	rootCtx           context.Context
+	logger            outbound.Logger
 	consumerGroupRepo outbound.ConsumerGroupRepository
 	messageRepo       outbound.MessageRepository
-	rootCtx           context.Context
 }
 
 func NewConsumerGroupService(
+	rootCtx context.Context,
+	logger outbound.Logger,
 	consumerGroupRepo outbound.ConsumerGroupRepository,
 	messageRepo outbound.MessageRepository,
-	rootCtx context.Context,
 ) inbound.ConsumerGroupService {
 	service := &ConsumerGroupServiceImpl{
+		rootCtx:           rootCtx,
+		logger:            logger,
 		consumerGroupRepo: consumerGroupRepo,
 		messageRepo:       messageRepo,
-		rootCtx:           rootCtx,
 	}
 
 	// Start the clean interval task
@@ -53,7 +55,9 @@ func (s *ConsumerGroupServiceImpl) ListConsumerGroups(
 	for _, groupID := range groupIDs {
 		group, err := s.GetGroupDetails(ctx, domainName, queueName, groupID)
 		if err != nil {
-			log.Printf("Error getting details for group %s: %v", groupID, err)
+			s.logger.Error("Error getting group details",
+				"group", groupID,
+				"ERROR", err)
 			continue
 		}
 		groups = append(groups, group)
@@ -112,7 +116,9 @@ func (s *ConsumerGroupServiceImpl) DeleteConsumerGroup(
 		messageIDs := ackMatrix.RemoveGroup(groupID)
 		for _, msgID := range messageIDs {
 			if err := s.messageRepo.DeleteMessage(ctx, domainName, queueName, msgID); err != nil {
-				log.Printf("[WARN] Error deleting message %s after group removal: %v", msgID, err)
+				s.logger.Warn("Error deleting message after group removal",
+					"message", msgID,
+					"ERROR", err)
 			}
 		}
 	}
@@ -163,7 +169,7 @@ func (s *ConsumerGroupServiceImpl) UpdateLastActivity(
 }
 
 func (s *ConsumerGroupServiceImpl) GetPendingMessages(ctx context.Context, domainName, queueName, groupID string) ([]*model.Message, error) {
-	log.Printf("Getting pending messages for group %s.%s.%s", domainName, queueName, groupID)
+	s.logger.Debug("Getting pending messages for group " + domainName + "." + queueName + "." + groupID)
 
 	_, err := s.GetGroupDetails(ctx, domainName, queueName, groupID)
 	if err != nil {
@@ -173,31 +179,37 @@ func (s *ConsumerGroupServiceImpl) GetPendingMessages(ctx context.Context, domai
 	// Find pending mesages using ackMatrix
 	matrix := s.messageRepo.GetOrCreateAckMatrix(domainName, queueName)
 	if matrix == nil {
-		log.Printf("No acknowledgment matrix found for %s.%s", domainName, queueName)
+		s.logger.Info("No acknowledgment matrix found for " + domainName + "." + queueName)
 		return []*model.Message{}, nil
 	}
 
 	// Get pending message IDs
 	pendingIDs := matrix.GetPendingMessageIDs(groupID)
 	if len(pendingIDs) == 0 {
-		log.Printf("No pending message IDs found for group %s", groupID)
+		s.logger.Debug("No pending message IDs found", groupID)
 		return []*model.Message{}, nil
 	}
 
-	log.Printf("Found %d pending message IDs for group %s", len(pendingIDs), groupID)
+	s.logger.Debug("Found pending messages",
+		"count", len(pendingIDs),
+		"group", groupID)
 
 	// Get matching messages
 	messages := make([]*model.Message, 0, len(pendingIDs))
 	for _, msgID := range pendingIDs {
 		msg, err := s.messageRepo.GetMessage(ctx, domainName, queueName, msgID)
 		if err != nil {
-			log.Printf("Warning: Could not retrieve message %s: %v", msgID, err)
+			s.logger.Warn("Could not retrieve message",
+				"message", msgID,
+				"ERROR", err)
 			continue
 		}
 		messages = append(messages, msg)
 	}
 
-	log.Printf("Returning %d pending messages for group %s", len(messages), groupID)
+	s.logger.Debug("Returning pending messages",
+		"count", len(messages),
+		"group", groupID)
 	return messages, nil
 }
 
@@ -212,11 +224,12 @@ func (s *ConsumerGroupServiceImpl) startCleanupTask(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				log.Printf("Starting cleanup of stale consumer groups...")
+				s.logger.Debug("Starting cleanup of stale consumer groups...")
 				if err := s.CleanupStaleGroups(ctx, 4*time.Hour); err != nil {
-					log.Printf("Error cleaning up stale consumer groups: %v", err)
+					s.logger.Error("Error cleaning up stale consumer groups",
+						"ERROR", err)
 				} else {
-					log.Printf("Cleanup of stale consumer groups completed successfully")
+					s.logger.Debug("Cleanup of stale consumer groups completed successfully")
 				}
 			}
 		}

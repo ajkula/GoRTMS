@@ -117,9 +117,10 @@ func main() {
 
 	// Initialize the ConsumerGroupService
 	consumerGroupService := service.NewConsumerGroupService(
+		ctx,
+		logger,
 		consumerGroupRepo,
 		messageRepo,
-		ctx,
 	)
 
 	// Initialize the resource monitoring service
