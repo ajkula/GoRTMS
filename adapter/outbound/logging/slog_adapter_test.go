@@ -150,7 +150,7 @@ func TestLogger_AsyncBehavior(t *testing.T) {
 
 	// Send many messages quickly to test async behavior
 	start := time.Now()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		logger.Debug("message", "iteration", i)
 	}
 	elapsed := time.Since(start)
@@ -232,13 +232,13 @@ func TestLogger_ConfigDefaults(t *testing.T) {
 			// Should not panic when creating logger with any config
 			if adapter == nil {
 				t.Error("Logger creation returned nil")
+			} else {
+				// Should handle invalid configs gracefully
+				adapter.Debug("test message")
+				adapter.Info("test message")
+				adapter.Warn("test message")
+				adapter.Error("test message")
 			}
-
-			// Should handle invalid configs gracefully
-			adapter.Debug("test message")
-			adapter.Info("test message")
-			adapter.Warn("test message")
-			adapter.Error("test message")
 		})
 	}
 }
