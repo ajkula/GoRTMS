@@ -17,24 +17,27 @@ var (
 )
 
 type QueueServiceImpl struct {
+	rootCtx        context.Context
+	logger         outbound.Logger
 	domainRepo     outbound.DomainRepository
 	statsService   inbound.StatsService
 	channelQueues  map[string]map[string]*model.ChannelQueue // domainName -> queueName -> ChannelQueue
-	rootCtx        context.Context
 	messageService model.MessageProvider
 	mu             sync.RWMutex
 }
 
 func NewQueueService(
 	rootCtx context.Context,
+	logger outbound.Logger,
 	domainRepo outbound.DomainRepository,
 	statsService inbound.StatsService,
 ) inbound.QueueService {
 	svc := &QueueServiceImpl{
+		rootCtx:       rootCtx,
+		logger:        logger,
 		domainRepo:    domainRepo,
 		statsService:  statsService,
 		channelQueues: make(map[string]map[string]*model.ChannelQueue),
-		rootCtx:       rootCtx,
 	}
 
 	// init existing queues
@@ -108,7 +111,7 @@ func (s *QueueServiceImpl) getOrCreateChannelQueue(domainName string, queue *mod
 		bufferSize = queue.Config.MaxSize
 	}
 
-	cq := model.NewChannelQueue(queue, s.rootCtx, bufferSize, s.messageService)
+	cq := model.NewChannelQueue(s.rootCtx, s.logger, queue, bufferSize, s.messageService)
 	s.channelQueues[domainName][queue.Name] = cq
 
 	// start workers

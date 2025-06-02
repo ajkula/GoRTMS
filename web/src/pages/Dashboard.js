@@ -1,8 +1,8 @@
 import React from 'react';
 import { RefreshCw, Loader, AlertTriangle } from 'lucide-react';
-import { useDashboardStats } from '../hooks/useDashboardStats';
+import { useDashboardData } from '../hooks/useDashboardData';
 
-// charts componants 
+// charts components 
 import StatCards from '../components/charts/StatCards';
 import MessageActivityChart from '../components/charts/MessageActivityChart';
 import DomainPieChart from '../components/charts/DomainPieChart';
@@ -14,8 +14,14 @@ import DomainUsageChart from '../components/charts/DomainUsageChart';
 import EventsList from '../components/charts/EventsList';
 
 const Dashboard = ({ setPage }) => {
-  // Use stats fetch hook
-  const { stats, loading, error, refreshStats } = useDashboardStats();
+  const { 
+    stats, 
+    resourceHistory, 
+    currentResources, 
+    loading, 
+    error, 
+    refresh 
+  } = useDashboardData();
 
   if (loading && !stats) {
     return (
@@ -35,7 +41,7 @@ const Dashboard = ({ setPage }) => {
         </div>
 
         <button
-          onClick={refreshStats}
+          onClick={refresh}
           className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           disabled={loading}
         >
@@ -71,7 +77,11 @@ const Dashboard = ({ setPage }) => {
           <DomainPieChart data={stats?.activeDomains || []} />
         </div>
         <div className="bg-white rounded-lg shadow p-6">
-          <DomainUsageChart />
+          <DomainUsageChart 
+            domainStats={currentResources?.domainStats}
+            loading={loading}
+            error={error}
+          />
         </div>
       </div>
 
@@ -82,10 +92,14 @@ const Dashboard = ({ setPage }) => {
         </div>
       </div>
 
-      {/* Domain Pie Chart and Domain Queue TreeMap */}
+      {/* Resource Monitor and TreeMap */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div>
-          <ResourceMonitor />
+          <ResourceMonitor 
+            chartData={resourceHistory}
+            currentStats={currentResources}
+            loading={loading}
+          />
         </div>
         <div className="bg-white rounded-lg shadow p-6">
           <DomainQueueTreeMap data={stats?.topQueues || []} />

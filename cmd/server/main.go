@@ -95,7 +95,7 @@ func main() {
 
 	// Create services (domain implementations)
 	statsService := service.NewStatsService(ctx, logger, domainRepo, messageRepo)
-	queueService := service.NewQueueService(ctx, domainRepo, statsService)
+	queueService := service.NewQueueService(ctx, logger, domainRepo, statsService)
 	messageService := service.NewMessageService(
 		ctx,
 		logger,

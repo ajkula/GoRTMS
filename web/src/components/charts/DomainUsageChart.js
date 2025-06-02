@@ -1,23 +1,21 @@
 import React, { useMemo } from 'react';
 import { ResponsiveContainer, ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from 'recharts';
 import { stringToColor } from '../../utils/utils';
-import { useResourceStats } from '../../hooks/useResourceStats';
 
-const DomainUsageChart = () => {
-  const { currentStats, loading, error, refresh } = useResourceStats();
+const DomainUsageChart = ({ domainStats, loading, error }) => {
   
   // Transform domain stats data for chart display
   const domainData = useMemo(() => {
-    if (!currentStats || !currentStats.domainStats) return [];
+    if (!domainStats) return [];
     
-    return Object.entries(currentStats.domainStats).map(([domainName, stats]) => ({
+    return Object.entries(domainStats).map(([domainName, stats]) => ({
       name: domainName,
       messageCount: stats.messageCount,
       queueCount: stats.queueCount,
       memoryUsage: Math.round(stats.estimatedMemory / (1024 * 1024)), // Convert to MB
       color: stringToColor(domainName)
     }));
-  }, [currentStats]);
+  }, [domainStats]);
   
   return (
     <div>

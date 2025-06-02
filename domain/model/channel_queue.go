@@ -23,6 +23,7 @@ type ChannelQueue struct {
 	bufferSize      int
 	messageProvider MessageProvider
 	domainName      string
+	logger          Logger
 
 	wg        sync.WaitGroup // workers
 	workerSem chan struct{}  // simultaneous goroutines controling semaphore
@@ -48,8 +49,9 @@ type ConsumerGroupState struct {
 }
 
 func NewChannelQueue(
-	queue *Queue,
 	ctx context.Context,
+	logger Logger,
+	queue *Queue,
 	bufferSize int,
 	provider MessageProvider,
 ) *ChannelQueue {
@@ -117,6 +119,7 @@ func NewChannelQueue(
 		messageProvider: provider,
 		domainName:      queue.DomainName,
 		pendingFetches:  make(map[string]bool),
+		logger:          logger,
 	}
 }
 
@@ -136,12 +139,12 @@ func (cq *ChannelQueue) Enqueue(ctx context.Context, message *Message) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case cq.messages <- message:
-		cq.queue.MessageCount++
-
 		// Store success
 		if cq.circuitBreaker != nil {
 			cq.recordSuccessInCircuitBreaker()
 		}
+
+		cq.queue.MessageCount++
 
 		return nil
 	default:
@@ -613,6 +616,10 @@ func (cq *ChannelQueue) processRetries() {
 			pendingRetries = remaining
 		}
 	}
+}
+
+func (cq *ChannelQueue) GetBufferStats() (currentSize int, capacity int) {
+	return len(cq.messages), cq.bufferSize
 }
 
 func (cq *ChannelQueue) Stop() {
