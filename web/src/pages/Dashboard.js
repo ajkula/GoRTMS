@@ -1,6 +1,7 @@
 import React from 'react';
 import { RefreshCw, Loader, AlertTriangle } from 'lucide-react';
 import { useDashboardData } from '../hooks/useDashboardData';
+import MessageRateControls from '../components/MessageRateControls';
 
 // charts components 
 import StatCards from '../components/charts/StatCards';
@@ -13,14 +14,16 @@ import ResourceMonitor from '../components/charts/ResourceMonitor';
 import DomainUsageChart from '../components/charts/DomainUsageChart';
 import EventsList from '../components/charts/EventsList';
 
+
 const Dashboard = ({ setPage }) => {
-  const { 
-    stats, 
-    resourceHistory, 
-    currentResources, 
-    loading, 
-    error, 
-    refresh 
+  const {
+    stats,
+    resourceHistory,
+    currentResources,
+    loading,
+    error,
+    refresh,
+    messageRateControls,
   } = useDashboardData();
 
   if (loading && !stats) {
@@ -77,7 +80,7 @@ const Dashboard = ({ setPage }) => {
           <DomainPieChart data={stats?.activeDomains || []} />
         </div>
         <div className="bg-white rounded-lg shadow p-6">
-          <DomainUsageChart 
+          <DomainUsageChart
             domainStats={currentResources?.domainStats}
             loading={loading}
             error={error}
@@ -88,6 +91,16 @@ const Dashboard = ({ setPage }) => {
       {/* Message Activity Chart - Full Width */}
       <div className="mb-6">
         <div className="bg-white rounded-lg shadow p-6">
+          <MessageRateControls
+            period={messageRateControls.period}
+            granularity={messageRateControls.granularity}
+            isExploring={messageRateControls.isExploring}
+            periods={messageRateControls.periods}
+            availableGranularities={messageRateControls.availableGranularities}
+            onPeriodChange={messageRateControls.handlePeriodChange}
+            onGranularityChange={messageRateControls.handleGranularityChange}
+            onReset={messageRateControls.resetToDefaults}
+          />
           <MessageActivityChart data={stats?.messageRates || []} />
         </div>
       </div>
@@ -95,7 +108,7 @@ const Dashboard = ({ setPage }) => {
       {/* Resource Monitor and TreeMap */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div>
-          <ResourceMonitor 
+          <ResourceMonitor
             chartData={resourceHistory}
             currentStats={currentResources}
             loading={loading}

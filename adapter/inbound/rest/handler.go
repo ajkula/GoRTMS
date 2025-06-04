@@ -797,7 +797,19 @@ func (h *Handler) removeRoutingRule(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) getStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	stats, err := h.statsService.GetStats(ctx)
+	// Parse query parameters with defaults
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "1h" // Default: last hour
+	}
+
+	granularity := r.URL.Query().Get("granularity")
+	if granularity == "" {
+		granularity = "auto" // Auto-adapt based on period
+	}
+
+	// Get aggregated stats
+	stats, err := h.statsService.GetStatsWithAggregation(ctx, period, granularity)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

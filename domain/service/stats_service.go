@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	maxPoints int = 60
-	maxEvents int = 50
+	maxPoints     int           = 60 * 60 * 24
+	ratesInterval time.Duration = 1 * time.Second
+	maxEvents     int           = 50
 )
 
 type StatsData struct {
@@ -125,7 +126,7 @@ func NewStatsService(
 		domainRepo:      domainRepo,
 		messageRepo:     messageRepo,
 		metrics:         metrics,
-		collectInterval: 1 * time.Minute,
+		collectInterval: ratesInterval,
 		stopCollect:     make(chan struct{}),
 	}
 
@@ -166,11 +167,9 @@ func (s *StatsServiceImpl) collectMetrics() {
 	now := time.Now()
 	elapsed := now.Sub(s.metrics.lastCollected).Seconds()
 
-	// Calculer les taux depuis la dernière collecte
 	publishRate := float64(s.publishCountSinceLastCollect) / elapsed
 	consumeRate := float64(s.consumeCountSinceLastCollect) / elapsed
 
-	// Ajouter au tableau des taux
 	s.metrics.messageRates = append(s.metrics.messageRates, MessageRate{
 		Timestamp:      now.Unix(),
 		Rate:           publishRate + consumeRate,
@@ -180,21 +179,18 @@ func (s *StatsServiceImpl) collectMetrics() {
 		ConsumedTotal:  s.consumeCountSinceLastCollect,
 	})
 
-	// Limiter la taille de l'historique
+	// Limit history size
 	if len(s.metrics.messageRates) > maxPoints {
 		s.metrics.messageRates = s.metrics.messageRates[len(s.metrics.messageRates)-maxPoints:]
 	}
 
-	// Réinitialiser les compteurs
 	s.publishCountSinceLastCollect = 0
 	s.consumeCountSinceLastCollect = 0
 
-	// Mettre à jour le timestamp
 	s.metrics.lastCollected = now
 
 	s.metrics.mu.Unlock()
 
-	// Mettre à jour les snapshots des queues
 	s.updateQueueSnapshots()
 }
 
@@ -343,29 +339,27 @@ func (s *StatsServiceImpl) updateQueueSnapshots() {
 
 	now := time.Now()
 
-	// Marquer tous les snapshots comme "vus"
+	// mark all snapshots as "viewed"
 	seen := make(map[string]bool)
 
-	// TODO: Obtenir queueService pour accéder aux ChannelQueues
-	// Pour l'instant on utilise queue.MessageCount
-
+	// TODO: use queueService to access ChannelQueues (if required)
 	for _, domain := range domains {
 		for queueName, queue := range domain.Queues {
 			key := fmt.Sprintf("%s:%s", domain.Name, queueName)
 			seen[key] = true
 
-			// Configuration du buffer
+			// buffer config
 			bufferCapacity := queue.Config.MaxSize
 			if bufferCapacity <= 0 {
 				bufferCapacity = 1000
 			}
 
-			// Stats actuelles
+			// Stats
 			repoCount := s.messageRepo.GetQueueMessageCount(domain.Name, queueName)
-			bufferSize := repoCount // TODO: remplacer par GetBufferStats()
+			bufferSize := repoCount // TODO: remplace with GetBufferStats()
 			usage := float64(bufferSize) / float64(bufferCapacity) * 100
 
-			// Récupérer ou créer le snapshot
+			// get/create snapshot
 			snapshot, exists := s.metrics.queueSnapshots[key]
 			if !exists {
 				snapshot = &QueueSnapshot{
@@ -375,14 +369,13 @@ func (s *StatsServiceImpl) updateQueueSnapshots() {
 				s.metrics.queueSnapshots[key] = snapshot
 			}
 
-			// Mettre à jour les métriques
 			snapshot.BufferSize = bufferSize
 			snapshot.BufferCapacity = bufferCapacity
 			snapshot.BufferUsage = usage
 			snapshot.RepositoryCount = repoCount
 			snapshot.LastUpdated = now
 
-			// Gestion des alertes avec état persistant
+			// Alerts management
 			previousLevel := snapshot.AlertLevel
 			newLevel := ""
 
@@ -392,18 +385,17 @@ func (s *StatsServiceImpl) updateQueueSnapshots() {
 				newLevel = "warning"
 			}
 
-			// Si changement d'état
+			// if state change
 			if newLevel != previousLevel {
 				if newLevel != "" {
-					// Nouvelle alerte
+					// new alert
 					snapshot.AlertLevel = newLevel
 					snapshot.AlertSince = now
 					snapshot.AlertID = fmt.Sprintf("alert-%s-%d", key, now.UnixNano())
 
-					// Enregistrer l'event
 					s.RecordQueueCapacity(domain.Name, queueName, usage)
 				} else {
-					// Alerte résolue
+					// Alert resolved
 					snapshot.AlertLevel = ""
 					snapshot.AlertSince = time.Time{}
 					snapshot.AlertID = ""
@@ -412,12 +404,172 @@ func (s *StatsServiceImpl) updateQueueSnapshots() {
 		}
 	}
 
-	// Supprimer les snapshots obsolètes
+	// clean obsolete
 	for key := range s.metrics.queueSnapshots {
 		if !seen[key] {
 			delete(s.metrics.queueSnapshots, key)
 		}
 	}
+}
+
+func (s *StatsServiceImpl) GetStatsWithAggregation(ctx context.Context, period, granularity string) (any, error) {
+	fullStats, err := s.GetStats(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Type assertion
+	stats, ok := fullStats.(*StatsData)
+	if !ok {
+		return nil, fmt.Errorf("unexpected stats type")
+	}
+
+	// Create a COPY
+	clientStats := &StatsData{
+		Domains:       stats.Domains,
+		Queues:        stats.Queues,
+		Messages:      stats.Messages,
+		Routes:        stats.Routes,
+		ActiveDomains: stats.ActiveDomains,
+		TopQueues:     stats.TopQueues,
+		QueueAlerts:   stats.QueueAlerts,
+		DomainTrend:   stats.DomainTrend,
+		QueueTrend:    stats.QueueTrend,
+		MessageTrend:  stats.MessageTrend,
+		RouteTrend:    stats.RouteTrend,
+		RecentEvents:  stats.RecentEvents,
+	}
+
+	aggregatedRates := s.getAggregatedMessageRates(period, granularity)
+
+	clientStats.MessageRates = aggregatedRates
+
+	return clientStats, nil
+}
+
+// returns message rates aggregated by period and granularity
+func (s *StatsServiceImpl) getAggregatedMessageRates(period, granularity string) []MessageRate {
+	s.metrics.mu.RLock()
+	defer s.metrics.mu.RUnlock()
+
+	if len(s.metrics.messageRates) == 0 {
+		return []MessageRate{}
+	}
+
+	// Determine time range
+	now := time.Now()
+	var startTime time.Time
+
+	switch period {
+	case "1h":
+		startTime = now.Add(-1 * time.Hour)
+	case "6h":
+		startTime = now.Add(-6 * time.Hour)
+	case "12h":
+		startTime = now.Add(-12 * time.Hour)
+	case "24h":
+		startTime = now.Add(-24 * time.Hour)
+	default:
+		startTime = now.Add(-1 * time.Hour) // Default to 1h
+	}
+
+	// Determine granularity in seconds
+	granularitySeconds := s.determineGranularity(period, granularity)
+
+	// Filter and aggregate
+	return s.aggregateMessageRates(startTime, granularitySeconds)
+}
+
+// determineGranularity returns the granularity in seconds
+func (s *StatsServiceImpl) determineGranularity(period, granularity string) int {
+	// If auto, determine based on period
+	if granularity == "auto" {
+		switch period {
+		case "1h":
+			return 60 // 1 minute
+		case "6h":
+			return 300 // 5 minutes
+		case "12h":
+			return 900 // 15 minutes
+		case "24h":
+			return 1800 // 30 minutes
+		default:
+			return 60 // Default: 1 minute
+		}
+	}
+
+	// Parse explicit granularity
+	switch granularity {
+	case "10s":
+		return 10
+	case "1m":
+		return 60
+	case "5m":
+		return 300
+	case "15m":
+		return 900
+	case "30m":
+		return 1800
+	case "1h":
+		return 3600
+	default:
+		return 60 // Default: 1 minute
+	}
+}
+
+// aggregateMessageRates performs the actual aggregation
+func (s *StatsServiceImpl) aggregateMessageRates(startTime time.Time, granularitySeconds int) []MessageRate {
+	aggregated := make([]MessageRate, 0)
+
+	// Create time buckets
+	buckets := make(map[int64]*MessageRate)
+
+	for _, rate := range s.metrics.messageRates {
+		// Skip if before start time
+		if rate.Timestamp < startTime.Unix() {
+			continue
+		}
+
+		// Determine bucket
+		bucketTime := (rate.Timestamp / int64(granularitySeconds)) * int64(granularitySeconds)
+
+		bucket, exists := buckets[bucketTime]
+		if !exists {
+			bucket = &MessageRate{
+				Timestamp:      bucketTime,
+				PublishedTotal: 0,
+				ConsumedTotal:  0,
+			}
+			buckets[bucketTime] = bucket
+		}
+
+		// Aggregate counts
+		bucket.PublishedTotal += rate.PublishedTotal
+		bucket.ConsumedTotal += rate.ConsumedTotal
+	}
+
+	// Convert to slice and calculate rates
+	for _, bucket := range buckets {
+		// Calculate rate per second for the period
+		bucket.Published = float64(bucket.PublishedTotal) / float64(granularitySeconds)
+		bucket.Consumed = float64(bucket.ConsumedTotal) / float64(granularitySeconds)
+		bucket.Rate = bucket.Published + bucket.Consumed
+
+		aggregated = append(aggregated, *bucket)
+	}
+
+	// Sort by timestamp
+	sort.Slice(aggregated, func(i, j int) bool {
+		return aggregated[i].Timestamp < aggregated[j].Timestamp
+	})
+
+	s.metrics.logger.Debug("Aggregated message rates",
+		"original_points", len(s.metrics.messageRates),
+		"aggregated_points", len(aggregated),
+		"period", startTime.Format("15:04:05"),
+		"granularity_seconds", granularitySeconds)
+
+	return aggregated
 }
 
 func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
@@ -428,7 +580,6 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 		return nil, err
 	}
 
-	// Récupérer l'état précédent pour les tendances
 	s.metrics.mu.RLock()
 	previousStats := s.metrics.previousStats
 	s.metrics.mu.RUnlock()
@@ -443,12 +594,10 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 		QueueAlerts:   make([]map[string]any, 0),
 	}
 
-	// Copier les taux de messages
 	s.metrics.mu.RLock()
 	stats.MessageRates = make([]MessageRate, len(s.metrics.messageRates))
 	copy(stats.MessageRates, s.metrics.messageRates)
 
-	// Construire les données depuis les snapshots
 	domainAggregates := make(map[string]struct {
 		MessageCount int
 		QueueCount   int
@@ -457,13 +606,12 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 	queueDataList := make([]map[string]any, 0, len(s.metrics.queueSnapshots))
 
 	for _, snapshot := range s.metrics.queueSnapshots {
-		// Agréger par domaine
+		// by domain
 		agg := domainAggregates[snapshot.Domain]
 		agg.MessageCount += snapshot.RepositoryCount
 		agg.QueueCount++
 		domainAggregates[snapshot.Domain] = agg
 
-		// Données pour TopQueues
 		queueData := map[string]any{
 			"domain":       snapshot.Domain,
 			"name":         snapshot.Queue,
@@ -473,7 +621,6 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 		}
 		queueDataList = append(queueDataList, queueData)
 
-		// Ajouter aux alertes si nécessaire
 		if snapshot.AlertLevel != "" {
 			stats.QueueAlerts = append(stats.QueueAlerts, map[string]any{
 				"domain":     snapshot.Domain,
@@ -486,7 +633,7 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 	}
 	s.metrics.mu.RUnlock()
 
-	// Construire ActiveDomains pour DomainPieChart
+	// ActiveDomains for DomainPieChart
 	for domainName, agg := range domainAggregates {
 		stats.ActiveDomains = append(stats.ActiveDomains, map[string]any{
 			"name":         domainName,
@@ -498,14 +645,13 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 		stats.Messages += agg.MessageCount
 	}
 
-	// Compter les routes
 	for _, domain := range domains {
 		for _, routes := range domain.Routes {
 			stats.Routes += len(routes)
 		}
 	}
 
-	// Trier et limiter TopQueues
+	// TopQueues sort/limit
 	sort.Slice(queueDataList, func(i, j int) bool {
 		return queueDataList[i]["usage"].(float64) > queueDataList[j]["usage"].(float64)
 	})
@@ -516,7 +662,6 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 		stats.TopQueues = queueDataList
 	}
 
-	// Calculer les tendances
 	if previousStats != nil {
 		stats.DomainTrend = calculateTrend(previousStats.Domains, stats.Domains)
 		stats.QueueTrend = calculateTrend(previousStats.Queues, stats.Queues)
@@ -524,12 +669,10 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 		stats.RouteTrend = calculateTrend(previousStats.Routes, stats.Routes)
 	}
 
-	// Stocker pour la prochaine fois
 	s.metrics.mu.Lock()
 	s.metrics.previousStats = stats
 	s.metrics.mu.Unlock()
 
-	// Récupérer les événements récents
 	s.metrics.mu.RLock()
 	events := make([]map[string]any, 0, len(s.metrics.systemEvents))
 	for _, event := range s.metrics.systemEvents {
@@ -549,7 +692,7 @@ func (s *StatsServiceImpl) GetStats(ctx context.Context) (any, error) {
 	}
 	s.metrics.mu.RUnlock()
 
-	// Inverser l'ordre pour avoir les plus récents en premier
+	// recent first
 	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
 		events[i], events[j] = events[j], events[i]
 	}

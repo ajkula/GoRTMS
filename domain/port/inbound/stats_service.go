@@ -15,6 +15,9 @@ type StatsService interface {
 	// TrackMessageConsumed records a consumed message in metrics
 	TrackMessageConsumed(domainName, queueName string)
 
+	// GetStatsWithAggregation returns stats with time-based aggregation
+	GetStatsWithAggregation(ctx context.Context, period, granularity string) (any, error)
+
 	// Specialized methods for different event types
 	RecordDomainCreated(name string)
 	RecordDomainDeleted(name string)

@@ -6,7 +6,7 @@ const MessageActivityChart = ({ data }) => {
   const processedData = data.map(item => {
     const date = new Date(item.timestamp * 1000);
     const timeString = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-    
+
     return {
       time: timeString, // Use a formatted time string instead of the raw timestamp
       published: item.publishedTotal || 0,
@@ -18,8 +18,15 @@ const MessageActivityChart = ({ data }) => {
 
   return (
     <div>
-      <h2 className="text-lg font-medium text-gray-900 mb-4">Message Activity</h2>
-      
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-medium text-gray-900">Message Activity</h2>
+        {processedData.length > 0 && (
+          <span className="text-sm text-gray-500">
+            {processedData.length} data points
+          </span>
+        )}
+      </div>
+
       {processedData.length > 0 ? (
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
@@ -30,7 +37,7 @@ const MessageActivityChart = ({ data }) => {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="time" />
               <YAxis />
-              <Tooltip 
+              <Tooltip
                 labelFormatter={(value) => {
                   const item = processedData.find(d => d.time === value);
                   if (item && item.timestamp) {

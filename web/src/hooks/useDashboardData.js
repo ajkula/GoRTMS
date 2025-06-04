@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
+import { useMessageRateControls } from './useMessageRateControls';
 
 export function useDashboardData(refreshInterval = 30000) {
   const [data, setData] = useState({
@@ -10,12 +11,14 @@ export function useDashboardData(refreshInterval = 30000) {
     error: null
   });
 
+  const messageRateControls = useMessageRateControls();
+
   const fetchAllData = useCallback(async () => {
     try {
       setData(prev => ({ ...prev, loading: true, error: null }));
       
       const [statsData, historyData, currentData] = await Promise.all([
-        api.getStats(),
+        api.getStats(messageRateControls.queryParams),
         api.getStatsHistory(30),
         api.getCurrentStats()
       ]);
@@ -41,7 +44,8 @@ export function useDashboardData(refreshInterval = 30000) {
         resourceHistory: formattedHistory,
         currentResources: currentData,
         loading: false,
-        error: null
+        error: null,
+        messageRateControls,
       });
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
@@ -51,7 +55,7 @@ export function useDashboardData(refreshInterval = 30000) {
         error: error.message || 'Failed to load dashboard data'
       }));
     }
-  }, []);
+  }, [messageRateControls.queryParams]);
 
   useEffect(() => {
     fetchAllData();

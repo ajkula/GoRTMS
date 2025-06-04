@@ -253,9 +253,11 @@ const api = {
     }
   },
 
-  async getStats() {
+  async getStats(params = {}) {
     try {
-      return await this.fetchJSON(`${API_BASE_URL}/stats`);
+    const queryString = new URLSearchParams(params).toString();
+    const url = `${API_BASE_URL}/stats${queryString ? `?${queryString}` : ''}`;
+      return await this.fetchJSON(url);
     } catch (error) {
       console.error('Error fetching stats:', error);
       return {

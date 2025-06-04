@@ -22,7 +22,7 @@ const App = () => {
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
-  // Mapping des pages vers les composants
+  // Mapping pages => components
   const pageComponents = {
     'dashboard': <Dashboard setPage={setPage} />,
     
