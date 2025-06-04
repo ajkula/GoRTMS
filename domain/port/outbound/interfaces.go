@@ -7,7 +7,7 @@ import (
 	"github.com/ajkula/GoRTMS/domain/model"
 )
 
-// MessageRepository defines storage operations for messages
+// defines storage operations for messages
 type MessageRepository interface {
 	// StoreMessage saves a message
 	StoreMessage(ctx context.Context, domainName, queueName string, message *model.Message) error
@@ -56,7 +56,7 @@ type MessageRepository interface {
 	GetQueueMessageCount(domainName, queueName string) int
 }
 
-// DomainRepository defines storage operations for domains
+// defines storage operations for domains
 type DomainRepository interface {
 	// StoreDomain saves a domain
 	StoreDomain(ctx context.Context, domain *model.Domain) error
@@ -71,7 +71,7 @@ type DomainRepository interface {
 	ListDomains(ctx context.Context) ([]*model.Domain, error)
 }
 
-// QueueRepository defines storage operations for queues
+// defines storage operations for queues
 type QueueRepository interface {
 	// StoreQueue saves a queue
 	StoreQueue(ctx context.Context, domainName string, queue *model.Queue) error
@@ -86,7 +86,7 @@ type QueueRepository interface {
 	ListQueues(ctx context.Context, domainName string) ([]*model.Queue, error)
 }
 
-// SubscriptionRegistry defines operations to manage subscriptions
+// defines operations to manage subscriptions
 type SubscriptionRegistry interface {
 	// RegisterSubscription registers a new subscription
 	RegisterSubscription(domainName, queueName string, handler model.MessageHandler) (string, error)
@@ -98,7 +98,7 @@ type SubscriptionRegistry interface {
 	NotifySubscribers(domainName, queueName string, message *model.Message) error
 }
 
-// ConsumerGroupRepository defines operations for consumer groups
+// defines operations for consumer groups
 type ConsumerGroupRepository interface {
 	// StorePosition saves a group offset
 	StorePosition(ctx context.Context, domainName, queueNamme, groupID string, index int64) error
