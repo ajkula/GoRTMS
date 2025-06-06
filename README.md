@@ -1,73 +1,74 @@
-# Guide complet pour démarrer et tester GoRTMS
-GO Real-Time Messaging System
+# Complete Guide to Getting Started and Testing GoRTMS
 
-## 1. Préparation de l'environnement
+**GO Real-Time Messaging System**
 
-### Installation du backend
+## 1. Environment Setup
+
+### Backend Installation
 
 ```bash
-# Cloner le dépôt (ou créer la structure de dossiers)
+# Clone the repository (or create the folder structure)
 git clone https://github.com/ajkula/GoRTMS.git
 cd GoRTMS
 
-# Installer les dépendances
+# Install dependencies
 go mod tidy
 ```
 
-### Installation du frontend
+### Frontend Installation
 
 ```bash
-# Aller dans le dossier web
+# Go to the web folder
 cd web
 
-# Installer les dépendances Node.js
+# Install Node.js dependencies
 npm install
 
-# Construire l'interface pour la production
+# Build the interface for production
 npm run build
 ```
 
 ## 2. Configuration
 
-### Génération de la configuration par défaut
+### Generate Default Configuration
 
 ```bash
-# Depuis la racine du projet
+# From the project root
 go run cmd/server/main.go --generate-config
 ```
 
-Ceci créera un fichier `config.yaml` que vous pourrez personnaliser selon vos besoins.
+This will create a `config.yaml` file that you can customize to your needs.
 
-### Configuration protobuf (si vous utilisez gRPC)
+### Protobuf Configuration (if using gRPC)
 
 ```bash
-# Sous Windows, exécutez le script PowerShell
+# On Windows, run the PowerShell script
 .\setup-proto.ps1
 
-# Ou manuellement
+# Or manually
 protoc --go_out=. --go-grpc_out=. adapter/inbound/grpc/proto/realtimedb.proto
 ```
 
-## 3. Compilation et démarrage
+## 3. Build and Start
 
-### Compiler l'application
+### Build the Application
 
 ```bash
-# Compiler l'application
+# Compile the application
 go build -o gortms cmd/server/main.go
 ```
 
-### Démarrer le serveur
+### Start the Server
 
 ```bash
-# Exécuter l'application
+# Run the application
 ./gortms
 
-# Ou avec une configuration spécifique
+# Or with a specific config
 ./gortms --config=my-config.yaml
 ```
 
-Le serveur devrait démarrer et vous verrez des logs comme ceci:
+The server should start and you'll see logs like:
 ```
 Starting GoRTMS...
 Node ID: node1
@@ -76,24 +77,24 @@ HTTP server listening on 0.0.0.0:8080
 GoRTMS started successfully
 ```
 
-## 4. Accès à l'interface utilisateur
+## 4. Access the User Interface
 
-Ouvrez votre navigateur web et accédez à:
+Open your web browser and go to:
 ```
 http://localhost:8080/ui/
 ```
 
-Vous devriez voir l'interface d'administration de GoRTMS avec le tableau de bord, la gestion des domaines et le moniteur de files d'attente.
+You should see the GoRTMS admin interface with the dashboard, domain management, and queue monitor.
 
-## 5. Test des fonctionnalités
+## 5. Feature Testing
 
-### Création d'un domaine de test
+### Create a Test Domain
 
-1. Dans l'interface web, cliquez sur "Domains" dans le menu latéral
-2. Cliquez sur le bouton "Create Domain"
-3. Remplissez les informations:
-   - Nom: `test`
-   - Schéma:
+1. In the web interface, click on "Domains" in the sidebar
+2. Click "Create Domain"
+3. Fill in the details:
+   - Name: `test`
+   - Schema:
      ```json
      {
        "fields": {
@@ -102,14 +103,14 @@ Vous devriez voir l'interface d'administration de GoRTMS avec le tableau de bord
        }
      }
      ```
-4. Cliquez sur "Create"
+4. Click "Create"
 
-### Création d'une file d'attente
+### Create a Queue
 
-1. Cliquez sur le domaine créé
-2. Cliquez sur "Create Queue"
-3. Remplissez les informations:
-   - Nom: `messages`
+1. Click on the created domain
+2. Click "Create Queue"
+3. Fill in the details:
+   - Name: `messages`
    - Configuration:
      ```json
      {
@@ -119,139 +120,137 @@ Vous devriez voir l'interface d'administration de GoRTMS avec le tableau de bord
        "deliveryMode": "broadcast"
      }
      ```
-4. Cliquez sur "Create"
+4. Click "Create"
 
-### Test du moniteur en temps réel
+### Test the Real-Time Monitor
 
-1. Accédez au moniteur de file d'attente
-2. Ouvrez une nouvelle fenêtre de terminal
-3. Envoyez un message test avec curl:
+1. Open the queue monitor
+2. Open a new terminal window
+3. Send a test message using curl:
 
 ```bash
-curl -X POST http://localhost:8080/api/domains/test/queues/messages/messages \
-  -H "Content-Type: application/json" \
-  -d '{"content": "Hello, GoRTMS!", "priority": 1}'
+curl -X POST http://localhost:8080/api/domains/test/queues/messages/messages   -H "Content-Type: application/json"   -d '{"content": "Hello, GoRTMS!", "priority": 1}'
 ```
 
-4. Observez le message apparaître dans le moniteur en temps réel
+4. Watch the message appear in the real-time monitor
 
-## 6. Développement continu
+## 6. Continuous Development
 
-Pour travailler sur le frontend pendant le développement:
+To work on the frontend during development:
 
 ```bash
 cd web
 npm run dev
 ```
 
-Cela démarrera un serveur de développement sur port 3000 avec hot-reload, ce qui facilite les modifications de l'interface.
+This will start a development server on port 3000 with hot reload, making it easier to update the interface.
 
-Pour arrêter le serveur, appuyez sur `Ctrl+C` dans le terminal où il s'exécute.
+To stop the server, press `Ctrl+C` in the terminal.
 
-## 7. Dépannage
+## 7. Troubleshooting
 
-### Problèmes courants
+### Common Issues
 
-- **Erreur de port déjà utilisé**: Changez le port dans `config.yaml`
-- **Problèmes d'accès au dossier de données**: Vérifiez les permissions du dossier `data`
-- **Erreurs de compilation gRPC**: Assurez-vous d'avoir exécuté la génération protobuf correctement
-- **Interface web non disponible**: Vérifiez que vous avez bien construit le frontend avec `npm run build`
+- **Port already in use**: Change the port in `config.yaml`
+- **Data folder access issues**: Check permissions on the `data` folder
+- **gRPC compilation errors**: Make sure protobuf generation was successful
+- **Web interface not available**: Make sure you built the frontend with `npm run build`
 
-### Logs et débogage
+### Logs and Debugging
 
-Pour des logs plus détaillés, modifiez le niveau de journalisation dans `config.yaml`:
+For more detailed logs, change the log level in `config.yaml`:
 
 ```yaml
 general:
   logLevel: "debug"
 ```
 
-## 8. Prochaines étapes
+## 8. Next Steps
 
-Une fois votre instance GoRTMS opérationnelle:
+Once your GoRTMS instance is running:
 
-1. Implémentez les services domaine manquants
-2. Ajoutez un stockage persistant (adaptateur de fichier ou base de données)
-3. Configurez les adaptateurs de protocole supplémentaires (AMQP, MQTT)
-4. Développez des tests automatisés pour vérifier la fiabilité
+1. Implement missing domain services
+2. Add persistent storage (file adapter or database)
+3. Configure additional protocol adapters (AMQP, MQTT)
+4. Develop automated tests for reliability
 
-Votre système est maintenant prêt pour des tests approfondis et le développement de fonctionnalités supplémentaires!
+Your system is now ready for thorough testing and further feature development!
 
 
 
-# API RESTful pour GoRTMS
+# GoRTMS RESTful API
 
-## Authentification
-- `POST /api/auth/login` - Obtenir un token JWT
-- `POST /api/auth/refresh` - Rafraîchir un token JWT
+## Authentication
+- `POST /api/auth/login` – Obtain a JWT token
+- `POST /api/auth/refresh` – Refresh a JWT token
 
-## Domains (Schémas)
-- `GET /api/domains` - Lister tous les domaines
-- `POST /api/domains` - Créer un nouveau domaine
-- `GET /api/domains/{domain}` - Obtenir les détails d'un domaine
-- `PUT /api/domains/{domain}` - Mettre à jour un domaine
-- `DELETE /api/domains/{domain}` - Supprimer un domaine
+## Domains (Schemas)
+- `GET /api/domains` – List all domains
+- `POST /api/domains` – Create a new domain
+- `GET /api/domains/{domain}` – Get domain details
+- `PUT /api/domains/{domain}` – Update a domain
+- `DELETE /api/domains/{domain}` – Delete a domain
 
-## Queues (Files d'attente)
-- `GET /api/domains/{domain}/queues` - Lister toutes les files d'attente d'un domaine
-- `POST /api/domains/{domain}/queues` - Créer une nouvelle file d'attente
-- `GET /api/domains/{domain}/queues/{queue}` - Obtenir les détails d'une file d'attente
-- `PUT /api/domains/{domain}/queues/{queue}` - Mettre à jour une file d'attente
-- `DELETE /api/domains/{domain}/queues/{queue}` - Supprimer une file d'attente
+## Queues
+- `GET /api/domains/{domain}/queues` – List all queues in a domain
+- `POST /api/domains/{domain}/queues` – Create a new queue
+- `GET /api/domains/{domain}/queues/{queue}` – Get queue details
+- `PUT /api/domains/{domain}/queues/{queue}` – Update a queue
+- `DELETE /api/domains/{domain}/queues/{queue}` – Delete a queue
 
 ## Messages
-- `POST /api/domains/{domain}/queues/{queue}/messages` - Publier un message
-- `GET /api/domains/{domain}/queues/{queue}/messages` - Récupérer des messages (long polling)
-- `DELETE /api/domains/{domain}/queues/{queue}/messages/{messageId}` - Acquitter un message
+- `POST /api/domains/{domain}/queues/{queue}/messages` – Publish a message
+- `GET /api/domains/{domain}/queues/{queue}/messages` – Retrieve messages (long polling)
+- `DELETE /api/domains/{domain}/queues/{queue}/messages/{messageId}` – Acknowledge a message
 
-## Routes (Règles de routage)
-- `GET /api/domains/{domain}/routes` - Lister toutes les règles de routage
-- `POST /api/domains/{domain}/routes` - Créer une nouvelle règle de routage
-- `DELETE /api/domains/{domain}/routes/{sourceQueue}/{destQueue}` - Supprimer une règle de routage
+## Routing Rules
+- `GET /api/domains/{domain}/routes` – List all routing rules
+- `POST /api/domains/{domain}/routes` – Create a new routing rule
+- `DELETE /api/domains/{domain}/routes/{sourceQueue}/{destQueue}` – Delete a routing rule
 
 ## WebSockets
-- `WS /api/ws/domains/{domain}/queues/{queue}` - S'abonner aux messages d'une file d'attente
+- `WS /api/ws/domains/{domain}/queues/{queue}` – Subscribe to queue messages
 
 ## Monitoring
-- `GET /api/stats` - Obtenir des statistiques globales
-- `GET /api/domains/{domain}/stats` - Obtenir des statistiques pour un domaine
-- `GET /api/domains/{domain}/queues/{queue}/stats` - Obtenir des statistiques pour une file d'attente
+- `GET /api/stats` – Get global statistics
+- `GET /api/domains/{domain}/stats` – Get statistics for a domain
+- `GET /api/domains/{domain}/queues/{queue}/stats` – Get statistics for a queue
 
 ## Administration
-- `GET /api/admin/users` - Lister tous les utilisateurs
-- `POST /api/admin/users` - Créer un nouvel utilisateur
-- `PUT /api/admin/users/{user}` - Mettre à jour un utilisateur
-- `DELETE /api/admin/users/{user}` - Supprimer un utilisateur
-- `POST /api/admin/backup` - Créer une sauvegarde
-- `GET /api/admin/backup` - Lister les sauvegardes
-- `POST /api/admin/restore` - Restaurer une sauvegarde
+- `GET /api/admin/users` – List all users
+- `POST /api/admin/users` – Create a new user
+- `PUT /api/admin/users/{user}` – Update a user
+- `DELETE /api/admin/users/{user}` – Delete a user
+- `POST /api/admin/backup` – Create a backup
+- `GET /api/admin/backup` – List backups
+- `POST /api/admin/restore` – Restore from backup
 
 ```
 GoRTMS/
-├── domain/                # Le cœur de l'application (logique métier pure)
-│   ├── model/             # Entités et objets de valeur du domaine
-│   │   ├── message.go     # Modèle pour les messages
-│   │   ├── queue.go       # Modèle pour les files d'attente
-│   │   ├── domain.go      # Modèle pour les domaines (schémas)
-│   │   └── routing.go     # Modèle pour les règles de routage
-│   ├── service/           # Services métier implémentant la logique
+├── domain/                # Core business logic
+│   ├── model/             # Domain entities and value objects
+│   │   ├── message.go     # Message model
+│   │   ├── queue.go       # Queue model
+│   │   ├── domain.go      # Domain (schema) model
+│   │   └── routing.go     # Routing rules model
+│   ├── service/           # Business services implementing logic
 │   │   ├── message_service.go
 │   │   ├── domain_service.go
 │   │   ├── queue_service.go
 │   │   └── routing_service.go
-│   └── port/              # Ports (interfaces) pour interagir avec l'extérieur
-│       ├── inbound/       # Ports pour les adaptateurs entrants
+│   └── port/              # Ports (interfaces) for external interaction
+│       ├── inbound/       # Inbound ports for adapters
 │       │   ├── message_service.go
 │       │   ├── domain_service.go
 │       │   ├── queue_service.go
 │       │   └── routing_service.go
-│       └── outbound/      # Ports pour les adaptateurs sortants
+│       └── outbound/      # Outbound ports for adapters
 │           ├── message_repository.go
 │           ├── domain_repository.go
 │           └── subscription_registry.go
-├── adapter/               # Adaptateurs implémentant les ports
-│   ├── inbound/           # Adaptateurs entrants (API)
-│   │   ├── rest/          # API REST
+├── adapter/               # Adapters implementing the ports
+│   ├── inbound/           # Inbound adapters (APIs)
+│   │   ├── rest/          # REST API
 │   │   │   └── handler.go
 │   │   ├── websocket/     # WebSocket
 │   │   │   └── handler.go
@@ -259,180 +258,185 @@ GoRTMS/
 │   │   │   └── server.go
 │   │   ├── mqtt/          # MQTT
 │   │   │   └── server.go
-│   │   ├── grpc/          # gRPC (à ajouter plus tard)
+│   │   ├── grpc/          # gRPC (to be added later)
 │   │   │   ├── proto/
 │   │   │   └── server.go
-│   │   └── graphql/       # GraphQL (à ajouter plus tard)
+│   │   └── graphql/       # GraphQL (to be added later)
 │   │       ├── schema/
 │   │       └── resolver.go
-│   └── outbound/          # Adaptateurs sortants (stockage, etc.)
+│   └── outbound/          # Outbound adapters (storage, etc.)
 │       ├── storage/
-│       │   ├── memory/    # Stockage en mémoire
+│       │   ├── memory/    # In-memory storage
 │       │   │   ├── message_repository.go
 │       │   │   └── domain_repository.go
-│       │   ├── file/      # Stockage sur fichier
-│       │   └── database/  # Stockage en base de données
+│       │   ├── file/      # File-based storage
+│       │   └── database/  # Database storage
 │       └── subscription/
-│           └── memory/    # Gestion des abonnements en mémoire
+│           └── memory/    # In-memory subscription management
 ├── config/                # Configuration
-├── cmd/                   # Points d'entrée
-│   └── server/            # Serveur principal
+├── cmd/                   # Entry points
+│   └── server/            # Main server
 │       └── main.go
-└── web/                   # Interface web pour le monitoring
+└── web/                   # Web interface for monitoring
 ```
 
-# Guide d'installation et utilisation du frontend GoRTMS
+# GoRTMS Frontend Installation and Usage Guide
 
-Ce guide vous explique comment installer et configurer le frontend React pour votre application GoRTMS.
+This guide explains how to install and configure the React frontend for your GoRTMS application.
 
-## Prérequis
+## Prerequisites
 
-- Node.js 16.x ou supérieur
-- npm 8.x ou supérieur (ou yarn)
-- Go 1.16 ou supérieur (pour le backend)
+- Node.js 16.x or higher
+- npm 8.x or higher (or yarn)
+- Go 1.16 or higher (for the backend)
 
-## Structure de dossiers
+## Folder Structure
 
-Le frontend est organisé dans le dossier `web` à la racine de votre projet:
+The frontend is located in the `web` directory at the root of your project:
 
 ```
 GoRTMS/
 ├── web/
-│   ├── public/         # Fichiers statiques
-│   ├── src/            # Code source React
-│   │   ├── components/ # Composants React
-│   │   ├── pages/      # Pages de l'application
-│   │   ├── styles/     # Fichiers CSS
-│   │   ├── App.js      # Composant principal
-│   │   └── index.js    # Point d'entrée
-│   ├── package.json    # Dépendances npm
-│   ├── webpack.config.js # Configuration webpack
-│   └── tailwind.config.js # Configuration Tailwind
-└── ...                 # Autres fichiers du projet
+│   ├── public/         # Static files
+│   ├── src/            # React source code
+│   │   ├── components/ # React components
+│   │   ├── pages/      # Application pages
+│   │   ├── styles/     # CSS files
+│   │   ├── App.js      # Main component
+│   │   └── index.js    # Entry point
+│   ├── package.json    # npm dependencies
+│   ├── webpack.config.js # Webpack configuration
+│   └── tailwind.config.js # Tailwind configuration
+└── ...                 # Other project files
 ```
 
 ## Installation
 
-1. **Naviguez dans le dossier web:**
+1. **Navigate to the web folder:**
    ```bash
    cd web
    ```
 
-2. **Installez les dépendances:**
+2. **Install dependencies:**
    ```bash
    npm install
-   # ou avec yarn
+   # or with yarn
    yarn install
    ```
 
-## Scripts disponibles
+## Available Scripts
 
-- **Développement avec auto-reload:**
+- **Development with auto-reload:**
+  
   ```bash
   npm run dev
-  # ou avec yarn
+  # or with yarn
   yarn dev
   ```
-  Cela démarrera un serveur de développement sur [http://localhost:3000](http://localhost:3000) avec rechargement à chaud.
-
-- **Construction pour la production:**
+This starts a development server on [http://localhost:3000](http://localhost:3000) with hot reloading.
+  
+- **Production build:**
   ```bash
   npm run build
-  # ou avec yarn
+  # or with yarn
   yarn build
   ```
-  Cela générera les fichiers optimisés dans le dossier `dist`.
+  This generates optimized files in the `dist` folder.
 
-- **Construction avec surveillance des changements:**
+- **Build with file watch:**
   ```bash
   npm run watch
-  # ou avec yarn
+  # or with yarn
   yarn watch
   ```
-  Utile pour développer tout en voyant les changements réels servis par le backend Go.
+  Useful for development while watching real-time updates served by the Go backend.
 
-## Intégration avec le backend
+## Integration with the Backend
 
-### Option 1: Servir les fichiers statiques via Go
+### Option 1: Serve static files via Go
 
-Après avoir construit le frontend avec `npm run build`, les fichiers générés dans le dossier `dist` peuvent être servis par votre serveur Go:
+After building the frontend with `npm run build`, the generated files in the `dist` folder can be served by your Go server:
 
 ```go
-// Dans votre code main.go ou équivalent
+// In your main.go or equivalent
 router.PathPrefix("/ui/").Handler(http.StripPrefix("/ui/", http.FileServer(http.Dir("./web/dist"))))
 ```
 
-### Option 2: Développement avec proxy
+### Option 2: Development with proxy
 
-Pendant le développement, vous pouvez exécuter le serveur webpack en mode développement avec un proxy vers votre backend:
+During development, you can run the webpack dev server with a proxy to your backend:
 
-1. Assurez-vous que votre backend GoRTMS est en cours d'exécution sur le port 8080
-2. Démarrez le serveur de développement frontend: `npm run dev`
-3. Le proxy configuré dans `webpack.config.js` redirigera automatiquement les requêtes `/api/*` vers votre backend
+1. Ensure your GoRTMS backend is running on port 8080
+2. Start the frontend development server: `npm run dev`
+3. The proxy configured in `webpack.config.js` will automatically redirect `/api/*` requests to your backend
 
-## Organisation des fichiers React
+## React File Organization
 
-- **components/** - Composants réutilisables comme les boutons, cartes, etc.
-- **pages/** - Les écrans principaux de l'application
-- **styles/** - Fichiers CSS, principalement pour la configuration de Tailwind
-- **App.js** - Le composant principal qui gère le routage et la disposition
-- **index.js** - Le point d'entrée qui monte l'application dans le DOM
+- **components/** – Reusable components like buttons, cards, etc.
+- **pages/** – Main screens of the application
+- **styles/** – CSS files, primarily for Tailwind configuration
+- **App.js** – Main component handling routing and layout
+- **index.js** – Entry point mounting the app to the DOM
 
-## Personnalisation
+## Customization
 
-### Thème et couleurs
+### Theme and Colors
 
-Vous pouvez personnaliser les couleurs et le thème en modifiant le fichier `tailwind.config.js`.
+You can customize the colors and theme by editing the `tailwind.config.js` file.
 
-### Logo et branding
+### Logo and Branding
 
-Remplacez le logo dans `public/images/logo.svg` par votre propre logo.
+Replace the logo in `public/images/logo.svg` with your own logo.
 
-### Page d'accueil
+### Home Page
 
-Modifiez le contenu de la page d'accueil (Dashboard) en éditant le fichier `src/pages/Dashboard.js`.
+Edit the homepage (Dashboard) content by modifying `src/pages/Dashboard.js`.
 
-## Déploiement en production
+## Production Deployment
 
-Pour déployer en production:
+To deploy in production:
 
-1. Construisez le frontend:
+1. Build the frontend:
+
    ```bash
    npm run build
    ```
 
-2. Copiez le contenu du dossier `dist` dans un répertoire accessible par votre serveur Go ou configurez le serveur pour servir directement depuis ce dossier.
+2. Copy the contents of the `dist` folder to a directory accessible by your Go server, or configure the server to serve directly from that folder.
 
-3. Assurez-vous que les chemins d'accès dans votre configuration Go sont corrects.
+3. Ensure that the path settings in your Go configuration are correct.
 
-## Résolution des problèmes courants
+## Common Issues and Troubleshooting
 
-### Les modifications du code ne sont pas visibles
+### Code Changes Not Visible
 
-- Assurez-vous que webpack est en cours d'exécution en mode watch (`npm run watch`)
-- Videz le cache de votre navigateur
-- Vérifiez les erreurs dans la console du navigateur
+* Ensure that webpack is running in watch mode (`npm run watch`)
+* Clear your browser cache
+* Check the browser console for errors
 
-### Erreurs de construction webpack
+### Webpack Build Errors
 
-- Vérifiez que toutes les dépendances sont installées (`npm install`)
-- Regardez les erreurs spécifiques dans la sortie webpack
-- Essayez de supprimer le dossier `node_modules` et réinstallez (`rm -rf node_modules && npm install`)
+* Make sure all dependencies are installed (`npm install`)
+* Look at the specific errors in the webpack output
+* Try deleting `node_modules` and reinstalling:
 
-### Problèmes d'API
+  ```bash
+  rm -rf node_modules && npm install
+  ```
 
-- Vérifiez que les requêtes API utilisent les bons chemins d'accès
-- Confirmez que le serveur backend est en cours d'exécution
-- Inspectez la réponse de l'API dans l'onglet Réseau des DevTools
+### API Issues
 
-## Ressources supplémentaires
+* Verify that API requests use the correct paths
+* Confirm that the backend server is running
+* Inspect the API response in the browser DevTools Network tab
 
-- [Documentation React](https://reactjs.org/docs/getting-started.html)
-- [Documentation Tailwind CSS](https://tailwindcss.com/docs)
-- [Documentation Webpack](https://webpack.js.org/concepts/)
-- [Recharts (pour les graphiques)](https://recharts.org/en-US/)
-- [Lucide React (pour les icônes)](https://lucide.dev/guide/packages/lucide-react)
+## Additional Resources
 
+* [React Documentation](https://reactjs.org/docs/getting-started.html)
+* [Tailwind CSS Documentation](https://tailwindcss.com/docs)
+* [Webpack Documentation](https://webpack.js.org/concepts/)
+* [Recharts (Charts Library)](https://recharts.org/en-US/)
+* [Lucide React (Icons)](https://lucide.dev/guide/packages/lucide-react)
 
 ```
 web/
@@ -440,43 +444,43 @@ web/
 │   ├── css/
 │   │   └── tailwind.css
 │   ├── js/
-│   │   ├── api.js          # Client API pour communiquer avec le backend
-│   │   └── utils.js        # Fonctions utilitaires
+│   │   ├── api.js          # API client to communicate with the backend
+│   │   └── utils.js        # Utility functions
 │   └── images/
 │       └── logo.svg
 ├── components/
 │   ├── layout/
-│   │   ├── Sidebar.js      # Barre latérale de navigation
-│   │   ├── Header.js       # En-tête avec breadcrumbs et actions
-│   │   └── Layout.js       # Layout principal
+│   │   ├── Sidebar.js      # Sidebar navigation
+│   │   ├── Header.js       # Header with breadcrumbs and actions
+│   │   └── Layout.js       # Main layout
 │   ├── common/
-│   │   ├── Button.js       # Boutons réutilisables
-│   │   ├── Card.js         # Composant carte
-│   │   ├── Modal.js        # Fenêtre modale
-│   │   └── Table.js        # Tableau de données
+│   │   ├── Button.js       # Reusable buttons
+│   │   ├── Card.js         # Card component
+│   │   ├── Modal.js        # Modal window
+│   │   └── Table.js        # Data table
 │   ├── domain/
-│   │   ├── DomainList.js   # Liste des domaines
-│   │   ├── DomainForm.js   # Formulaire de création/édition
-│   │   └── SchemaEditor.js # Éditeur de schéma
+│   │   ├── DomainList.js   # Domain list
+│   │   ├── DomainForm.js   # Creation/edit form
+│   │   └── SchemaEditor.js # Schema editor
 │   ├── queue/
-│   │   ├── QueueList.js    # Liste des files d'attente
-│   │   ├── QueueForm.js    # Formulaire de création/édition
-│   │   └── QueueMonitor.js # Moniteur de messages en temps réel
+│   │   ├── QueueList.js    # Queue list
+│   │   ├── QueueForm.js    # Creation/edit form
+│   │   └── QueueMonitor.js # Real-time message monitor
 │   ├── message/
-│   │   ├── MessageList.js  # Liste des messages
-│   │   ├── MessageForm.js  # Formulaire de création
-│   │   └── MessageView.js  # Vue détaillée d'un message
+│   │   ├── MessageList.js  # Message list
+│   │   ├── MessageForm.js  # Creation form
+│   │   └── MessageView.js  # Detailed message view
 │   └── routing/
-│       ├── RuleList.js     # Liste des règles de routage
-│       ├── RuleForm.js     # Formulaire de création/édition
-│       └── RuleVisualizer.js # Visualisation des règles
+│       ├── RuleList.js     # Routing rules list
+│       ├── RuleForm.js     # Creation/edit form
+│       └── RuleVisualizer.js # Rule visualization
 ├── pages/
-│   ├── Dashboard.js        # Tableau de bord principal
-│   ├── Domains.js          # Gestion des domaines
-│   ├── Queues.js           # Gestion des files d'attente
-│   ├── Messages.js         # Visualisation des messages
-│   ├── Routes.js           # Gestion des règles de routage
-│   └── Settings.js         # Paramètres du système
-├── app.js                  # Point d'entrée de l'application
-└── index.html              # Page HTML principale
+│   ├── Dashboard.js        # Main dashboard
+│   ├── Domains.js          # Domain management
+│   ├── Queues.js           # Queue management
+│   ├── Messages.js         # Message viewer
+│   ├── Routes.js           # Routing rules management
+│   └── Settings.js         # System settings
+├── app.js                  # Application entry point
+└── index.html              # Main HTML page
 ```
