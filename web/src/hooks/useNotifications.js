@@ -1,37 +1,91 @@
 import { useState, useEffect, useCallback } from 'react';
+import api from '../api';
 
 export function useNotifications() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // FAKE for now
+  // Fetch notifications
+  const fetchNotifications = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await api.getNotifications();
+      setNotifications(data);
+      setUnreadCount(data.filter(n => !n.read).length);
+      setError(null);
+    } catch (err) {
+      setError(err.message || 'Failed to load notifications');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Load on mount
   useEffect(() => {
-    setNotifications([
-      {
-        id: '1',
-        type: 'warning',
-        message: 'Queue orders.processing is approaching capacity',
-        timestamp: Date.now() - 5 * 60 * 1000,
-        read: false
-      },
-      {
-        id: '2',
-        type: 'info',
-        message: 'New domain analytics created',
-        timestamp: Date.now() - 60 * 60 * 1000,
-        read: false
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  // Mark as read
+  const markAsRead = useCallback(async (notificationId) => {
+    try {
+      // Optimistic update
+      setNotifications(prev => 
+        prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+
+      // API call
+      await api.markNotificationAsRead(notificationId);
+    } catch (err) {
+      // Revert on error
+      setError(err.message || 'Failed to mark as read');
+      await fetchNotifications();
+    }
+  }, [fetchNotifications]);
+
+  // Add notification (for local notifications like success messages)
+  const addNotification = useCallback((message, type = 'info', autoRemove = false) => {
+    const notification = {
+      id: `local-${Date.now()}`,
+      type,
+      message,
+      timestamp: Date.now(),
+      read: false,
+      local: true // Flag to distinguish from API notifications
+    };
+
+    setNotifications(prev => [notification, ...prev]);
+    setUnreadCount(prev => prev + 1);
+
+    // Auto-remove after 5 seconds if requested
+    if (autoRemove) {
+      setTimeout(() => {
+        removeNotification(notification.id);
+      }, 5000);
+    }
+  }, []);
+
+  // Remove notification (for local notifications)
+  const removeNotification = useCallback((notificationId) => {
+    setNotifications(prev => {
+      const notification = prev.find(n => n.id === notificationId);
+      if (notification && !notification.read) {
+        setUnreadCount(count => Math.max(0, count - 1));
       }
-    ]);
-    
-    setUnreadCount(2);
+      return prev.filter(n => n.id !== notificationId);
+    });
   }, []);
 
-  const markAsRead = useCallback((notificationId) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
-    );
-    setUnreadCount(prev => Math.max(0, prev - 1));
-  }, []);
-
-  return { notifications, unreadCount, markAsRead };
+  return { 
+    notifications, 
+    unreadCount, 
+    loading,
+    error,
+    markAsRead,
+    addNotification,
+    removeNotification,
+    refresh: fetchNotifications
+  };
 }

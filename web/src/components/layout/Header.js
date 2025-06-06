@@ -13,6 +13,7 @@ export const Header = ({ toggleSidebar }) => {
           <button
             className="p-2 rounded-md text-gray-500 lg:hidden"
             onClick={toggleSidebar}
+            aria-label="menu"
           >
             <Menu className="h-6 w-6" />
           </button>
@@ -23,12 +24,12 @@ export const Header = ({ toggleSidebar }) => {
 
         <div className="flex items-center space-x-4">
           <SearchBar />
-          <NotificationDropdown 
+          <NotificationDropdown
             notifications={notifications}
             unreadCount={unreadCount}
             onMarkAsRead={markAsRead}
           />
-          <ProfileDropdown 
+          <ProfileDropdown
             isOpen={profileOpen}
             setIsOpen={setProfileOpen}
           />
@@ -73,9 +74,9 @@ const NotificationDropdown = ({ notifications, unreadCount, onMarkAsRead }) => {
           </div>
           <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
             {notifications.map((notification) => (
-              <NotificationItem 
-                key={notification.id} 
-                notification={notification} 
+              <NotificationItem
+                key={notification.id}
+                notification={notification}
                 onRead={() => onMarkAsRead(notification.id)}
               />
             ))}

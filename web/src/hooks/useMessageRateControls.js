@@ -50,7 +50,8 @@ export const useMessageRateControls = () => {
 
   const handleGranularityChange = useCallback((newGranularity) => {
     setGranularity(newGranularity);
-    setIsExploring(true);
+    setIsExploring(!(newGranularity === 'auto' && period === '1h'));
+    // setIsExploring(!(['1m', 'auto'].includes(newGranularity) && period === '1h'));
   }, []);
 
   const resetToDefaults = useCallback(() => {

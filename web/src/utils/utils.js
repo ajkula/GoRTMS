@@ -1,5 +1,3 @@
-
-
 // Function to format an event message based on its type
 export const formatEventMessage = (event) => {
   switch (event.eventType) {
@@ -72,32 +70,37 @@ export const formatDuration = (nanoseconds) => {
   if (!nanoseconds || nanoseconds <= 0) {
     return 'No TTL';
   }
-  
+
   // nanosecondes to millisecondes
   const ms = nanoseconds / 1000000;
-  
+
   // Time units
   const seconds = Math.floor(ms / 1000) % 60;
   const minutes = Math.floor(ms / (1000 * 60)) % 60;
   const hours = Math.floor(ms / (1000 * 60 * 60)) % 24;
   const days = Math.floor(ms / (1000 * 60 * 60 * 24));
-  
+
+  const timeQualifiers = {
+    0: 'd',
+    1: 'h',
+    2: 'm',
+    3: 's',
+  };
+
   // build chain
-  if (days > 0) {
-    return `${days}d ${hours}h`;
-  } else if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  } else {
-    return `${seconds}s`;
-  }
+  return [days, hours, minutes, seconds]
+    .reduce((prev, curr, idx) => {
+      if (curr > 0) {
+        prev.push(curr + timeQualifiers[idx])
+      }
+      return prev
+    }, []).join(' ');
 }
 
 export const formatDeliveryMode = (mode) => deliveryModes[mode].label;
 
 export const deliveryModes = [
-  {value: "broadcast", label: "Broadcast"},
-  {value: "roundRobin", label: "Round Robin"},
-  {value: "singleConsumer", label: "Single Consumer"},
+  { value: "broadcast", label: "Broadcast" },
+  { value: "roundRobin", label: "Round Robin" },
+  { value: "singleConsumer", label: "Single Consumer" },
 ];

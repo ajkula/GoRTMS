@@ -421,7 +421,41 @@ const api = {
       console.error('Health check failed:', error);
       return { status: 'error' };
     }
-  }
+  },
+
+
+  // Mocks TODO implem
+  getNotifications: async () => {
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Mock data - TODO: Replace with actual API call
+    return [
+      {
+        id: '1',
+        type: 'warning',
+        message: 'Queue orders.processing is approaching capacity',
+        timestamp: Date.now() - 5 * 60 * 1000,
+        read: false
+      },
+      {
+        id: '2',
+        type: 'info',
+        message: 'New domain analytics created',
+        timestamp: Date.now() - 60 * 60 * 1000,
+        read: false
+      }
+    ];
+  },
+
+  markNotificationAsRead: async (notificationId) => {
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // TODO: Replace with actual API call
+    // For now, just return success
+    return { success: true };
+  },
 };
 
 export default api;

@@ -97,7 +97,10 @@ const App = () => {
       <Header toggleSidebar={toggleSidebar} />
 
       {!systemHealthy && (
-        <div className="bg-red-600 text-white px-4 py-2 text-center">
+        <div 
+          className="bg-red-600 text-white px-4 py-2 text-center"
+          data-testid="health-indicator"
+        >
           Backend API unavailable. Some features might not work correctly.
         </div>
       )}

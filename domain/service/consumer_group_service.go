@@ -186,7 +186,7 @@ func (s *ConsumerGroupServiceImpl) GetPendingMessages(ctx context.Context, domai
 	// Get pending message IDs
 	pendingIDs := matrix.GetPendingMessageIDs(groupID)
 	if len(pendingIDs) == 0 {
-		s.logger.Debug("No pending message IDs found", groupID)
+		s.logger.Debug("No pending message IDs found", "group", groupID)
 		return []*model.Message{}, nil
 	}
 
