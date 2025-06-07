@@ -399,3 +399,194 @@ func TestGetStatsWithAggregation_EdgeCases(t *testing.T) {
 		}
 	})
 }
+
+func TestCalculateTrend(t *testing.T) {
+	tests := []struct {
+		name     string
+		previous int
+		current  int
+		expected *Trend
+	}{
+		{
+			name:     "No previous data",
+			previous: 0,
+			current:  10,
+			expected: nil,
+		},
+
+		{
+			name:     "No change",
+			previous: 10,
+			current:  10,
+			expected: &Trend{Direction: "up", Value: 0},
+		},
+
+		{
+			name:     "20% increase",
+			previous: 10,
+			current:  12,
+			expected: &Trend{Direction: "up", Value: 20},
+		},
+		{
+			name:     "100% increase (double)",
+			previous: 5,
+			current:  10,
+			expected: &Trend{Direction: "up", Value: 100},
+		},
+		{
+			name:     "Large increase",
+			previous: 1,
+			current:  10,
+			expected: &Trend{Direction: "up", Value: 900},
+		},
+
+		{
+			name:     "50% decrease",
+			previous: 10,
+			current:  5,
+			expected: &Trend{Direction: "down", Value: 50},
+		},
+		{
+			name:     "Complete decrease to zero",
+			previous: 10,
+			current:  0,
+			expected: &Trend{Direction: "down", Value: 100},
+		},
+		{
+			name:     "Small decrease",
+			previous: 100,
+			current:  99,
+			expected: &Trend{Direction: "down", Value: 1},
+		},
+
+		{
+			name:     "Negative previous to positive",
+			previous: -10,
+			current:  5,
+			expected: &Trend{Direction: "up", Value: 150},
+		},
+		{
+			name:     "Both negative - improvement",
+			previous: -10,
+			current:  -5,
+			expected: &Trend{Direction: "up", Value: 50},
+		},
+		{
+			name:     "Both negative - degradation",
+			previous: -5,
+			current:  -10,
+			expected: &Trend{Direction: "down", Value: 100},
+		},
+
+		{
+			name:     "Large numbers",
+			previous: 1000000,
+			current:  1100000,
+			expected: &Trend{Direction: "up", Value: 10},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calculateTrend(tt.previous, tt.current)
+
+			if tt.expected == nil {
+				assert.Nil(t, result, "Expected nil trend")
+			} else {
+				assert.NotNil(t, result, "Expected non-nil trend")
+				assert.Equal(t, tt.expected.Direction, result.Direction, "Direction should match")
+				assert.InDelta(t, tt.expected.Value, result.Value, 0.01, "Value should match within tolerance")
+			}
+		})
+	}
+}
+
+func TestCalculateDomainMessageRate(t *testing.T) {
+	tests := []struct {
+		name       string
+		domainName string
+		rates      []MessageRate
+		expected   float64
+	}{
+		{
+			name:       "Empty rates slice",
+			domainName: "test-domain",
+			rates:      []MessageRate{},
+			expected:   0,
+		},
+
+		{
+			name:       "Single rate",
+			domainName: "test-domain",
+			rates: []MessageRate{
+				{Rate: 10.5},
+			},
+			expected: 10.5,
+		},
+
+		{
+			name:       "Multiple rates - returns last",
+			domainName: "test-domain",
+			rates: []MessageRate{
+				{Rate: 5.0},
+				{Rate: 15.0},
+				{Rate: 25.5},
+			},
+			expected: 25.5,
+		},
+
+		{
+			name:       "Zero rate",
+			domainName: "test-domain",
+			rates: []MessageRate{
+				{Rate: 0.0},
+			},
+			expected: 0.0,
+		},
+
+		{
+			name:       "Decimal rates",
+			domainName: "test-domain",
+			rates: []MessageRate{
+				{Rate: 1.234},
+				{Rate: 5.678},
+				{Rate: 9.999},
+			},
+			expected: 9.999,
+		},
+
+		{
+			name:       "Different domain name (should not affect result)",
+			domainName: "another-domain",
+			rates: []MessageRate{
+				{Rate: 42.0},
+			},
+			expected: 42.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calculateDomainMessageRate(tt.domainName, tt.rates)
+			assert.Equal(t, tt.expected, result, "Message rate should match expected value")
+		})
+	}
+}
+
+func TestCalculateDomainMessageRate_SliceModification(t *testing.T) {
+	rates := []MessageRate{
+		{Rate: 10.0},
+		{Rate: 20.0},
+		{Rate: 30.0},
+	}
+
+	result := calculateDomainMessageRate("test", rates)
+	assert.Equal(t, 30.0, result)
+
+	rates[2].Rate = 99.0
+
+	newResult := calculateDomainMessageRate("test", rates)
+	assert.Equal(t, 99.0, newResult)
+
+	assert.Equal(t, 30.0, result, "Previous result should remain unchanged")
+}

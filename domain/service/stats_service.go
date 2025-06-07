@@ -241,16 +241,18 @@ func (s *StatsServiceImpl) RecordEvent(eventType, eventSeverity, resource string
 		for i, evt := range s.metrics.systemEvents {
 			if evt.EventType == eventType && evt.Resource == resource {
 				// Replace only if the new event is more critical
-				// or if the old one is too old (> 5 minutes)
 				oldSeverity := evt.Type
-				timeDiff := now.Unix() - evt.UnixTime
+				oldData := evt.Data
+				hasChanged := (eventSeverity != oldSeverity || data != oldData)
 
-				if eventSeverity == "warning" || oldSeverity != "warning" || timeDiff > 300 {
+				if hasChanged {
+					// Real change → update timestamp
 					s.metrics.systemEvents[i].Data = data
 					s.metrics.systemEvents[i].Type = eventSeverity
 					s.metrics.systemEvents[i].Timestamp = now
 					s.metrics.systemEvents[i].UnixTime = now.Unix()
 				}
+				// No change → keep existing timestamp
 				return
 			}
 		}
@@ -717,10 +719,13 @@ func calculateTrend(previous, current int) *Trend {
 		return nil
 	}
 
-	change := float64(current-previous) / float64(previous) * 100
 	direction := "up"
-	if change < 0 {
+	if current < previous {
 		direction = "down"
+	}
+
+	change := float64(current-previous) / float64(abs(previous)) * 100
+	if change < 0 {
 		change = -change
 	}
 
@@ -728,6 +733,13 @@ func calculateTrend(previous, current int) *Trend {
 		Direction: direction,
 		Value:     change,
 	}
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 func (s *StatsServiceImpl) Cleanup() {
