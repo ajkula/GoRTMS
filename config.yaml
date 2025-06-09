@@ -1,7 +1,7 @@
 general:
     nodeId: node1
     dataDir: C:\dev\GO\GoRTMS\data
-    logLevel: info
+    logLevel: debug
     development: true
 storage:
     engine: memory

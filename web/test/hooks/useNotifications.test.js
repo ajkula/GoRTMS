@@ -59,7 +59,7 @@ describe('useNotifications', () => {
     });
 
     // Mark as read
-    await waitFor(async () => {
+    await act(async () => {
       await result.current.markAsRead('1');
     });
 
@@ -188,7 +188,7 @@ describe('useNotifications', () => {
     api.markNotificationAsRead.mockRejectedValue(new Error('Failed to mark'));
 
     // Try to mark as read
-    await waitFor(async () => {
+    await act(async () => {
       await result.current.markAsRead('1');
     });
 

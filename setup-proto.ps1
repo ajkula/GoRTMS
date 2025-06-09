@@ -1,0 +1,1 @@
+protoc --go_out=. --go-grpc_out=. adapter/inbound/grpc/proto/realtimedb.proto

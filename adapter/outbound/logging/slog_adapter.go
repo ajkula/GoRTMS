@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ajkula/GoRTMS/config"
@@ -36,6 +37,7 @@ type SlogAdapter struct {
 	logChan   chan LogMessage
 	ctx       context.Context
 	cancel    context.CancelFunc
+	levelMu   sync.RWMutex
 	slogLevel *slog.LevelVar
 }
 
@@ -67,6 +69,8 @@ func NewSlogAdapter(config *config.Config) outbound.Logger {
 
 // updates both config and slog level dynamically
 func (s *SlogAdapter) UpdateLevel(logLvl string) {
+	s.levelMu.Lock()
+	defer s.levelMu.Unlock()
 
 	normalizedLevel := strings.ToLower(logLvl)
 

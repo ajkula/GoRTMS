@@ -8,11 +8,9 @@ describe('useHealthCheck', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
-    jest.spyOn(console, 'error').mockImplementation(() => { });
   });
 
   afterEach(() => {
-    console.error.mockRestore();
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
   });
@@ -23,10 +21,9 @@ describe('useHealthCheck', () => {
     const { result } = renderHook(() => useHealthCheck(5000));
 
     expect(result.current.loading).toBe(true);
-    await act(async () => {
-      await waitFor(() => {
-        expect(result.current.systemHealthy).toBe(true);
-      });
+    await waitFor(() => {
+      expect(result.current.systemHealthy).toBe(true);
+      expect(result.current.loading).toBe(false);
     });
 
     expect(api.healthCheck).toHaveBeenCalledTimes(1);
