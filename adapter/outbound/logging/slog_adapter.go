@@ -31,27 +31,51 @@ type LogMessage struct {
 // implements the Logger interface using Go's structured logging (slog)
 // with asynchronous processing to avoid blocking hot paths
 type SlogAdapter struct {
-	logger  *slog.Logger
-	config  *config.Config
-	logChan chan LogMessage
-	ctx     context.Context
-	cancel  context.CancelFunc
+	logger    *slog.Logger
+	config    *config.Config
+	logChan   chan LogMessage
+	ctx       context.Context
+	cancel    context.CancelFunc
+	slogLevel *slog.LevelVar
 }
 
 func NewSlogAdapter(config *config.Config) outbound.Logger {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Create a LevelVar for dynamic level changes
+	levelVar := &slog.LevelVar{}
+	levelVar.Set(parseSlogLevel(config.General.LogLevel))
+
+	// Create handler with dynamic level
+	handlerOpts := &slog.HandlerOptions{
+		Level: levelVar,
+	}
+
 	adapter := &SlogAdapter{
-		logger:  slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
-		config:  config,
-		logChan: make(chan LogMessage, config.Logging.ChannelSize),
-		ctx:     ctx,
-		cancel:  cancel,
+		logger:    slog.New(slog.NewJSONHandler(os.Stdout, handlerOpts)),
+		config:    config,
+		logChan:   make(chan LogMessage, config.Logging.ChannelSize),
+		ctx:       ctx,
+		cancel:    cancel,
+		slogLevel: levelVar,
 	}
 
 	go adapter.processLogs()
 
 	return adapter
+}
+
+// updates both config and slog level dynamically
+func (s *SlogAdapter) UpdateLevel(logLvl string) {
+
+	normalizedLevel := strings.ToLower(logLvl)
+
+	s.config.General.LogLevel = normalizedLevel
+	s.config.Logging.Level = strings.ToUpper(normalizedLevel)
+
+	s.slogLevel.Set(parseSlogLevel(normalizedLevel))
+
+	s.Info("Logger level updated dynamically", "new_level", normalizedLevel)
 }
 
 // hadles messages asynchronously
@@ -69,6 +93,22 @@ func (s *SlogAdapter) processLogs() {
 			}
 			return
 		}
+	}
+}
+
+// converts string level to slog.Level
+func parseSlogLevel(level string) slog.Level {
+	switch strings.ToLower(level) {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
 	}
 }
 
@@ -101,7 +141,9 @@ func (s *SlogAdapter) sendLog(level LogLevel, msg string, args ...any) {
 }
 
 func (s *SlogAdapter) shouldLog(level LogLevel) bool {
-	switch strings.ToUpper(s.config.Logging.Level) {
+	currentLevel := strings.ToUpper(s.config.General.LogLevel)
+
+	switch currentLevel {
 	case "ERROR":
 		return level == LevelError
 	case "WARN":
@@ -115,7 +157,7 @@ func (s *SlogAdapter) shouldLog(level LogLevel) bool {
 	}
 }
 
-func (s SlogAdapter) Error(msg string, args ...any) {
+func (s *SlogAdapter) Error(msg string, args ...any) {
 	if !s.shouldLog(LevelError) {
 		return
 	}

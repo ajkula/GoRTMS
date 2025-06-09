@@ -17,6 +17,7 @@ func (m *mockLogger) Info(msg string, keysAndValues ...interface{})  {}
 func (m *mockLogger) Error(msg string, keysAndValues ...interface{}) {}
 func (m *mockLogger) Debug(msg string, keysAndValues ...interface{}) {}
 func (m *mockLogger) Warn(msg string, keysAndValues ...interface{})  {}
+func (m *mockLogger) UpdateLevel(logLvl string)                      {}
 
 type mockDomainRepository struct {
 	domains []*model.Domain

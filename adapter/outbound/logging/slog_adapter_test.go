@@ -11,6 +11,7 @@ import (
 func createTestConfig(level string) *config.Config {
 	cfg := config.DefaultConfig()
 	cfg.Logging.Level = level
+	cfg.General.LogLevel = level
 	cfg.Logging.ChannelSize = 100
 	cfg.Logging.Format = "json"
 	cfg.Logging.Output = "stdout"

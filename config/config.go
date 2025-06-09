@@ -321,7 +321,7 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	// Validate the configuration
-	if err := validateConfig(config); err != nil {
+	if err := ValidateConfig(config); err != nil {
 		return nil, err
 	}
 
@@ -350,8 +350,8 @@ func SaveConfig(config *Config, path string) error {
 	return nil
 }
 
-// validateConfig validates the configuration
-func validateConfig(config *Config) error {
+// ValidateConfig validates the configuration
+func ValidateConfig(config *Config) error {
 	// Check the log level
 	logLevel := strings.ToLower(config.General.LogLevel)
 	if logLevel != "debug" && logLevel != "info" && logLevel != "warn" && logLevel != "error" {

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ajkula/GoRTMS/config"
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
@@ -23,6 +24,7 @@ import (
 // REST API handler
 type Handler struct {
 	logger               outbound.Logger
+	config               *config.Config
 	messageService       inbound.MessageService
 	domainService        inbound.DomainService
 	queueService         inbound.QueueService
@@ -35,6 +37,7 @@ type Handler struct {
 
 func NewHandler(
 	logger outbound.Logger,
+	config *config.Config,
 	messageService inbound.MessageService,
 	domainService inbound.DomainService,
 	queueService inbound.QueueService,
@@ -46,6 +49,7 @@ func NewHandler(
 ) *Handler {
 	return &Handler{
 		logger:               logger,
+		config:               config,
 		messageService:       messageService,
 		domainService:        domainService,
 		queueService:         queueService,
@@ -106,6 +110,11 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 		router.HandleFunc("/api/resources/history", h.getResourceStatsHistory).Methods("GET")
 		router.HandleFunc("/api/resources/domains/{domain}", h.getDomainResourceStats).Methods("GET")
 	}
+
+	// settings routes
+	router.HandleFunc("/api/settings", h.getSettings).Methods("GET")
+	router.HandleFunc("/api/settings", h.updateSettings).Methods("PUT")
+	router.HandleFunc("/api/settings/reset", h.resetSettings).Methods("POST")
 
 	// health check routes
 	router.HandleFunc("/health", h.healthCheck).Methods("GET")

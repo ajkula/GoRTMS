@@ -139,6 +139,7 @@ func main() {
 		// REST adapter
 		restHandler := rest.NewHandler(
 			logger,
+			cfg,
 			messageService,
 			domainService,
 			queueService,

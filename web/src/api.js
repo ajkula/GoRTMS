@@ -456,6 +456,71 @@ const api = {
     // For now, just return success
     return { success: true };
   },
+
+  // Settings
+  async getSettings() {
+    try {
+      const response = await fetch('/api/settings', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to get settings:', error);
+      throw error;
+    }
+  },
+
+  async updateSettings(config) {
+    try {
+      const response = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ config }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to update settings:', error);
+      throw error;
+    }
+  },
+
+  async resetSettings() {
+    try {
+      const response = await fetch('/api/settings/reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to reset settings:', error);
+      throw error;
+    }
+  },
 };
 
 export default api;

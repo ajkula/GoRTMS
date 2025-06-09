@@ -13,6 +13,7 @@ import MessagePublisher from './components/MessagePublisher';
 import Routing from './pages/Routing';
 import ConsumerGroupsManager from './components/ConsumerGroupsManager';
 import ConsumerGroupDetail from './components/ConsumerGroupDetail';
+import Settings from './components/SettingsComponent';
 import Events from './pages/Events';
 
 const App = () => {
@@ -85,10 +86,7 @@ const App = () => {
     'events': <Events onBack={navigate.toDashboard} />,
     
     'settings': (
-      <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="mt-2 text-gray-600">System settings will be available soon.</p>
-      </div>
+      <Settings />
     ),
   };
 

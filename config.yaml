@@ -1,14 +1,14 @@
 general:
     nodeId: node1
-    dataDir: ./data
+    dataDir: C:\dev\GO\GoRTMS\data
     logLevel: info
-    development: false
+    development: true
 storage:
     engine: memory
-    path: ./data/storage
+    path: C:\dev\GO\GoRTMS\data\data\storage
     retentionDays: 7
     sync: true
-    maxSizeMB: 1024
+    maxSizeMB: 1025
 http:
     enabled: true
     address: 0.0.0.0
@@ -52,7 +52,7 @@ cluster:
     electionTimeout: 1s
 domains: []
 logging:
-    level: DEBUG
+    level: INFO
     channelSize: 1000
     format: json
     output: stdout

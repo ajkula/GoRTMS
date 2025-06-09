@@ -8,4 +8,5 @@ type Logger interface {
 	Warn(msg string, args ...any)
 	Info(msg string, args ...any)
 	Debug(msg string, args ...any)
+	UpdateLevel(logLvl string)
 }
