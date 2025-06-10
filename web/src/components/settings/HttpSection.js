@@ -73,26 +73,26 @@ const HttpSection = ({ config, updateConfig, updateArrayField, addArrayItem, rem
         <div className="flex items-center mb-2">
           <input
             type="checkbox"
-            checked={config.HTTP?.cors?.Enabled}
-            onChange={(e) => updateConfig('HTTP', 'cors.Enabled', e.target.checked)}
+            checked={config.HTTP?.CORS?.Enabled}
+            onChange={(e) => updateConfig('HTTP', 'CORS.Enabled', e.target.checked)}
             className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
           />
           <label className="ml-2 block text-sm text-gray-900">Enable CORS</label>
         </div>
         
-        {config.HTTP?.cors?.Enabled && (
+        {config.HTTP?.CORS?.Enabled && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Allowed Origins</label>
-            {config.HTTP?.cors?.AllowedOrigins?.map((origin, index) => (
+            {config.HTTP?.CORS?.AllowedOrigins?.map((origin, index) => (
               <div key={index} className="flex items-center mb-2">
                 <input
                   type="text"
                   value={origin}
-                  onChange={(e) => updateArrayField('HTTP', 'cors.AllowedOrigins', index, e.target.value)}
+                  onChange={(e) => updateArrayField('HTTP', 'CORS.AllowedOrigins', index, e.target.value)}
                   className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 />
                 <button
-                  onClick={() => removeArrayItem('HTTP', 'cors.AllowedOrigins', index)}
+                  onClick={() => removeArrayItem('HTTP', 'CORS.AllowedOrigins', index)}
                   className="ml-2 px-3 py-1 bg-red-100 text-red-700 rounded-md hover:bg-red-200"
                 >
                   Remove
@@ -100,7 +100,7 @@ const HttpSection = ({ config, updateConfig, updateArrayField, addArrayItem, rem
               </div>
             ))}
             <button
-              onClick={() => addArrayItem('HTTP', 'cors.AllowedOrigins')}
+              onClick={() => addArrayItem('HTTP', 'CORS.AllowedOrigins')}
               className="px-3 py-1 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
             >
               Add Origin
@@ -112,15 +112,6 @@ const HttpSection = ({ config, updateConfig, updateArrayField, addArrayItem, rem
       <div className="border-t pt-4">
         <h3 className="text-md font-medium text-gray-900 mb-2">JWT Settings</h3>
         <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Secret</label>
-            <input
-              type="password"
-              value={config.HTTP?.JWT?.Secret}
-              onChange={(e) => updateConfig('HTTP', 'JWT.Secret', e.target.value)}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-            />
-          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">Expiration (minutes)</label>
             <input

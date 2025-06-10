@@ -1,14 +1,14 @@
 general:
     nodeId: node1
-    dataDir: C:\dev\GO\GoRTMS\data
-    logLevel: debug
-    development: true
+    dataDir: ./data
+    logLevel: info
+    development: false
 storage:
     engine: memory
-    path: C:\dev\GO\GoRTMS\data\data\storage
+    path: ./data/storage
     retentionDays: 7
     sync: true
-    maxSizeMB: 1025
+    maxSizeMB: 1024
 http:
     enabled: true
     address: 0.0.0.0

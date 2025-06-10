@@ -14,14 +14,14 @@ import (
 )
 
 type SettingsResponse struct {
-	Config   *config.Config `json:"config"`
-	FilePath string         `json:"filePath"`
-	Message  string         `json:"message,omitempty"`
+	Config   *config.PublicConfig `json:"config"`
+	FilePath string               `json:"filePath"`
+	Message  string               `json:"message,omitempty"`
 }
 
 type SettingsUpdateRequest struct {
-	Config        *config.Config `json:"config"`
-	RestartNeeded bool           `json:"restartNeeded,omitempty"`
+	Config        *config.PublicConfig `json:"config"`
+	RestartNeeded bool                 `json:"restartNeeded,omitempty"`
 }
 
 var (
@@ -34,9 +34,10 @@ func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Get current config from global instance
 	currentConfig := h.getCurrentConfig()
+	publicConfig := currentConfig.ToPublic()
 
 	response := SettingsResponse{
-		Config:   currentConfig,
+		Config:   publicConfig,
 		FilePath: h.getConfigFilePath(),
 		Message:  "Settings retrieved successfully",
 	}
@@ -64,18 +65,23 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	currentConfig := h.getCurrentConfig()
+	newConfig := &config.Config{}
+	*newConfig = *currentConfig
+	newConfig.MergeFromPublic(req.Config)
+
 	// Validate the configuration
-	if err := h.validateConfigUpdate(req.Config); err != nil {
+	if err := h.validateConfigUpdate(newConfig); err != nil {
 		h.logger.Error("Configuration validation failed", "error", err)
 		http.Error(w, fmt.Sprintf("Invalid configuration: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	// Determine if restart is needed
-	restartNeeded := h.requiresRestart(req.Config)
+	restartNeeded := h.requiresRestart(newConfig)
 
 	configPath := h.getConfigFilePath()
-	if err := config.SaveConfig(req.Config, configPath); err != nil {
+	if err := config.SaveConfig(newConfig, configPath); err != nil {
 		h.logger.Error("Failed to save configuration", "error", err)
 		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
 		return
@@ -83,7 +89,7 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Update runtime configuration (no restart)
 	if !restartNeeded {
-		if err := h.updateRuntimeConfig(req.Config); err != nil {
+		if err := h.updateRuntimeConfig(newConfig); err != nil {
 			h.logger.Error("Failed to update runtime configuration", "error", err)
 			h.logger.Warn("Configuration saved to file but runtime update failed")
 		}
@@ -93,8 +99,9 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 		"restart_needed", restartNeeded,
 		"config_path", configPath)
 
+	publicConfig := newConfig.ToPublic()
 	response := SettingsResponse{
-		Config:   req.Config,
+		Config:   publicConfig,
 		FilePath: configPath,
 		Message:  "Settings updated successfully",
 	}
@@ -126,8 +133,9 @@ func (h *Handler) resetSettings(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("Settings reset to defaults", "config_path", configPath)
 
+	publicResponse := defaultConfig.ToPublic()
 	response := SettingsResponse{
-		Config:   defaultConfig,
+		Config:   publicResponse,
 		FilePath: configPath,
 		Message:  "Settings reset to defaults. Server restart recommended.",
 	}

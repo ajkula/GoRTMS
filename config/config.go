@@ -396,3 +396,73 @@ func ValidateConfig(config *Config) error {
 
 	return nil
 }
+
+func (c *Config) ToPublic() *PublicConfig {
+	pub := &PublicConfig{}
+
+	pub.General = c.General
+	pub.Storage = c.Storage
+
+	pub.HTTP.Enabled = c.HTTP.Enabled
+	pub.HTTP.Address = c.HTTP.Address
+	pub.HTTP.Port = c.HTTP.Port
+	pub.HTTP.TLS = c.HTTP.TLS
+	pub.HTTP.CertFile = c.HTTP.CertFile
+	pub.HTTP.KeyFile = c.HTTP.KeyFile
+	pub.HTTP.CORS = c.HTTP.CORS
+	pub.HTTP.JWT.ExpirationMinutes = c.HTTP.JWT.ExpirationMinutes
+
+	// AMQP, MQTT, GRPC
+	pub.AMQP = c.AMQP
+	pub.MQTT = c.MQTT
+	pub.GRPC = c.GRPC
+
+	pub.Security.EnableAuthentication = c.Security.EnableAuthentication
+	pub.Security.EnableAuthorization = c.Security.EnableAuthorization
+	pub.Security.AdminUsername = c.Security.AdminUsername
+
+	// Monitoring, Cluster, Domains, Logging
+	pub.Monitoring = c.Monitoring
+	pub.Cluster = c.Cluster
+	pub.Domains = c.Domains
+	pub.Logging = c.Logging
+
+	return pub
+}
+
+func (c *Config) MergeFromPublic(pub *PublicConfig) {
+	existingJWTSecret := c.HTTP.JWT.Secret
+	existingAdminPassword := c.Security.AdminPassword
+
+	c.General = pub.General
+	c.Storage = pub.Storage
+
+	// HTTP
+	c.HTTP.Enabled = pub.HTTP.Enabled
+	c.HTTP.Address = pub.HTTP.Address
+	c.HTTP.Port = pub.HTTP.Port
+	c.HTTP.TLS = pub.HTTP.TLS
+	c.HTTP.CertFile = pub.HTTP.CertFile
+	c.HTTP.KeyFile = pub.HTTP.KeyFile
+	c.HTTP.CORS = pub.HTTP.CORS
+	c.HTTP.JWT.ExpirationMinutes = pub.HTTP.JWT.ExpirationMinutes
+
+	// AMQP, MQTT, GRPC
+	c.AMQP = pub.AMQP
+	c.MQTT = pub.MQTT
+	c.GRPC = pub.GRPC
+
+	// Security
+	c.Security.EnableAuthentication = pub.Security.EnableAuthentication
+	c.Security.EnableAuthorization = pub.Security.EnableAuthorization
+	c.Security.AdminUsername = pub.Security.AdminUsername
+
+	// Monitoring, Cluster, Domains, Logging
+	c.Monitoring = pub.Monitoring
+	c.Cluster = pub.Cluster
+	c.Domains = pub.Domains
+	c.Logging = pub.Logging
+
+	c.HTTP.JWT.Secret = existingJWTSecret
+	c.Security.AdminPassword = existingAdminPassword
+}
