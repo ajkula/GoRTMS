@@ -25,6 +25,9 @@ import (
 type Handler struct {
 	logger               outbound.Logger
 	config               *config.Config
+	authService          inbound.AuthService
+	authMiddleware       *AuthMiddleware
+	authHandler          *AuthHandler
 	messageService       inbound.MessageService
 	domainService        inbound.DomainService
 	queueService         inbound.QueueService
@@ -38,6 +41,7 @@ type Handler struct {
 func NewHandler(
 	logger outbound.Logger,
 	config *config.Config,
+	authService inbound.AuthService,
 	messageService inbound.MessageService,
 	domainService inbound.DomainService,
 	queueService inbound.QueueService,
@@ -47,9 +51,15 @@ func NewHandler(
 	consumerGroupService inbound.ConsumerGroupService,
 	consumerGroupRepo outbound.ConsumerGroupRepository,
 ) *Handler {
+	authMiddleware := NewAuthMiddleware(authService, logger)
+	authHandler := NewAuthHandler(authService, logger)
+
 	return &Handler{
 		logger:               logger,
 		config:               config,
+		authService:          authService,
+		authMiddleware:       authMiddleware,
+		authHandler:          authHandler,
 		messageService:       messageService,
 		domainService:        domainService,
 		queueService:         queueService,
@@ -63,6 +73,13 @@ func NewHandler(
 
 // SetupRoutes REST API config
 func (h *Handler) SetupRoutes(router *mux.Router) {
+	// Auth routes
+	router.HandleFunc("POST /api/auth/login", h.authHandler.Login)
+	router.HandleFunc("POST /api/auth/bootstrap", h.authHandler.Bootstrap)
+	router.HandleFunc("GET /api/auth/profile", h.authHandler.GetProfile)
+	router.HandleFunc("POST /api/admin/users", h.authMiddleware.RequireRole(model.RoleAdmin)(http.HandlerFunc(h.authHandler.CreateUser)).ServeHTTP)
+	router.HandleFunc("GET /api/admin/users", h.authMiddleware.RequireRole(model.RoleAdmin)(http.HandlerFunc(h.authHandler.ListUsers)).ServeHTTP)
+
 	// Domains routes
 	router.HandleFunc("/api/domains", h.listDomains).Methods("GET")
 	router.HandleFunc("/api/domains", h.createDomain).Methods("POST")
@@ -136,6 +153,10 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 		// Or, serve static file
 		http.StripPrefix("/ui/", http.FileServer(http.Dir("./web/dist"))).ServeHTTP(w, r)
 	}))
+}
+
+func (h *Handler) RefreshEnabled() {
+	h.authMiddleware.RefreshEnabled()
 }
 
 func (h *Handler) healthCheck(w http.ResponseWriter, r *http.Request) {

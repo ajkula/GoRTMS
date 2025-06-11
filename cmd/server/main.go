@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -17,7 +18,10 @@ import (
 	"github.com/ajkula/GoRTMS/adapter/inbound/grpc"
 	"github.com/ajkula/GoRTMS/adapter/inbound/rest"
 	"github.com/ajkula/GoRTMS/adapter/inbound/websocket"
+	"github.com/ajkula/GoRTMS/adapter/outbound/crypto"
 	"github.com/ajkula/GoRTMS/adapter/outbound/logging"
+	"github.com/ajkula/GoRTMS/adapter/outbound/machineid"
+	"github.com/ajkula/GoRTMS/adapter/outbound/storage"
 	"github.com/ajkula/GoRTMS/adapter/outbound/storage/memory"
 	"github.com/ajkula/GoRTMS/config"
 	"github.com/ajkula/GoRTMS/domain/model"
@@ -25,6 +29,7 @@ import (
 
 	// Temporary imports for compilation
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
+	"github.com/ajkula/GoRTMS/domain/port/outbound"
 )
 
 func main() {
@@ -131,6 +136,36 @@ func main() {
 		ctx,
 	)
 
+	// Initialize crypto services
+	machineIDService := machineid.NewHardwareMachineID()
+	cryptoService := crypto.NewAESCryptoService()
+
+	// Initialize user repository with secure storage
+	userRepoPath := filepath.Join(cfg.General.DataDir, "users.db")
+	userRepo, err := storage.NewSecureUserRepository(
+		userRepoPath,
+		cryptoService,
+		machineIDService,
+		logger,
+	)
+	if err != nil {
+		logger.Error("Failed to initialize user repository", "error", err)
+		return
+	}
+
+	// Initialize the auth service
+	authService := service.NewAuthService(
+		userRepo,
+		cryptoService,
+		logger,
+		cfg.HTTP.JWT.Secret,
+		cfg.HTTP.JWT.ExpirationMinutes,
+	)
+
+	if err := autoBootstrapAdmin(authService, logger); err != nil {
+		logger.Error("Failed to auto-bootstrap admin", "error", err)
+	}
+
 	// Create HTTP router
 	router := mux.NewRouter()
 
@@ -140,6 +175,7 @@ func main() {
 		restHandler := rest.NewHandler(
 			logger,
 			cfg,
+			authService,
 			messageService,
 			domainService,
 			queueService,
@@ -298,6 +334,31 @@ func main() {
 	cancel()
 
 	logger.Info("Server shutdown complete")
+}
+
+func autoBootstrapAdmin(authService inbound.AuthService, logger outbound.Logger) error {
+	users, err := authService.ListUsers()
+	if err != nil {
+		return fmt.Errorf("failed to check existing users: %w", err)
+	}
+
+	if len(users) > 0 {
+		logger.Info("Users already exist, skipping auto-bootstrap")
+		return nil
+	}
+
+	// Create default admin with standard credentials
+	admin, err := authService.CreateUser("admin", "admin", model.RoleAdmin)
+	if err != nil {
+		return fmt.Errorf("failed to create default admin: %w", err)
+	}
+
+	logger.Info("🚀 Default admin created",
+		"username", admin.Username,
+		"password", "admin",
+		"action", "Please change password after first login!")
+
+	return nil
 }
 
 // createDomainFromConfig creates a domain from a configuration

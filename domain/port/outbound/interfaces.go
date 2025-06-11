@@ -127,3 +127,24 @@ type ConsumerGroupRepository interface {
 	// Update last activity timestamp for a group
 	UpdateLastActivity(ctx context.Context, domainName, queueName, groupID string) error
 }
+
+// machine uuid
+type MachineIDService interface {
+	GetMachineID() (string, error)
+}
+
+type CryptoService interface {
+	Encrypt(data []byte, key [32]byte) (encrypted []byte, nonce []byte, err error)
+	Decrypt(encrypted []byte, nonce []byte, key [32]byte) ([]byte, error)
+	DeriveKey(machineID string) [32]byte
+	GenerateSalt() [32]byte
+	HashPassword(password string, salt [16]byte) string
+	VerifyPassword(password, hash string, salt [16]byte) bool
+}
+
+// users persistence
+type UserRepository interface {
+	Save(db *model.UserDatabase) error
+	Load() (*model.UserDatabase, error)
+	Exists() bool
+}
