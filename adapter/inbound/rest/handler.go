@@ -28,6 +28,8 @@ type Handler struct {
 	authService          inbound.AuthService
 	authMiddleware       *AuthMiddleware
 	authHandler          *AuthHandler
+	hmacMiddleware       *HMACMiddleware
+	hybridMiddleware     *HybridMiddleware
 	messageService       inbound.MessageService
 	domainService        inbound.DomainService
 	queueService         inbound.QueueService
@@ -36,6 +38,7 @@ type Handler struct {
 	resourceMonitor      inbound.ResourceMonitorService
 	consumerGroupService inbound.ConsumerGroupService
 	consumerGroupRepo    outbound.ConsumerGroupRepository
+	serviceRepo          outbound.ServiceRepository
 }
 
 func NewHandler(
@@ -50,9 +53,12 @@ func NewHandler(
 	resourceMonitor inbound.ResourceMonitorService,
 	consumerGroupService inbound.ConsumerGroupService,
 	consumerGroupRepo outbound.ConsumerGroupRepository,
+	repoService outbound.ServiceRepository,
 ) *Handler {
 	authMiddleware := NewAuthMiddleware(authService, logger)
 	authHandler := NewAuthHandler(authService, logger)
+	hmacMiddleware := NewHMACMiddleware(repoService, logger)
+	hybridMiddleware := NewHybridMiddleware(hmacMiddleware, authMiddleware, logger)
 
 	return &Handler{
 		logger:               logger,
@@ -60,6 +66,8 @@ func NewHandler(
 		authService:          authService,
 		authMiddleware:       authMiddleware,
 		authHandler:          authHandler,
+		hmacMiddleware:       hmacMiddleware,
+		hybridMiddleware:     hybridMiddleware,
 		messageService:       messageService,
 		domainService:        domainService,
 		queueService:         queueService,
@@ -68,70 +76,93 @@ func NewHandler(
 		resourceMonitor:      resourceMonitor,
 		consumerGroupService: consumerGroupService,
 		consumerGroupRepo:    consumerGroupRepo,
+		serviceRepo:          repoService,
 	}
 }
 
 // SetupRoutes REST API config
 func (h *Handler) SetupRoutes(router *mux.Router) {
+	serviceHandler := NewServiceHandler(h.serviceRepo, h.logger)
+
+	jwtRouter := router.PathPrefix("/api").Subrouter()
+	jwtRouter.Use(h.authMiddleware.Middleware)
+
+	adminRouter := jwtRouter.PathPrefix("/admin").Subrouter()
+	adminRouter.Use(h.authMiddleware.RequireRole(model.RoleAdmin))
+
+	hmacRouter := router.PathPrefix("/api").Subrouter()
+	hmacRouter.Use(h.hmacMiddleware.Middleware)
+
+	hybridRouter := router.PathPrefix("/api").Subrouter()
+	hybridRouter.Use(h.hybridMiddleware.Middleware)
+
 	// Auth routes
-	router.HandleFunc("POST /api/auth/login", h.authHandler.Login)
-	router.HandleFunc("POST /api/auth/bootstrap", h.authHandler.Bootstrap)
-	router.HandleFunc("GET /api/auth/profile", h.authHandler.GetProfile)
-	router.HandleFunc("POST /api/admin/users", h.authMiddleware.RequireRole(model.RoleAdmin)(http.HandlerFunc(h.authHandler.CreateUser)).ServeHTTP)
-	router.HandleFunc("GET /api/admin/users", h.authMiddleware.RequireRole(model.RoleAdmin)(http.HandlerFunc(h.authHandler.ListUsers)).ServeHTTP)
+	router.HandleFunc("/api/auth/login", h.authHandler.Login).Methods("POST")
+	router.HandleFunc("/api/auth/bootstrap", h.authHandler.Bootstrap).Methods("POST")
+	jwtRouter.HandleFunc("/auth/profile", h.authHandler.GetProfile).Methods("GET")
+	adminRouter.HandleFunc("/users", h.authHandler.CreateUser).Methods("POST")
+	adminRouter.HandleFunc("/users", h.authHandler.ListUsers).Methods("GET")
+
+	// Service rutes
+	adminRouter.HandleFunc("/services", serviceHandler.CreateService).Methods("POST")
+	adminRouter.HandleFunc("/services", serviceHandler.ListServices).Methods("GET")
+	adminRouter.HandleFunc("/services/{id}", serviceHandler.GetService).Methods("GET")
+	adminRouter.HandleFunc("/services/{id}", serviceHandler.DeleteService).Methods("DELETE")
+	adminRouter.HandleFunc("/services/{id}/rotate-secret", serviceHandler.RotateSecret).Methods("POST")
+	adminRouter.HandleFunc("/services/{id}/permissions", serviceHandler.UpdatePermissions).Methods("PUT")
 
 	// Domains routes
-	router.HandleFunc("/api/domains", h.listDomains).Methods("GET")
-	router.HandleFunc("/api/domains", h.createDomain).Methods("POST")
-	router.HandleFunc("/api/domains/{domain}", h.getDomain).Methods("GET")
-	router.HandleFunc("/api/domains/{domain}", h.deleteDomain).Methods("DELETE")
+	jwtRouter.HandleFunc("/domains", h.listDomains).Methods("GET")
+	hybridRouter.HandleFunc("/domains", h.createDomain).Methods("POST")
+	jwtRouter.HandleFunc("/domains/{domain}", h.getDomain).Methods("GET")
+	jwtRouter.HandleFunc("/domains/{domain}", h.deleteDomain).Methods("DELETE")
 
 	// Queues routes
-	router.HandleFunc("/api/domains/{domain}/queues", h.listQueues).Methods("GET")
-	router.HandleFunc("/api/domains/{domain}/queues", h.createQueue).Methods("POST")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}", h.getQueue).Methods("GET")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}", h.deleteQueue).Methods("DELETE")
+	jwtRouter.HandleFunc("/domains/{domain}/queues", h.listQueues).Methods("GET")
+	hybridRouter.HandleFunc("/domains/{domain}/queues", h.createQueue).Methods("POST")
+	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}", h.getQueue).Methods("GET")
+	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}", h.deleteQueue).Methods("DELETE")
 
 	// Messages routes
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/messages", h.publishMessage).Methods("POST")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/messages", h.consumeMessages).Methods("GET")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/subscribe", h.subscribeToQueue).Methods("POST")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/unsubscribe", h.unsubscribeFromQueue).Methods("POST")
+	hmacRouter.HandleFunc("/domains/{domain}/queues/{queue}/messages", h.publishMessage).Methods("POST")
+	hmacRouter.HandleFunc("/domains/{domain}/queues/{queue}/messages", h.consumeMessages).Methods("GET")
+	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/subscribe", h.subscribeToQueue).Methods("POST")
+	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/unsubscribe", h.unsubscribeFromQueue).Methods("POST")
 
 	// Routing rules routes
-	router.HandleFunc("/api/domains/{domain}/routes", h.listRoutingRules).Methods("GET")
-	router.HandleFunc("/api/domains/{domain}/routes", h.addRoutingRule).Methods("POST")
-	router.HandleFunc("/api/domains/{domain}/routes/{source}/{destination}", h.removeRoutingRule).Methods("DELETE")
+	jwtRouter.HandleFunc("/domains/{domain}/routes", h.listRoutingRules).Methods("GET")
+	jwtRouter.HandleFunc("/domains/{domain}/routes", h.addRoutingRule).Methods("POST")
+	jwtRouter.HandleFunc("/domains/{domain}/routes/{source}/{destination}", h.removeRoutingRule).Methods("DELETE")
 
 	// Simulation routes
-	router.HandleFunc("/api/domains/{domain}/routes/test", h.testRoutingRules).Methods("POST")
+	jwtRouter.HandleFunc("/domains/{domain}/routes/test", h.testRoutingRules).Methods("POST")
 
 	// ConsumerGroup routes
-	router.HandleFunc("/api/consumer-groups", h.listAllConsumerGroups).Methods("GET")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups", h.listConsumerGroups).Methods("GET")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups", h.createConsumerGroup).Methods("POST")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}", h.getConsumerGroup).Methods("GET")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}", h.deleteConsumerGroup).Methods("DELETE")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/ttl", h.updateConsumerGroupTTL).Methods("PUT")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/messages", h.getPendingMessages).Methods("GET")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers", h.addConsumerToGroup).Methods("POST")
-	router.HandleFunc("/api/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers/{consumer}", h.removeConsumerFromGroup).Methods("DELETE")
+	jwtRouter.HandleFunc("/consumer-groups", h.listAllConsumerGroups).Methods("GET")
+	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups", h.listConsumerGroups).Methods("GET")
+	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups", h.createConsumerGroup).Methods("POST")
+	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}", h.getConsumerGroup).Methods("GET")
+	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}", h.deleteConsumerGroup).Methods("DELETE")
+	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}/ttl", h.updateConsumerGroupTTL).Methods("PUT")
+	hmacRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}/messages", h.getPendingMessages).Methods("GET")
+	hmacRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers", h.addConsumerToGroup).Methods("POST")
+	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers/{consumer}", h.removeConsumerFromGroup).Methods("DELETE")
 
 	// Stats routes
-	router.HandleFunc("/api/stats", h.getStats).Methods("GET")
+	jwtRouter.HandleFunc("/stats", h.getStats).Methods("GET")
 
 	// system ressources routes
 	if h.resourceMonitor != nil {
 		h.logger.Info("Setting up resource monitoring routes")
-		router.HandleFunc("/api/resources/current", h.getCurrentResourceStats).Methods("GET")
-		router.HandleFunc("/api/resources/history", h.getResourceStatsHistory).Methods("GET")
-		router.HandleFunc("/api/resources/domains/{domain}", h.getDomainResourceStats).Methods("GET")
+		jwtRouter.HandleFunc("/resources/current", h.getCurrentResourceStats).Methods("GET")
+		jwtRouter.HandleFunc("/resources/history", h.getResourceStatsHistory).Methods("GET")
+		jwtRouter.HandleFunc("/resources/domains/{domain}", h.getDomainResourceStats).Methods("GET")
 	}
 
 	// settings routes
-	router.HandleFunc("/api/settings", h.getSettings).Methods("GET")
-	router.HandleFunc("/api/settings", h.updateSettings).Methods("PUT")
-	router.HandleFunc("/api/settings/reset", h.resetSettings).Methods("POST")
+	jwtRouter.HandleFunc("/settings", h.getSettings).Methods("GET")
+	jwtRouter.HandleFunc("/settings", h.updateSettings).Methods("PUT")
+	jwtRouter.HandleFunc("/settings/reset", h.resetSettings).Methods("POST")
 
 	// health check routes
 	router.HandleFunc("/health", h.healthCheck).Methods("GET")

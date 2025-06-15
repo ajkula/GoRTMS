@@ -134,6 +134,18 @@ type Config struct {
 
 		// AdminPassword is the admin password
 		AdminPassword string `yaml:"adminPassword"`
+
+		// HMAC configuration for service authentication
+		HMAC struct {
+			// Enabled enables HMAC authentication for services
+			Enabled bool `yaml:"enabled"`
+
+			// TimestampWindow is the allowed time window for requests
+			TimestampWindow string `yaml:"timestampWindow"`
+
+			// RequireTLS requires TLS for HMAC authenticated requests
+			RequireTLS bool `yaml:"requireTLS"`
+		} `yaml:"hmac"`
 	} `yaml:"security"`
 
 	// Monitoring configuration
@@ -263,6 +275,11 @@ func DefaultConfig() *Config {
 	c.Security.EnableAuthorization = false
 	c.Security.AdminUsername = "admin"
 	c.Security.AdminPassword = "admin"
+
+	// HMAC configuration
+	c.Security.HMAC.Enabled = false
+	c.Security.HMAC.TimestampWindow = "5m"
+	c.Security.HMAC.RequireTLS = false
 
 	// monitoring configuration
 	c.Monitoring.Enabled = true
@@ -420,6 +437,7 @@ func (c *Config) ToPublic() *PublicConfig {
 	pub.Security.EnableAuthentication = c.Security.EnableAuthentication
 	pub.Security.EnableAuthorization = c.Security.EnableAuthorization
 	pub.Security.AdminUsername = c.Security.AdminUsername
+	pub.Security.HMAC = c.Security.HMAC
 
 	// Monitoring, Cluster, Domains, Logging
 	pub.Monitoring = c.Monitoring
@@ -456,6 +474,7 @@ func (c *Config) MergeFromPublic(pub *PublicConfig) {
 	c.Security.EnableAuthentication = pub.Security.EnableAuthentication
 	c.Security.EnableAuthorization = pub.Security.EnableAuthorization
 	c.Security.AdminUsername = pub.Security.AdminUsername
+	c.Security.HMAC = pub.Security.HMAC
 
 	// Monitoring, Cluster, Domains, Logging
 	c.Monitoring = pub.Monitoring

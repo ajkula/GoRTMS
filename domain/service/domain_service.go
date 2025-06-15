@@ -91,8 +91,11 @@ func (s *DomainServiceImpl) DeleteDomain(ctx context.Context, name string) error
 }
 
 func (s *DomainServiceImpl) ListDomains(ctx context.Context) ([]*model.Domain, error) {
-	log.Println("Listing domains")
 	return s.domainRepo.ListDomains(ctx)
+}
+
+func (s *DomainServiceImpl) ListSystemDomains(ctx context.Context) ([]*model.Domain, error) {
+	return s.domainRepo.SystemDomains(ctx)
 }
 
 func (s *DomainServiceImpl) Cleanup() {

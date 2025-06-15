@@ -59,6 +59,10 @@ func (m *mockDomainRepositoryWithErrors) DeleteDomain(ctx context.Context, name 
 	return nil
 }
 
+func (m *mockDomainRepositoryWithErrors) SystemDomains(ctx context.Context) ([]*model.Domain, error) {
+	return []*model.Domain{}, nil
+}
+
 func TestGetStats_EdgeCases(t *testing.T) {
 	t.Run("Repository error - ListDomains fails", func(t *testing.T) {
 		ctx := context.Background()

@@ -40,6 +40,10 @@ security:
     enableAuthorization: false
     adminUsername: admin
     adminPassword: admin
+    hmac:
+        enabled: false
+        timestampWindow: "5m"
+        requireTLS: false
 monitoring:
     enabled: true
     address: 0.0.0.0

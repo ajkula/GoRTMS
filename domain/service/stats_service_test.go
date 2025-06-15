@@ -52,6 +52,10 @@ func (m *mockDomainRepository) DeleteDomain(ctx context.Context, name string) er
 	return nil
 }
 
+func (m *mockDomainRepository) SystemDomains(ctx context.Context) ([]*model.Domain, error) {
+	return []*model.Domain{}, nil
+}
+
 type mockMessageRepository struct {
 	messages    map[string][]*model.Message // key: "domain:queue"
 	ackMatrices map[string]*model.AckMatrix // key: "domain:queue"

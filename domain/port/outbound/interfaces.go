@@ -69,6 +69,9 @@ type DomainRepository interface {
 
 	// ListDomains lists all domains
 	ListDomains(ctx context.Context) ([]*model.Domain, error)
+
+	// System domains only
+	SystemDomains(ctx context.Context) ([]*model.Domain, error)
 }
 
 // defines storage operations for queues

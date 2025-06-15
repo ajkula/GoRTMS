@@ -156,8 +156,9 @@ const (
 type Domain struct {
 	Name   string                             // Domain name
 	Schema *Schema                            // Validation schema
-	Queues map[string]*Queue                  // Map of queues
+	Queues map[string]*Queue                  // Map of queues by domainName
 	Routes map[string]map[string]*RoutingRule // Map of routing rules (sourceQueue -> destQueue -> rule)
+	System bool
 }
 
 // DomainConfig contains the configuration of a domain

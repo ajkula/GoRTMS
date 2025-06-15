@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -153,6 +154,13 @@ func main() {
 		return
 	}
 
+	serviceRepoPath := filepath.Join(cfg.General.DataDir, "service.db")
+	serviceRepo, err := storage.NewSecureServiceRepository(serviceRepoPath, logger)
+	if err != nil {
+		logger.Error("Failed to create service repository", "error", err)
+		os.Exit(1)
+	}
+
 	// Initialize the auth service
 	authService := service.NewAuthService(
 		userRepo,
@@ -164,6 +172,40 @@ func main() {
 
 	if err := autoBootstrapAdmin(authService, logger); err != nil {
 		logger.Error("Failed to auto-bootstrap admin", "error", err)
+	}
+
+	if err := domainRepo.StoreDomain(ctx, &model.Domain{
+		Name: "SYSTEM",
+		Queues: map[string]*model.Queue{
+			"SYSTEM": {
+				Name:       "_account_requests",
+				DomainName: "SYSTEM",
+				Config: model.QueueConfig{
+					IsPersistent: true,
+					MaxSize:      1000,
+					TTL:          0,
+					DeliveryMode: model.RoundRobinMode,
+					WorkerCount:  2,
+					RetryEnabled: true,
+					RetryConfig: &model.RetryConfig{
+						MaxRetries:   3,
+						InitialDelay: time.Second,
+						MaxDelay:     time.Hour,
+						Factor:       0.3,
+					},
+					CircuitBreakerEnabled: true,
+					CircuitBreakerConfig: &model.CircuitBreakerConfig{
+						SuccessThreshold: 1,
+						ErrorThreshold:   3,
+						MinimumRequests:  3,
+						OpenTimeout:      time.Duration(5 * time.Minute),
+					},
+				},
+			},
+		},
+		System: true,
+	}); err != nil {
+		log.Fatal("Could not create system domain")
 	}
 
 	// Create HTTP router
@@ -184,6 +226,7 @@ func main() {
 			resourceMonitorService,
 			consumerGroupService,
 			consumerGroupRepo,
+			serviceRepo,
 		)
 		restHandler.SetupRoutes(router)
 

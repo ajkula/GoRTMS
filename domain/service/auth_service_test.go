@@ -110,13 +110,14 @@ func setupAuthService() (*authService, *MockUserRepository, *MockCryptoService, 
 
 func createTestUser() *model.User {
 	return &model.User{
-		ID:           "test-id",
-		Username:     "testuser",
-		PasswordHash: "hashed-password",
-		Salt:         [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
-		Role:         model.RoleUser,
-		CreatedAt:    time.Now(),
-		Enabled:      true,
+		ID:             "test-id",
+		Username:       "testuser",
+		PasswordHash:   "hashed-password",
+		Salt:           [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		Role:           model.RoleUser,
+		CreatedAt:      time.Now(),
+		LastValidLogin: time.Now(),
+		Enabled:        true,
 	}
 }
 
@@ -230,13 +231,15 @@ func TestAuthService_CreateUser_UserExists(t *testing.T) {
 }
 
 func TestAuthService_ValidateToken_Success(t *testing.T) {
-	service, userRepo, _, _ := setupAuthService()
+	service, userRepo, _, logger := setupAuthService()
+	logger.On("Warn", mock.Anything, mock.Anything).Return()
 	testDB := createTestDatabase()
 
-	userRepo.On("Load").Return(testDB, nil)
+	userRepo.On("Load").Return(testDB, nil).Maybe()
 
 	user := testDB.Users["testuser"]
-	token, err := service.generateToken(user)
+	user.LastValidLogin = time.Now().Add(-1 * time.Minute)
+	token, err := service.generateToken(user, time.Now())
 	assert.NoError(t, err)
 
 	validatedUser, err := service.ValidateToken(token)
@@ -338,4 +341,70 @@ func TestAuthService_LoadDatabase_Error(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, user)
 	assert.Empty(t, token)
+}
+
+func TestAuthService_LastValidLogin_InvalidatesOldTokens(t *testing.T) {
+	service, userRepo, crypto, logger := setupAuthService()
+	testDB := createTestDatabase()
+
+	userRepo.On("Load").Return(testDB, nil)
+	userRepo.On("Save", mock.Anything).Return(nil)
+	crypto.On("VerifyPassword", "password", "hashed-password", mock.Anything).Return(true)
+	logger.On("Info", mock.Anything, mock.Anything).Return()
+	logger.On("Warn", mock.Anything, mock.Anything).Return()
+	logger.On("Debug", mock.Anything, mock.Anything).Return()
+
+	// First login
+	_, token1, err := service.Login("testuser", "password")
+	assert.NoError(t, err)
+
+	firstLogin := testDB.Users["testuser"].LastValidLogin
+	t.Logf("First login time: %v", firstLogin)
+
+	// Wait longer to ensure timestamp difference
+	time.Sleep(1 * time.Second)
+
+	// Clear cache
+	service.userDatabase = nil
+
+	// Second login
+	_, token2, err := service.Login("testuser", "password")
+	assert.NoError(t, err)
+
+	secondLogin := testDB.Users["testuser"].LastValidLogin
+	t.Logf("Second login time: %v", secondLogin)
+	t.Logf("Time difference: %v", secondLogin.Sub(firstLogin))
+
+	// Clear cache for validation
+	service.userDatabase = nil
+
+	// Debug token1 validation
+	_, err = service.ValidateToken(token1)
+	t.Logf("Token1 validation error: %v", err)
+	assert.Equal(t, ErrInvalidToken, err)
+
+	// Token2 should be valid
+	user, err := service.ValidateToken(token2)
+	assert.NoError(t, err)
+	if user != nil {
+		assert.Equal(t, "testuser", user.Username)
+	}
+}
+
+func TestAuthService_LastValidLogin_Migration(t *testing.T) {
+	service, userRepo, _, _ := setupAuthService()
+
+	user := createTestUser()
+	user.LastValidLogin = time.Time{}
+	testDB := &model.UserDatabase{
+		Users: map[string]*model.User{"testuser": user},
+		Salt:  [32]byte{},
+	}
+
+	userRepo.On("Load").Return(testDB, nil)
+
+	err := service.loadDatabase()
+	assert.NoError(t, err)
+	assert.False(t, testDB.Users["testuser"].LastValidLogin.IsZero())
+	assert.Equal(t, testDB.Users["testuser"].CreatedAt, testDB.Users["testuser"].LastValidLogin)
 }

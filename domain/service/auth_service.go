@@ -3,7 +3,6 @@ package service
 import (
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -66,10 +65,12 @@ func (s *authService) Login(username, password string) (*model.User, string, err
 		return nil, "", ErrInvalidCredentials
 	}
 
-	user.LastLogin = time.Now()
+	now := time.Now().Truncate(time.Second)
+	user.LastValidLogin = now
+	user.LastLogin = now
 	s.saveDatabase()
 
-	token, err := s.generateToken(user)
+	token, err := s.generateToken(user, now)
 	if err != nil {
 		return nil, "", err
 	}
@@ -78,9 +79,8 @@ func (s *authService) Login(username, password string) (*model.User, string, err
 }
 
 func (s *authService) ValidateToken(tokenString string) (*model.User, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(s.jwtSecret), nil
 	})
@@ -95,6 +95,12 @@ func (s *authService) ValidateToken(tokenString string) (*model.User, error) {
 			return nil, ErrInvalidToken
 		}
 
+		iatFloat, ok := claims["iat"].(float64)
+		if !ok {
+			return nil, ErrInvalidToken
+		}
+		tokeIssuedAt := time.Unix(int64(iatFloat), 0)
+
 		if err := s.loadDatabase(); err != nil {
 			return nil, err
 		}
@@ -106,6 +112,10 @@ func (s *authService) ValidateToken(tokenString string) (*model.User, error) {
 
 		if !user.Enabled {
 			return nil, ErrUserDisabled
+		}
+
+		if tokeIssuedAt.Before(user.LastValidLogin) {
+			return nil, ErrInvalidToken
 		}
 
 		return user, nil
@@ -204,6 +214,12 @@ func (s *authService) loadDatabase() error {
 	}
 
 	s.userDatabase = db
+
+	for _, user := range s.userDatabase.Users {
+		if user.LastValidLogin.IsZero() {
+			user.LastValidLogin = user.CreatedAt
+		}
+	}
 	return nil
 }
 
@@ -211,12 +227,12 @@ func (s *authService) saveDatabase() error {
 	return s.userRepo.Save(s.userDatabase)
 }
 
-func (s *authService) generateToken(user *model.User) (string, error) {
+func (s *authService) generateToken(user *model.User, issuedAt time.Time) (string, error) {
 	claims := jwt.MapClaims{
 		"username": user.Username,
 		"role":     user.Role,
-		"exp":      time.Now().Add(s.jwtExpiry).Unix(),
-		"iat":      time.Now().Unix(),
+		"exp":      issuedAt.Add(s.jwtExpiry).Unix(),
+		"iat":      issuedAt.Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

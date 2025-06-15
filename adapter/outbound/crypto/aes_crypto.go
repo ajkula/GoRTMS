@@ -11,13 +11,13 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-type aesCryptoService struct{}
+type AesCryptoService struct{}
 
 func NewAESCryptoService() outbound.CryptoService {
-	return &aesCryptoService{}
+	return &AesCryptoService{}
 }
 
-func (c *aesCryptoService) Encrypt(data []byte, key [32]byte) (encrypted []byte, nonce []byte, err error) {
+func (c *AesCryptoService) Encrypt(data []byte, key [32]byte) (encrypted []byte, nonce []byte, err error) {
 	block, err := aes.NewCipher(key[:])
 	if err != nil {
 		return nil, nil, err
@@ -37,7 +37,7 @@ func (c *aesCryptoService) Encrypt(data []byte, key [32]byte) (encrypted []byte,
 	return ciphertext, nonceBytes, nil
 }
 
-func (c *aesCryptoService) Decrypt(encrypted []byte, nonce []byte, key [32]byte) ([]byte, error) {
+func (c *AesCryptoService) Decrypt(encrypted []byte, nonce []byte, key [32]byte) ([]byte, error) {
 	block, err := aes.NewCipher(key[:])
 	if err != nil {
 		return nil, err
@@ -56,25 +56,25 @@ func (c *aesCryptoService) Decrypt(encrypted []byte, nonce []byte, key [32]byte)
 	return plaintext, nil
 }
 
-func (c *aesCryptoService) DeriveKey(machineID string) [32]byte {
+func (c *AesCryptoService) DeriveKey(machineID string) [32]byte {
 	// derivate 32 bytes key from machine ID
 	hash := sha256.Sum256([]byte(machineID + "gortms-encryption-key"))
 	return hash
 }
 
-func (c *aesCryptoService) GenerateSalt() [32]byte {
+func (c *AesCryptoService) GenerateSalt() [32]byte {
 	var salt [32]byte
 	rand.Read(salt[:])
 	return salt
 }
 
-func (c *aesCryptoService) HashPassword(password string, salt [16]byte) string {
+func (c *AesCryptoService) HashPassword(password string, salt [16]byte) string {
 	// Argon2id - OWASP 2024
 	hash := argon2.IDKey([]byte(password), salt[:], 1, 64*1024, 4, 32)
 	return hex.EncodeToString(hash)
 }
 
-func (c *aesCryptoService) VerifyPassword(password, hash string, salt [16]byte) bool {
+func (c *AesCryptoService) VerifyPassword(password, hash string, salt [16]byte) bool {
 	expectedHash := c.HashPassword(password, salt)
 	return expectedHash == hash
 }

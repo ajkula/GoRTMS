@@ -60,6 +60,13 @@ type PublicConfig struct {
 		EnableAuthentication bool   `yaml:"enableAuthentication"`
 		EnableAuthorization  bool   `yaml:"enableAuthorization"`
 		AdminUsername        string `yaml:"adminUsername"`
+
+		// HMAC configuration for service authentication
+		HMAC struct {
+			Enabled         bool   `yaml:"enabled"`
+			TimestampWindow string `yaml:"timestampWindow"`
+			RequireTLS      bool   `yaml:"requireTLS"`
+		} `yaml:"hmac"`
 	} `yaml:"security" json:"security"`
 
 	// Monitoring, Cluster, Domains, Logging

@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -159,13 +160,23 @@ func (h *AuthHandler) Bootstrap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
-	authMiddleware := NewAuthMiddleware(h.authService, h.logger)
-	user := authMiddleware.GetUserFromContext(r.Context())
+	h.logger.Warn("GetProfile 1")
+	user := GetUserFromContext(r.Context())
+	h.logger.Warn("GetProfile", "user", user, "Context", r.Context())
 	if user == nil {
-		http.Error(w, "User not found", http.StatusInternalServerError)
+		http.Error(w, "User not found", http.StatusUnauthorized)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
+}
+
+// extracts user from context
+func GetUserFromContext(ctx context.Context) *model.User {
+	user, ok := ctx.Value(UserContextKey).(*model.User)
+	if ok {
+		return user
+	}
+	return nil
 }

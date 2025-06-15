@@ -247,7 +247,8 @@ func TestAuthHandler_Bootstrap_AlreadyExists(t *testing.T) {
 }
 
 func TestAuthHandler_GetProfile_Success(t *testing.T) {
-	handler, authService, _ := setupAuthHandler()
+	handler, authService, logger := setupAuthHandler()
+	logger.On("Warn", mock.Anything, mock.Anything).Return()
 	testUser := createTestUserModel()
 
 	req := httptest.NewRequest("GET", "/api/auth/profile", nil)
@@ -267,12 +268,13 @@ func TestAuthHandler_GetProfile_Success(t *testing.T) {
 }
 
 func TestAuthHandler_GetProfile_UserNotFound(t *testing.T) {
-	handler, _, _ := setupAuthHandler()
+	handler, _, logger := setupAuthHandler()
+	logger.On("Warn", mock.Anything, mock.Anything).Return()
 
 	req := httptest.NewRequest("GET", "/api/auth/profile", nil)
 	w := httptest.NewRecorder()
 
 	handler.GetProfile(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }

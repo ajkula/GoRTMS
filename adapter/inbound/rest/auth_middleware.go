@@ -39,10 +39,8 @@ func (m *AuthMiddleware) SetEnabled(enabled bool) {
 
 func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !m.enabled {
-			next.ServeHTTP(w, r)
-			return
-		}
+		m.logger.Warn("Middleware", "m.enabled", m.enabled)
+		m.logger.Warn("Middleware", "r.URL.Path", r.URL.Path)
 
 		if m.isPublicRoute(r.URL.Path) {
 			next.ServeHTTP(w, r)
@@ -50,19 +48,26 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 		}
 
 		token := m.extractToken(r)
-		if token == "" {
-			m.unauthorized(w, "missing token")
-			return
+		m.logger.Warn("Middleware", "token", token)
+
+		if token != "" {
+			user, err := m.authService.ValidateToken(token)
+			m.logger.Warn("Middleware", "token", token, "user", user)
+
+			if err == nil && user != nil {
+				ctx := context.WithValue(r.Context(), UserContextKey, user)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
 		}
 
-		user, err := m.authService.ValidateToken(token)
-		if err != nil {
-			m.unauthorized(w, err.Error())
+		if m.enabled {
+			m.unauthorized(w, "unauthorized")
+			return
+		} else {
+			next.ServeHTTP(w, r)
 			return
 		}
-
-		ctx := context.WithValue(r.Context(), UserContextKey, user)
-		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -91,7 +96,10 @@ func (m *AuthMiddleware) RequireRole(role model.UserRole) func(http.Handler) htt
 }
 
 func (m *AuthMiddleware) GetUserFromContext(ctx context.Context) *model.User {
-	if user, ok := ctx.Value(UserContextKey).(*model.User); ok {
+	m.logger.Warn("GetUserFromContext 2")
+	user, ok := ctx.Value(UserContextKey).(*model.User)
+	m.logger.Warn("GetUserFromContext", "user", user, "ctx.Value", ctx.Value(UserContextKey))
+	if ok {
 		return user
 	}
 	return nil

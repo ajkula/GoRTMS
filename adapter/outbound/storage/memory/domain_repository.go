@@ -43,7 +43,7 @@ func (r *DomainRepository) GetDomain(ctx context.Context, name string) (*model.D
 	defer r.mutex.RUnlock()
 
 	domain, ok := r.domains[name]
-	if !ok {
+	if !ok || domain.System {
 		return nil, errors.New("domain not found")
 	}
 
@@ -68,7 +68,28 @@ func (r *DomainRepository) ListDomains(ctx context.Context) ([]*model.Domain, er
 
 	domains := make([]*model.Domain, 0, len(r.domains))
 	for _, domain := range r.domains {
+		if domain.System {
+			continue
+		}
 		domains = append(domains, domain)
+	}
+
+	return domains, nil
+}
+
+func (r *DomainRepository) SystemDomains(ctx context.Context) ([]*model.Domain, error) {
+	r.mutex.RLock()
+	defer r.mutex.Unlock()
+
+	domains := make([]*model.Domain, 0)
+	for _, domain := range r.domains {
+		if domain.System {
+			domains = append(domains, domain)
+		}
+	}
+
+	if len(domains) == 0 {
+		return domains, errors.New("domain not found")
 	}
 
 	return domains, nil

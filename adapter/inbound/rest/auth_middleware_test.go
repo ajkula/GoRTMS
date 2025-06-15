@@ -110,12 +110,14 @@ func createTestAdminModel() *model.User {
 func setupAuthMiddleware() (*AuthMiddleware, *MockAuthService, *MockAuthLogger) {
 	authService := &MockAuthService{}
 	logger := &MockAuthLogger{}
+	logger.On("Warn", mock.Anything, mock.Anything).Return()
 	middleware := NewAuthMiddleware(authService, logger)
 	return middleware, authService, logger
 }
 
 func TestAuthMiddleware_Disabled(t *testing.T) {
-	middleware, _, _ := setupAuthMiddleware()
+	middleware, _, logger := setupAuthMiddleware()
+	logger.On("Warn", mock.Anything, mock.Anything).Return()
 	middleware.SetEnabled(false)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +176,7 @@ func TestAuthMiddleware_MissingToken(t *testing.T) {
 	middleware.Middleware(handler).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), "missing token")
+	assert.Contains(t, w.Body.String(), "unauthorized")
 }
 
 func TestAuthMiddleware_InvalidToken(t *testing.T) {
