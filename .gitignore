@@ -19,6 +19,7 @@
 # vendor/
 dist/
 node_modules/
+data/
 
 # Go workspace file
 go.work
