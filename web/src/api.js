@@ -1,3 +1,4 @@
+import { authService } from './services/authService';
 const API_BASE_URL = '/api';
 
 const api = {
@@ -9,7 +10,21 @@ const api = {
     }
 
     try {
-      const response = await fetch(url, options);
+      const authHeaders = authService.getAuthHeaders();
+      const mergedOptions = {
+        ...options,
+        headers: {
+          ...authHeaders,
+          ...options.headers,
+        }
+      };
+      const response = await fetch(url, mergedOptions);
+      if (response.status === 401) {
+        console.warn('Authentication failed');
+        authService.handleAuthenticationError();
+        throw new Error(`API error: ${response.status} ${response.statusText}`);
+      }
+
       if (!response.ok) {
         throw new Error(`API error: ${response.status} ${response.statusText}`);
       }
@@ -255,8 +270,8 @@ const api = {
 
   async getStats(params = {}) {
     try {
-    const queryString = new URLSearchParams(params).toString();
-    const url = `${API_BASE_URL}/stats${queryString ? `?${queryString}` : ''}`;
+      const queryString = new URLSearchParams(params).toString();
+      const url = `${API_BASE_URL}/stats${queryString ? `?${queryString}` : ''}`;
       return await this.fetchJSON(url);
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -428,7 +443,7 @@ const api = {
   getNotifications: async () => {
     // Simulate network delay
     await new Promise(resolve => setTimeout(resolve, 100));
-    
+
     // Mock data - TODO: Replace with actual API call
     return [
       {
@@ -451,7 +466,7 @@ const api = {
   markNotificationAsRead: async (notificationId) => {
     // Simulate network delay
     await new Promise(resolve => setTimeout(resolve, 50));
-    
+
     // TODO: Replace with actual API call
     // For now, just return success
     return { success: true };
@@ -459,67 +474,26 @@ const api = {
 
   // Settings
   async getSettings() {
-    try {
-      const response = await fetch('/api/settings', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to get settings:', error);
-      throw error;
-    }
+    return this.fetchJSON('/api/settings');
   },
 
   async updateSettings(config) {
-    try {
-      const response = await fetch('/api/settings', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ config }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to update settings:', error);
-      throw error;
-    }
+    return this.fetchJSON('/api/settings', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ config }),
+    });
   },
 
   async resetSettings() {
-    try {
-      const response = await fetch('/api/settings/reset', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to reset settings:', error);
-      throw error;
-    }
+    return this.fetchJSON('/api/settings/reset', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
   },
 };
 

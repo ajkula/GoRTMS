@@ -3,6 +3,7 @@ package rest
 import (
 	"net/http"
 
+	"github.com/ajkula/GoRTMS/config"
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
 )
 
@@ -10,10 +11,11 @@ type HybridMiddleware struct {
 	hmacMiddleware *HMACMiddleware
 	jwtMiddleware  *AuthMiddleware
 	logger         outbound.Logger
-	enabled        bool
+	config         *config.Config
 }
 
 func NewHybridMiddleware(
+	config *config.Config,
 	hmacMiddleware *HMACMiddleware,
 	jwtMiddleware *AuthMiddleware,
 	logger outbound.Logger,
@@ -22,19 +24,14 @@ func NewHybridMiddleware(
 		hmacMiddleware: hmacMiddleware,
 		jwtMiddleware:  jwtMiddleware,
 		logger:         logger,
-		enabled:        true,
+		config:         config,
 	}
-}
-
-// enables or disables the hybrid middleware
-func (h *HybridMiddleware) SetEnabled(enabled bool) {
-	h.enabled = enabled
 }
 
 // intelligently routes to HMAC or JWT based on request headers
 func (h *HybridMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !h.enabled {
+		if !h.config.Security.EnableAuthentication {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -82,20 +79,20 @@ func (h *HybridMiddleware) GetAuthenticationMethod(r *http.Request) string {
 
 // returns whether HMAC middleware is enabled
 func (h *HybridMiddleware) IsHMACEnabled() bool {
-	return h.hmacMiddleware != nil && h.enabled
+	return h.hmacMiddleware != nil && h.config.Security.EnableAuthentication
 }
 
 // returns whether JWT middleware is enabled
 func (h *HybridMiddleware) IsJWTEnabled() bool {
-	return h.jwtMiddleware != nil && h.enabled
+	return h.jwtMiddleware != nil && h.config.Security.EnableAuthentication
 }
 
 // updates the enabled status from underlying middlewares
-func (h *HybridMiddleware) RefreshEnabled() {
+func (h *HybridMiddleware) UpdateConfig(cfg *config.Config) {
 	if h.hmacMiddleware != nil {
-		h.hmacMiddleware.RefreshEnabled()
+		h.hmacMiddleware.UpdateConfig(cfg)
 	}
 	if h.jwtMiddleware != nil {
-		h.jwtMiddleware.RefreshEnabled()
+		h.jwtMiddleware.UpdateConfig(cfg)
 	}
 }

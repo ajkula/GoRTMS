@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ajkula/GoRTMS/config"
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
@@ -28,14 +29,12 @@ func TestHybridMiddleware_HMACRouting(t *testing.T) {
 	// Setup real middlewares
 	logger := createTestLogger()
 	repo := createTestRepository(t, logger)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
 
-	hmacMiddleware := NewHMACMiddleware(repo, logger)
-	hmacMiddleware.SetEnabled(true)
-
-	jwtMiddleware := NewAuthMiddleware(nil, logger) // nil authService for testing
-	jwtMiddleware.SetEnabled(true)
-
-	hybrid := NewHybridMiddleware(hmacMiddleware, jwtMiddleware, logger)
+	hmacMiddleware := NewHMACMiddleware(repo, logger, cfg)
+	jwtMiddleware := NewAuthMiddleware(nil, logger, cfg)
+	hybrid := NewHybridMiddleware(cfg, hmacMiddleware, jwtMiddleware, logger)
 
 	// Create test service
 	service := createTestService()
@@ -77,14 +76,13 @@ func TestHybridMiddleware_JWTRouting(t *testing.T) {
 	logger := createTestLogger()
 	repo := createTestRepository(t, logger)
 
-	hmacMiddleware := NewHMACMiddleware(repo, logger)
-	hmacMiddleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
 
+	hmacMiddleware := NewHMACMiddleware(repo, logger, cfg)
 	authService := createMockAuthService()
-	jwtMiddleware := NewAuthMiddleware(authService, logger)
-	jwtMiddleware.SetEnabled(true)
-
-	hybrid := NewHybridMiddleware(hmacMiddleware, jwtMiddleware, logger)
+	jwtMiddleware := NewAuthMiddleware(authService, logger, cfg)
+	hybrid := NewHybridMiddleware(cfg, hmacMiddleware, jwtMiddleware, logger)
 
 	handlerCalled := false
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -122,14 +120,13 @@ func TestHybridMiddleware_PartialHMACHeaders(t *testing.T) {
 	logger := createTestLogger()
 	repo := createTestRepository(t, logger)
 
-	hmacMiddleware := NewHMACMiddleware(repo, logger)
-	hmacMiddleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
 
+	hmacMiddleware := NewHMACMiddleware(repo, logger, cfg)
 	authService := createMockAuthService()
-	jwtMiddleware := NewAuthMiddleware(authService, logger)
-	jwtMiddleware.SetEnabled(false) // Disable for simpler testing
-
-	hybrid := NewHybridMiddleware(hmacMiddleware, jwtMiddleware, logger)
+	jwtMiddleware := NewAuthMiddleware(authService, logger, cfg)
+	hybrid := NewHybridMiddleware(cfg, hmacMiddleware, jwtMiddleware, logger)
 
 	testCases := []struct {
 		name    string
@@ -175,8 +172,8 @@ func TestHybridMiddleware_PartialHMACHeaders(t *testing.T) {
 
 			// Should route to JWT when HMAC headers are incomplete
 			// Since JWT is disabled, should pass through to handler
-			if !handlerCalled {
-				t.Error("Expected handler to be called with incomplete HMAC headers")
+			if handlerCalled {
+				t.Error("Expected handler to NOT be called with incomplete HMAC headers (auth should reject)")
 			}
 
 			// Verify authentication method detection
@@ -193,11 +190,13 @@ func TestHybridMiddleware_Disabled(t *testing.T) {
 	logger := createTestLogger()
 	repo := createTestRepository(t, logger)
 
-	hmacMiddleware := NewHMACMiddleware(repo, logger)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = false
+
+	hmacMiddleware := NewHMACMiddleware(repo, logger, cfg)
 	authService := createMockAuthService()
-	jwtMiddleware := NewAuthMiddleware(authService, logger)
-	hybrid := NewHybridMiddleware(hmacMiddleware, jwtMiddleware, logger)
-	hybrid.SetEnabled(false)
+	jwtMiddleware := NewAuthMiddleware(authService, logger, cfg)
+	hybrid := NewHybridMiddleware(cfg, hmacMiddleware, jwtMiddleware, logger)
 
 	handlerCalled := false
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -225,8 +224,9 @@ func TestHybridMiddleware_Disabled(t *testing.T) {
 }
 
 func TestHybridMiddleware_GetAuthenticationMethod(t *testing.T) {
+	cfg := config.DefaultConfig()
 	logger := createTestLogger()
-	hybrid := NewHybridMiddleware(nil, nil, logger)
+	hybrid := NewHybridMiddleware(cfg, nil, nil, logger)
 
 	testCases := []struct {
 		name     string
@@ -272,8 +272,9 @@ func TestHybridMiddleware_GetAuthenticationMethod(t *testing.T) {
 }
 
 func TestHybridMiddleware_IsHMACRequest(t *testing.T) {
+	cfg := config.DefaultConfig()
 	logger := createTestLogger()
-	hybrid := NewHybridMiddleware(nil, nil, logger)
+	hybrid := NewHybridMiddleware(cfg, nil, nil, logger)
 
 	testCases := []struct {
 		name     string

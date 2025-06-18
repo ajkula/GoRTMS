@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/ajkula/GoRTMS/config"
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -252,7 +253,7 @@ func TestAuthHandler_GetProfile_Success(t *testing.T) {
 	testUser := createTestUserModel()
 
 	req := httptest.NewRequest("GET", "/api/auth/profile", nil)
-	_ = NewAuthMiddleware(authService, &MockAuthLogger{})
+	_ = NewAuthMiddleware(authService, &MockAuthLogger{}, config.DefaultConfig())
 	ctx := context.WithValue(req.Context(), UserContextKey, testUser)
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()

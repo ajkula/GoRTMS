@@ -274,3 +274,40 @@ func (h *Handler) removeConsumerFromGroup(w http.ResponseWriter, r *http.Request
 		"status": "success",
 	})
 }
+
+func (h *Handler) removeSelfFromGroup(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	domainName := vars["domain"]
+	queueName := vars["queue"]
+	groupID := vars["group"]
+
+	// Get service from HMAC context
+	service := h.hmacMiddleware.GetServiceFromContext(r.Context())
+	if service == nil {
+		http.Error(w, "Service not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	consumerID := service.ID
+
+	// Delete consumer
+	if err := h.consumerGroupRepo.RemoveConsumer(r.Context(), domainName, queueName, groupID, consumerID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.logger.Debug("Service removed itself from consumer group",
+		"serviceID", service.ID,
+		"serviceName", service.Name,
+		"domain", domainName,
+		"queue", queueName,
+		"group", groupID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":      "success",
+		"consumerID":  consumerID,
+		"serviceName": service.Name,
+		"removedBy":   "self",
+	})
+}

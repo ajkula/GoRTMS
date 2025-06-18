@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ajkula/GoRTMS/adapter/outbound/storage"
+	"github.com/ajkula/GoRTMS/config"
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
 )
@@ -123,8 +124,10 @@ func TestHMACMiddleware_ValidAuthentication(t *testing.T) {
 	// Setup
 	logger := &mockLogger2{}
 	repo := createTestRepository(t, logger)
-	middleware := NewHMACMiddleware(repo, logger)
-	middleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
+
+	middleware := NewHMACMiddleware(repo, logger, cfg)
 
 	service := createTestService()
 	repo.Create(context.Background(), service)
@@ -175,8 +178,10 @@ func TestHMACMiddleware_MissingHeaders(t *testing.T) {
 	// Setup
 	logger := &mockLogger2{}
 	repo := createTestRepository(t, logger)
-	middleware := NewHMACMiddleware(repo, logger)
-	middleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
+
+	middleware := NewHMACMiddleware(repo, logger, cfg)
 
 	testCases := []struct {
 		name    string
@@ -238,8 +243,10 @@ func TestHMACMiddleware_InvalidTimestamp(t *testing.T) {
 	// Setup
 	logger := &mockLogger2{}
 	repo := createTestRepository(t, logger)
-	middleware := NewHMACMiddleware(repo, logger)
-	middleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
+
+	middleware := NewHMACMiddleware(repo, logger, cfg)
 
 	testCases := []struct {
 		name      string
@@ -288,8 +295,10 @@ func TestHMACMiddleware_ServiceNotFound(t *testing.T) {
 	// Setup
 	logger := &mockLogger2{}
 	repo := createTestRepository(t, logger)
-	middleware := NewHMACMiddleware(repo, logger)
-	middleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
+
+	middleware := NewHMACMiddleware(repo, logger, cfg)
 
 	handlerCalled := false
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -318,8 +327,10 @@ func TestHMACMiddleware_ServiceDisabled(t *testing.T) {
 	// Setup
 	logger := &mockLogger2{}
 	repo := createTestRepository(t, logger)
-	middleware := NewHMACMiddleware(repo, logger)
-	middleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
+
+	middleware := NewHMACMiddleware(repo, logger, cfg)
 
 	service := createTestService()
 	service.Enabled = false // Disable service
@@ -350,8 +361,10 @@ func TestHMACMiddleware_InvalidSignature(t *testing.T) {
 	// Setup
 	logger := &mockLogger2{}
 	repo := createTestRepository(t, logger)
-	middleware := NewHMACMiddleware(repo, logger)
-	middleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
+
+	middleware := NewHMACMiddleware(repo, logger, cfg)
 
 	service := createTestService()
 	repo.Create(context.Background(), service)
@@ -384,8 +397,10 @@ func TestHMACMiddleware_Permissions(t *testing.T) {
 	// Setup
 	logger := &mockLogger2{}
 	repo := createTestRepository(t, logger)
-	middleware := NewHMACMiddleware(repo, logger)
-	middleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
+
+	middleware := NewHMACMiddleware(repo, logger, cfg)
 
 	service := createTestService()
 	service.Permissions = []string{"publish:orders"} // Only publish to orders domain
@@ -455,8 +470,10 @@ func TestHMACMiddleware_WildcardPermissions(t *testing.T) {
 	// Setup
 	logger := &mockLogger2{}
 	repo := createTestRepository(t, logger)
-	middleware := NewHMACMiddleware(repo, logger)
-	middleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
+
+	middleware := NewHMACMiddleware(repo, logger, cfg)
 
 	service := createTestService()
 	service.Permissions = []string{"publish:*", "manage:orders"} // Wildcard permissions
@@ -519,8 +536,10 @@ func TestHMACMiddleware_IPWhitelist(t *testing.T) {
 	// Setup
 	logger := &mockLogger2{}
 	repo := createTestRepository(t, logger)
-	middleware := NewHMACMiddleware(repo, logger)
-	middleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
+
+	middleware := NewHMACMiddleware(repo, logger, cfg)
 
 	service := createTestServiceWithIPWhitelist() // Use service with IP whitelist
 	repo.Create(context.Background(), service)
@@ -579,8 +598,10 @@ func TestHMACMiddleware_Disabled(t *testing.T) {
 	// Setup
 	logger := &mockLogger2{}
 	repo := createTestRepository(t, logger)
-	middleware := NewHMACMiddleware(repo, logger)
-	middleware.SetEnabled(false) // Middleware disabled
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = false
+
+	middleware := NewHMACMiddleware(repo, logger, cfg)
 
 	handlerCalled := false
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -608,8 +629,10 @@ func TestHMACMiddleware_LastUsedUpdate(t *testing.T) {
 	// Setup
 	logger := &mockLogger2{}
 	repo := createTestRepository(t, logger)
-	middleware := NewHMACMiddleware(repo, logger)
-	middleware.SetEnabled(true)
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = true
+
+	middleware := NewHMACMiddleware(repo, logger, cfg)
 
 	service := createTestService()
 

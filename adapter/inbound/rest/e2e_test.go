@@ -114,9 +114,9 @@ func TestE2E_CompleteWorkflow(t *testing.T) {
 	consumerID := server.addConsumerToGroupWithHMAC(t, serviceID, serviceSecret, domainName, queueName, groupID, "e2e-consumer-1")
 	t.Logf("Added consumer via HMAC: %s", consumerID)
 
-	// Remove consumer via Hybrid (could be service or UI)
-	server.removeConsumerFromGroupWithHybrid(t, serviceID, serviceSecret, domainName, queueName, groupID, consumerID)
-	t.Logf("Removed consumer via Hybrid: %s", consumerID)
+	// Remove consumer via HMAC
+	server.removeSelfFromGroupWithHMAC(t, serviceID, serviceSecret, domainName, queueName, groupID)
+	t.Logf("Removed consumer via HMAC: %s", consumerID)
 
 	// ====================================
 	// STEP 6: Validate authentication isolation
@@ -161,10 +161,11 @@ func setupCompleteTestServer(t *testing.T) *completeTestServer {
 
 	// Create config
 	cfg := config.DefaultConfig()
-	cfg.Security.EnableAuthentication = true // Disabled for testing
+	cfg.Security.EnableAuthentication = true
 
 	// Create mock services (minimal implementations for testing)
-	authService := createMockAuthService()
+	// authService := createMockAuthService()
+	authService := &mockAuthService{users: make(map[string]*model.User)}
 	messageService := &mockMessageService{messages: make(map[string][]*model.Message)}
 	domainService := &mockDomainService{domains: make(map[string]*model.Domain)}
 	queueService := &mockQueueService{queues: make(map[string]map[string]*model.Queue)}
@@ -188,9 +189,6 @@ func setupCompleteTestServer(t *testing.T) *completeTestServer {
 		consumerGroupRepo,
 		serviceRepo,
 	)
-
-	handler.hmacMiddleware.SetEnabled(true)
-	handler.hybridMiddleware.SetEnabled(true)
 
 	// Setup routes
 	router := mux.NewRouter()
@@ -220,6 +218,7 @@ func (s *completeTestServer) createServiceAccount(t *testing.T, name string, per
 	body, _ := json.Marshal(createReq)
 	req := httptest.NewRequest("POST", "/api/admin/services", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer mock-jwt-token")
 	w := httptest.NewRecorder()
 
 	s.router.ServeHTTP(w, req)
@@ -376,6 +375,7 @@ func (s *completeTestServer) testHealthCheck(t *testing.T) {
 // tests domain listing via management API
 func (s *completeTestServer) listDomains(t *testing.T) []map[string]interface{} {
 	req := httptest.NewRequest("GET", "/api/domains", nil)
+	req.Header.Set("Authorization", "Bearer mock-jwt-token")
 	w := httptest.NewRecorder()
 
 	s.router.ServeHTTP(w, req)
@@ -395,6 +395,7 @@ func (s *completeTestServer) listDomains(t *testing.T) []map[string]interface{} 
 // tests stats endpoint
 func (s *completeTestServer) getStats(t *testing.T) map[string]interface{} {
 	req := httptest.NewRequest("GET", "/api/stats", nil)
+	req.Header.Set("Authorization", "Bearer mock-jwt-token")
 	w := httptest.NewRecorder()
 
 	s.router.ServeHTTP(w, req)
@@ -420,6 +421,7 @@ func (s *completeTestServer) createConsumerGroup(t *testing.T, domainName, queue
 	path := fmt.Sprintf("/api/domains/%s/queues/%s/consumer-groups", domainName, queueName)
 	req := httptest.NewRequest("POST", path, bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer mock-jwt-token")
 	w := httptest.NewRecorder()
 
 	s.router.ServeHTTP(w, req)
@@ -458,9 +460,9 @@ func (s *completeTestServer) addConsumerToGroupWithHMAC(t *testing.T, serviceID,
 	return consumerID
 }
 
-// removes consumer via Hybrid (could be service or UI)
-func (s *completeTestServer) removeConsumerFromGroupWithHybrid(t *testing.T, serviceID, secret, domainName, queueName, groupID, consumerID string) {
-	path := fmt.Sprintf("/api/domains/%s/queues/%s/consumer-groups/%s/consumers/%s", domainName, queueName, groupID, consumerID)
+// removes self consumer via HMAC
+func (s *completeTestServer) removeSelfFromGroupWithHMAC(t *testing.T, serviceID, secret, domainName, queueName, groupID string) {
+	path := fmt.Sprintf("/api/domains/%s/queues/%s/consumer-groups/%s/consumers/self", domainName, queueName, groupID)
 	timestamp := time.Now().Format(time.RFC3339)
 	signature := s.generateHMACSignature("DELETE", path, "", timestamp, secret)
 
@@ -473,7 +475,7 @@ func (s *completeTestServer) removeConsumerFromGroupWithHybrid(t *testing.T, ser
 	s.router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Errorf("Failed to remove consumer via Hybrid. Status: %d, Body: %s", w.Code, w.Body.String())
+		t.Errorf("Failed to remove consumer via HMAC. Status: %d, Body: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -519,15 +521,31 @@ type mockAuthService struct {
 }
 
 type mockLogger struct {
-	logs []string
+	t *testing.T
 }
 
-func (m *mockLogger) Error(msg string, args ...any) {}
-func (m *mockLogger) Warn(msg string, args ...any)  {}
-func (m *mockLogger) Info(msg string, args ...any)  {}
-func (m *mockLogger) Debug(msg string, args ...any) {}
-func (m *mockLogger) UpdateLevel(logLvl string)     {}
-func (m *mockLogger) Shutdown()                     {}
+func (m *mockLogger) Error(msg string, args ...any) {
+	if m.t != nil {
+		m.t.Logf("ERROR: %s %v", msg, args)
+	}
+}
+func (m *mockLogger) Warn(msg string, args ...any) {
+	if m.t != nil {
+		m.t.Logf("WARN: %s %v", msg, args)
+	}
+}
+func (m *mockLogger) Info(msg string, args ...any) {
+	if m.t != nil {
+		m.t.Logf("INFO: %s %v", msg, args) // ← Maintenant ça affiche !
+	}
+}
+func (m *mockLogger) Debug(msg string, args ...any) {
+	if m.t != nil {
+		m.t.Logf("DEBUG: %s %v", msg, args)
+	}
+}
+func (m *mockLogger) UpdateLevel(logLvl string) {}
+func (m *mockLogger) Shutdown()                 {}
 
 func (m *mockAuthService) Login(username, password string) (*model.User, string, error) {
 	m.mu.RLock()

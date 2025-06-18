@@ -22,12 +22,11 @@ const ServiceContextKey contextKey = "service"
 type HMACMiddleware struct {
 	serviceRepo     outbound.ServiceRepository
 	logger          outbound.Logger
-	enabled         bool
+	config          *config.Config
 	timestampWindow time.Duration
 }
 
-func NewHMACMiddleware(serviceRepo outbound.ServiceRepository, logger outbound.Logger) *HMACMiddleware {
-	config := config.DefaultConfig()
+func NewHMACMiddleware(serviceRepo outbound.ServiceRepository, logger outbound.Logger, config *config.Config) *HMACMiddleware {
 	timestampWindow := 5 * time.Minute
 
 	if config.Security.HMAC.TimestampWindow != "" {
@@ -39,25 +38,25 @@ func NewHMACMiddleware(serviceRepo outbound.ServiceRepository, logger outbound.L
 	return &HMACMiddleware{
 		serviceRepo:     serviceRepo,
 		logger:          logger,
-		enabled:         config.Security.HMAC.Enabled,
+		config:          config,
 		timestampWindow: timestampWindow,
 	}
 }
 
 // updates the enabled status from config
-func (m *HMACMiddleware) RefreshEnabled() {
-	m.enabled = config.DefaultConfig().Security.HMAC.Enabled
+func (m *HMACMiddleware) UpdateConfig(config *config.Config) {
+	m.config = config
 }
 
-// manually sets the enabled status
-func (m *HMACMiddleware) SetEnabled(enabled bool) {
-	m.enabled = enabled
-}
+// // manually sets the enabled status
+// func (m *HMACMiddleware) SetEnabled(enabled bool) {
+// 	m.enabled = enabled
+// }
 
 // validates HMAC authentication
 func (m *HMACMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !m.enabled {
+		if !m.config.Security.EnableAuthentication {
 			next.ServeHTTP(w, r)
 			return
 		}

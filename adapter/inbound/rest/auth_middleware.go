@@ -18,29 +18,24 @@ const UserContextKey contextKey = "user"
 type AuthMiddleware struct {
 	authService inbound.AuthService
 	logger      outbound.Logger
-	enabled     bool
+	config      *config.Config
 }
 
-func NewAuthMiddleware(authService inbound.AuthService, logger outbound.Logger) *AuthMiddleware {
+func NewAuthMiddleware(authService inbound.AuthService, logger outbound.Logger, cfg *config.Config) *AuthMiddleware {
 	return &AuthMiddleware{
 		authService: authService,
 		logger:      logger,
-		enabled:     config.DefaultConfig().Security.EnableAuthentication,
+		config:      cfg,
 	}
 }
 
-func (m *AuthMiddleware) RefreshEnabled() {
-	m.enabled = config.DefaultConfig().Security.EnableAuthentication
-}
-
-func (m *AuthMiddleware) SetEnabled(enabled bool) {
-	m.enabled = enabled
+func (m *AuthMiddleware) UpdateConfig(cfg *config.Config) {
+	m.config = cfg
 }
 
 func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		m.logger.Warn("Middleware", "m.enabled", m.enabled)
-		m.logger.Warn("Middleware", "r.URL.Path", r.URL.Path)
+		enabled := m.config.Security.EnableAuthentication
 
 		if m.isPublicRoute(r.URL.Path) {
 			next.ServeHTTP(w, r)
@@ -48,12 +43,8 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 		}
 
 		token := m.extractToken(r)
-		m.logger.Warn("Middleware", "token", token)
-
 		if token != "" {
 			user, err := m.authService.ValidateToken(token)
-			m.logger.Warn("Middleware", "token", token, "user", user)
-
 			if err == nil && user != nil {
 				ctx := context.WithValue(r.Context(), UserContextKey, user)
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -61,7 +52,7 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 			}
 		}
 
-		if m.enabled {
+		if enabled {
 			m.unauthorized(w, "unauthorized")
 			return
 		} else {
@@ -74,7 +65,7 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 func (m *AuthMiddleware) RequireRole(role model.UserRole) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !m.enabled {
+			if !m.config.Security.EnableAuthentication {
 				next.ServeHTTP(w, r)
 				return
 			}

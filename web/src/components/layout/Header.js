@@ -74,11 +74,12 @@ const NotificationDropdown = ({ notifications, unreadCount, onMarkAsRead }) => {
           </div>
           <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
             {notifications.map((notification) => (
-              <NotificationItem
-                key={notification.id}
-                notification={notification}
-                onRead={() => onMarkAsRead(notification.id)}
-              />
+              {notification}
+              // <NotificationItem
+              //   key={notification.id}
+              //   notification={notification}
+              //   onRead={() => onMarkAsRead(notification.id)}
+              // />
             ))}
           </div>
         </div>

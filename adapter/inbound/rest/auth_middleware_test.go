@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/ajkula/GoRTMS/config"
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -107,18 +108,20 @@ func createTestAdminModel() *model.User {
 	}
 }
 
-func setupAuthMiddleware() (*AuthMiddleware, *MockAuthService, *MockAuthLogger) {
+func setupAuthMiddleware(enable bool) (*AuthMiddleware, *MockAuthService, *MockAuthLogger) {
 	authService := &MockAuthService{}
 	logger := &MockAuthLogger{}
+	cfg := config.DefaultConfig()
+	cfg.Security.EnableAuthentication = enable
 	logger.On("Warn", mock.Anything, mock.Anything).Return()
-	middleware := NewAuthMiddleware(authService, logger)
+	middleware := NewAuthMiddleware(authService, logger, cfg)
 	return middleware, authService, logger
 }
 
 func TestAuthMiddleware_Disabled(t *testing.T) {
-	middleware, _, logger := setupAuthMiddleware()
+	middleware, _, logger := setupAuthMiddleware(false)
+
 	logger.On("Warn", mock.Anything, mock.Anything).Return()
-	middleware.SetEnabled(false)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -135,7 +138,7 @@ func TestAuthMiddleware_Disabled(t *testing.T) {
 }
 
 func TestAuthMiddleware_PublicRoute(t *testing.T) {
-	middleware, _, _ := setupAuthMiddleware()
+	middleware, _, _ := setupAuthMiddleware(true)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -161,8 +164,7 @@ func TestAuthMiddleware_PublicRoute(t *testing.T) {
 }
 
 func TestAuthMiddleware_MissingToken(t *testing.T) {
-	middleware, _, logger := setupAuthMiddleware()
-	middleware.SetEnabled(true)
+	middleware, _, logger := setupAuthMiddleware(true)
 
 	logger.On("Warn", "Unauthorized access", mock.Anything).Return()
 
@@ -180,8 +182,7 @@ func TestAuthMiddleware_MissingToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_InvalidToken(t *testing.T) {
-	middleware, authService, logger := setupAuthMiddleware()
-	middleware.SetEnabled(true)
+	middleware, authService, logger := setupAuthMiddleware(true)
 
 	authService.On("ValidateToken", "invalid-token").Return(nil, assert.AnError)
 	logger.On("Warn", "Unauthorized access", mock.Anything).Return()
@@ -200,8 +201,7 @@ func TestAuthMiddleware_InvalidToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_ValidToken(t *testing.T) {
-	middleware, authService, _ := setupAuthMiddleware()
-	middleware.SetEnabled(true)
+	middleware, authService, _ := setupAuthMiddleware(true)
 	testUser := createTestUserModel()
 
 	authService.On("ValidateToken", "valid-token").Return(testUser, nil)
@@ -223,8 +223,7 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_RequireRole_Success(t *testing.T) {
-	middleware, _, _ := setupAuthMiddleware()
-	middleware.SetEnabled(true)
+	middleware, _, _ := setupAuthMiddleware(true)
 	testUser := createTestUserModel()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -242,8 +241,7 @@ func TestAuthMiddleware_RequireRole_Success(t *testing.T) {
 }
 
 func TestAuthMiddleware_RequireRole_Admin_Success(t *testing.T) {
-	middleware, _, _ := setupAuthMiddleware()
-	middleware.SetEnabled(true)
+	middleware, _, _ := setupAuthMiddleware(true)
 	testAdmin := createTestAdminModel()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -261,8 +259,7 @@ func TestAuthMiddleware_RequireRole_Admin_Success(t *testing.T) {
 }
 
 func TestAuthMiddleware_RequireRole_Forbidden(t *testing.T) {
-	middleware, _, logger := setupAuthMiddleware()
-	middleware.SetEnabled(true)
+	middleware, _, logger := setupAuthMiddleware(true)
 	testUser := createTestUserModel()
 
 	logger.On("Warn", "Forbidden access", mock.Anything).Return()
@@ -282,8 +279,7 @@ func TestAuthMiddleware_RequireRole_Forbidden(t *testing.T) {
 }
 
 func TestAuthMiddleware_RequireRole_NoUser(t *testing.T) {
-	middleware, _, logger := setupAuthMiddleware()
-	middleware.SetEnabled(true)
+	middleware, _, logger := setupAuthMiddleware(true)
 
 	logger.On("Warn", "Forbidden access", mock.Anything).Return()
 
@@ -300,7 +296,7 @@ func TestAuthMiddleware_RequireRole_NoUser(t *testing.T) {
 }
 
 func TestAuthMiddleware_GetUserFromContext_Success(t *testing.T) {
-	middleware, _, _ := setupAuthMiddleware()
+	middleware, _, _ := setupAuthMiddleware(true)
 	testUser := createTestUserModel()
 
 	ctx := context.WithValue(context.Background(), UserContextKey, testUser)
@@ -311,7 +307,7 @@ func TestAuthMiddleware_GetUserFromContext_Success(t *testing.T) {
 }
 
 func TestAuthMiddleware_GetUserFromContext_NotFound(t *testing.T) {
-	middleware, _, _ := setupAuthMiddleware()
+	middleware, _, _ := setupAuthMiddleware(true)
 
 	ctx := context.Background()
 	user := middleware.GetUserFromContext(ctx)

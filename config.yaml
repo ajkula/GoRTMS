@@ -1,11 +1,11 @@
 general:
     nodeId: node1
-    dataDir: ./data
-    logLevel: info
+    dataDir: C:\dev\GO\GoRTMS\data
+    logLevel: debug
     development: false
 storage:
     engine: memory
-    path: ./data/storage
+    path: C:\dev\GO\GoRTMS\data\data\storage
     retentionDays: 7
     sync: true
     maxSizeMB: 1024
@@ -36,13 +36,13 @@ grpc:
     address: 0.0.0.0
     port: 50051
 security:
-    enableAuthentication: false
+    enableAuthentication: true
     enableAuthorization: false
     adminUsername: admin
     adminPassword: admin
     hmac:
         enabled: false
-        timestampWindow: "5m"
+        timestampWindow: 5m
         requireTLS: false
 monitoring:
     enabled: true

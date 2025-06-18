@@ -55,10 +55,10 @@ func NewHandler(
 	consumerGroupRepo outbound.ConsumerGroupRepository,
 	repoService outbound.ServiceRepository,
 ) *Handler {
-	authMiddleware := NewAuthMiddleware(authService, logger)
+	authMiddleware := NewAuthMiddleware(authService, logger, config)
 	authHandler := NewAuthHandler(authService, logger)
-	hmacMiddleware := NewHMACMiddleware(repoService, logger)
-	hybridMiddleware := NewHybridMiddleware(hmacMiddleware, authMiddleware, logger)
+	hmacMiddleware := NewHMACMiddleware(repoService, logger, config)
+	hybridMiddleware := NewHybridMiddleware(config, hmacMiddleware, authMiddleware, logger)
 
 	return &Handler{
 		logger:               logger,
@@ -84,14 +84,18 @@ func NewHandler(
 func (h *Handler) SetupRoutes(router *mux.Router) {
 	serviceHandler := NewServiceHandler(h.serviceRepo, h.logger)
 
+	// CRITICAL: Router order matters in Gorilla Mux!
+	// Subrouters with same PathPrefix are tested in CREATION ORDER.
+	// More specific routes (hmacRouter) must be created BEFORE general ones
+	// /consumers/{consumer} would match /consumers/self before hmacRouter is tested.
+	hmacRouter := router.PathPrefix("/api").Subrouter()
+	hmacRouter.Use(h.hmacMiddleware.Middleware)
+
 	jwtRouter := router.PathPrefix("/api").Subrouter()
 	jwtRouter.Use(h.authMiddleware.Middleware)
 
 	adminRouter := jwtRouter.PathPrefix("/admin").Subrouter()
 	adminRouter.Use(h.authMiddleware.RequireRole(model.RoleAdmin))
-
-	hmacRouter := router.PathPrefix("/api").Subrouter()
-	hmacRouter.Use(h.hmacMiddleware.Middleware)
 
 	hybridRouter := router.PathPrefix("/api").Subrouter()
 	hybridRouter.Use(h.hybridMiddleware.Middleware)
@@ -144,8 +148,9 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}", h.getConsumerGroup).Methods("GET")
 	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}", h.deleteConsumerGroup).Methods("DELETE")
 	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}/ttl", h.updateConsumerGroupTTL).Methods("PUT")
-	hmacRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}/messages", h.getPendingMessages).Methods("GET")
+	hybridRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}/messages", h.getPendingMessages).Methods("GET")
 	hmacRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers", h.addConsumerToGroup).Methods("POST")
+	hmacRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers/self", h.removeSelfFromGroup).Methods("DELETE")
 	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers/{consumer}", h.removeConsumerFromGroup).Methods("DELETE")
 
 	// Stats routes
@@ -186,8 +191,8 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 	}))
 }
 
-func (h *Handler) RefreshEnabled() {
-	h.authMiddleware.RefreshEnabled()
+func (h *Handler) RefreshConfig(config *config.Config) {
+	h.authMiddleware.UpdateConfig(config)
 }
 
 func (h *Handler) healthCheck(w http.ResponseWriter, r *http.Request) {

@@ -13,8 +13,12 @@ import (
 
 // Config holds the global service configuration
 type Config struct {
+	// Config file path
+	ConfigPath string `yaml:"configPath"`
+
 	// General configuration
 	General struct {
+
 		// NodeID is this node's unique identifier
 		NodeID string `yaml:"nodeId"`
 
@@ -229,6 +233,7 @@ type RoutingRule struct {
 // DefaultConfig returns a default configuration
 func DefaultConfig() *Config {
 	c := &Config{}
+	c.ConfigPath = "config.yaml"
 
 	// General configuration
 	c.General.NodeID = "node1"
@@ -347,6 +352,7 @@ func LoadConfig(path string) (*Config, error) {
 
 // SaveConfig saves the configuration to a file
 func SaveConfig(config *Config, path string) error {
+	config.ConfigPath = path
 	// Encode the configuration to YAML
 	data, err := yaml.Marshal(config)
 	if err != nil {

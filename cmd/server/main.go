@@ -54,6 +54,7 @@ func main() {
 	// Generate a default configuration file
 	if generateConfig {
 		cfg := config.DefaultConfig()
+		cfg.ConfigPath = configPath
 		err := config.SaveConfig(cfg, configPath)
 		if err != nil {
 			fmt.Printf("Error generating config file: %v\n", err)

@@ -1,0 +1,2272 @@
+openapi: 3.0.3
+info:
+  title: GoRTMS - Go Real-Time Messaging System
+  description: |
+    GoRTMS is a real-time messaging system built with Go, featuring:
+    - Domain-based message organization with queues
+    - Consumer groups with offset management
+    - Message routing with conditional rules
+    - Dual authentication (JWT for web, HMAC for services)
+    - Real-time monitoring and statistics
+    - Runtime configuration management
+  version: 1.0.0
+  contact:
+    name: GoRTMS API Support
+    url: https://github.com/ajkula/GoRTMS
+  license:
+    name: Apache License
+    url: http://www.apache.org/licenses/
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://your.own.gortms.server.com
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User authentication and profile management
+  - name: Admin - Users
+    description: User management (admin only)
+  - name: Admin - Services
+    description: Service account management for HMAC authentication (admin only)
+  - name: Domains
+    description: Domain management and configuration
+  - name: Queues
+    description: Queue management and configuration
+  - name: Messages
+    description: Message publishing and consumption (HMAC authentication)
+  - name: Consumer Groups
+    description: Consumer group management and coordination
+  - name: Routing
+    description: Message routing rules and testing
+  - name: Statistics
+    description: System statistics and monitoring
+  - name: Settings
+    description: Runtime configuration management
+  - name: Health
+    description: System health checks
+
+security:
+  - bearerAuth: []
+  - hmacAuth: []
+
+paths:
+  # Authentication endpoints
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: User login
+      description: Authenticate user with Username/Password and receive JWT token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [Username, Password]
+              properties:
+                Username:
+                  type: string
+                  example: admin
+                Password:
+                  type: string
+                  example: admin
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/auth/bootstrap:
+    post:
+      tags: [Authentication]
+      summary: Bootstrap admin user
+      description: Create initial admin user when no users exist
+      security: []
+      responses:
+        '201':
+          description: Admin user created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  Password:
+                    type: string
+                    description: Generated admin Password
+                    example: "aB3$mK9@pL2x"
+        '409':
+          description: Users already exist
+
+  /api/auth/profile:
+    get:
+      tags: [Authentication]
+      summary: Get current user profile
+      description: Retrieve authenticated user's profile information
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Admin - Users
+  /api/admin/users:
+    post:
+      tags: [Admin - Users]
+      summary: Create new user
+      description: Create a new user account (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [Username, Password, role]
+              properties:
+                Username:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                  example: "newuser"
+                Password:
+                  type: string
+                  minLength: 6
+                  example: "securePassword"
+                role:
+                  $ref: '#/components/schemas/UserRole'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Username already exists
+
+    get:
+      tags: [Admin - Users]
+      summary: List all users
+      description: Retrieve list of all users (admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  count:
+                    type: integer
+                    example: 5
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # Admin - Service Accounts
+  /api/admin/services:
+    post:
+      tags: [Admin - Services]
+      summary: Create service account
+      description: Create a new service account for HMAC authentication (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceAccountCreateRequest'
+      responses:
+        '201':
+          description: Service account created (secret visible only once)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ServiceAccountView'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "SAVE THIS SECRET NOW - It will never be shown again!"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    get:
+      tags: [Admin - Services]
+      summary: List service accounts
+      description: Retrieve all service accounts (secrets masked)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of service accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  services:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ServiceAccountView'
+                  count:
+                    type: integer
+                    example: 3
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/services/{id}:
+    get:
+      tags: [Admin - Services]
+      summary: Get service account
+      description: Retrieve specific service account details (secret masked)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "analytics-service-250617-141530"
+      responses:
+        '200':
+          description: Service account details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccountView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Admin - Services]
+      summary: Delete service account
+      description: Remove a service account permanently
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Service account deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Service account deleted successfully"
+                  serviceId:
+                    type: string
+                    example: "analytics-service-250617-141530"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/admin/services/{id}/rotate-secret:
+    post:
+      tags: [Admin - Services]
+      summary: Rotate service secret
+      description: Generate new secret for service account (visible only once)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Secret rotated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ServiceAccountView'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "NEW SECRET GENERATED - Save it now! Old secret is invalid."
+                      rotated:
+                        type: boolean
+                        example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/admin/services/{id}/permissions:
+    put:
+      tags: [Admin - Services]
+      summary: Update service permissions
+      description: Update permissions and settings for service account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceAccountUpdateRequest'
+      responses:
+        '200':
+          description: Permissions updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccountView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Domains
+  /api/domains:
+    get:
+      tags: [Domains]
+      summary: List domains
+      description: Retrieve all domains in the system
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of domains
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domains:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Domain'
+                  count:
+                    type: integer
+                    example: 2
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Domains]
+      summary: Create domain
+      description: Create a new message domain (hybrid auth)
+      security:
+        - bearerAuth: []
+        - hmacAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DomainCreateRequest'
+      responses:
+        '201':
+          description: Domain created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Domain'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Domain already exists
+
+  /api/domains/{domain}:
+    get:
+      tags: [Domains]
+      summary: Get domain details
+      description: Retrieve specific domain information
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "orders"
+      responses:
+        '200':
+          description: Domain details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Domain'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Domains]
+      summary: Delete domain
+      description: Remove domain and all its queues
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Domain deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Domain not empty
+
+  # Queues
+  /api/domains/{domain}/queues:
+    get:
+      tags: [Queues]
+      summary: List queues in domain
+      description: Retrieve all queues for a specific domain
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "orders"
+      responses:
+        '200':
+          description: List of queues
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queues:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Queue'
+                  count:
+                    type: integer
+                    example: 3
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags: [Queues]
+      summary: Create queue
+      description: Create a new message queue in domain (hybrid auth)
+      security:
+        - bearerAuth: []
+        - hmacAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueCreateRequest'
+      responses:
+        '201':
+          description: Queue created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Queue'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Domain not found
+        '409':
+          description: Queue already exists
+
+  /api/domains/{domain}/queues/{queue}:
+    get:
+      tags: [Queues]
+      summary: Get queue details
+      description: Retrieve specific queue information
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "processing"
+      responses:
+        '200':
+          description: Queue details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Queue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Queues]
+      summary: Delete queue
+      description: Remove queue and all its messages
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Queue deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Queue not empty
+
+  # Messages (HMAC Only)
+  /api/domains/{domain}/queues/{queue}/messages:
+    post:
+      tags: [Messages]
+      summary: Publish message
+      description: Publish a new message to the queue (HMAC authentication required)
+      security:
+        - hmacAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: Optional message ID (auto-generated if not provided)
+                  example: "order-12345"
+                topic:
+                  type: string
+                  example: "order.created"
+                payload:
+                  type: object
+                  description: Message content (any JSON object)
+                  example:
+                    orderId: "12345"
+                    customerId: "user-789"
+                    amount: 99.99
+                    status: "pending"
+                headers:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  example:
+                    "Content-Type": "application/json"
+                    "Source": "order-service"
+                metadata:
+                  type: object
+                  description: Routing and processing metadata
+                  example:
+                    priority: "high"
+                    region: "us-east-1"
+      responses:
+        '200':
+          description: Message published successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messageId:
+                    type: string
+                    example: "msg-1750184818890780700-6070"
+                  status:
+                    type: string
+                    example: "published"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2025-06-17T10:30:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    get:
+      tags: [Messages]
+      summary: Consume messages
+      description: Retrieve messages from queue (HMAC authentication required)
+      security:
+        - hmacAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: max
+          in: query
+          description: Maximum number of messages to retrieve
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          example: 10
+        - name: startFromId
+          in: query
+          description: Start retrieving from specific message ID
+          schema:
+            type: string
+        - name: timeout
+          in: query
+          description: Timeout in seconds for waiting for messages
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
+            default: 5
+      responses:
+        '200':
+          description: Messages retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  count:
+                    type: integer
+                    example: 5
+                  hasMore:
+                    type: boolean
+                    example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Consumer Groups
+  /api/consumer-groups:
+    get:
+      tags: [Consumer Groups]
+      summary: List all consumer groups
+      description: Retrieve all consumer groups across all domains and queues
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of consumer groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConsumerGroup'
+                  count:
+                    type: integer
+                    example: 8
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/domains/{domain}/queues/{queue}/consumer-groups:
+    get:
+      tags: [Consumer Groups]
+      summary: List consumer groups for queue
+      description: Retrieve consumer groups for specific queue
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of consumer groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConsumerGroup'
+                  count:
+                    type: integer
+                    example: 3
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags: [Consumer Groups]
+      summary: Create consumer group
+      description: Create a new consumer group for queue coordination
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [groupId]
+              properties:
+                groupId:
+                  type: string
+                  example: "analytics-processors"
+                ttl:
+                  type: string
+                  description: Time-to-live duration (e.g., "1h", "30m")
+                  example: "1h"
+      responses:
+        '201':
+          description: Consumer group created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsumerGroup'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Consumer group already exists
+
+  /api/domains/{domain}/queues/{queue}/consumer-groups/{group}:
+    get:
+      tags: [Consumer Groups]
+      summary: Get consumer group details
+      description: Retrieve specific consumer group information
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "analytics-processors"
+      responses:
+        '200':
+          description: Consumer group details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsumerGroup'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Consumer Groups]
+      summary: Delete consumer group
+      description: Remove consumer group and all its consumers
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Consumer group deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/domains/{domain}/queues/{queue}/consumer-groups/{group}/ttl:
+    put:
+      tags: [Consumer Groups]
+      summary: Update consumer group TTL
+      description: Update time-to-live for consumer group
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ttl]
+              properties:
+                ttl:
+                  type: string
+                  example: "2h"
+      responses:
+        '200':
+          description: TTL updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsumerGroup'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/domains/{domain}/queues/{queue}/consumer-groups/{group}/messages:
+    get:
+      tags: [Consumer Groups]
+      summary: Get pending messages for group
+      description: Retrieve messages pending for consumer group (HMAC authentication)
+      security:
+        - hmacAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pending messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  count:
+                    type: integer
+                  position:
+                    type: integer
+                    format: int64
+                    description: Current group position
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers:
+    post:
+      tags: [Consumer Groups]
+      summary: Add consumer to group
+      description: Register a new consumer in the group (HMAC authentication)
+      security:
+        - hmacAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consumerID]
+              properties:
+                consumerID:
+                  type: string
+                  example: "processor-instance-1"
+      responses:
+        '200':
+          description: Consumer added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  consumerID:
+                    type: string
+                    example: "processor-instance-1"
+                  groupID:
+                    type: string
+                    example: "analytics-processors"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers/self:
+    delete:
+      tags: [Consumer Groups]
+      summary: Remove self from consumer group
+      description: Service removes itself from consumer group (HMAC authentication, service auto-scaling)
+      security:
+        - hmacAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Service removed itself successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  consumerID:
+                    type: string
+                    example: "analytics-service-250617-141530"
+                  serviceName:
+                    type: string
+                    example: "analytics-service"
+                  removedBy:
+                    type: string
+                    example: "self"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/domains/{domain}/queues/{queue}/consumer-groups/{group}/consumers/{consumer}:
+    delete:
+      tags: [Consumer Groups]
+      summary: Remove consumer from group
+      description: Remove specific consumer from group (admin management)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: consumer
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "processor-instance-1"
+      responses:
+        '200':
+          description: Consumer removed successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Routing
+  /api/domains/{domain}/routes:
+    get:
+      tags: [Routing]
+      summary: List routing rules
+      description: Retrieve all routing rules for domain
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of routing rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RoutingRule'
+                  count:
+                    type: integer
+                    example: 2
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags: [Routing]
+      summary: Create routing rule
+      description: Add a new message routing rule
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoutingRuleCreateRequest'
+      responses:
+        '201':
+          description: Routing rule created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoutingRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/domains/{domain}/routes/{source}/{destination}:
+    delete:
+      tags: [Routing]
+      summary: Delete routing rule
+      description: Remove routing rule between queues
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: source
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "orders"
+        - name: destination
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "processing"
+      responses:
+        '200':
+          description: Routing rule deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/domains/{domain}/routes/test:
+    post:
+      tags: [Routing]
+      summary: Test routing rules
+      description: Test routing rules against a sample message
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [queue, payload]
+              properties:
+                queue:
+                  type: string
+                  description: Source queue to test
+                  example: "orders"
+                payload:
+                  type: object
+                  description: Test message payload
+                  example:
+                    orderId: "12345"
+                    status: "pending"
+                    priority: "high"
+      responses:
+        '200':
+          description: Routing test results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sourceQueue:
+                    type: string
+                    example: "orders"
+                  messageId:
+                    type: string
+                    example: "test-msg-12345"
+                  matches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rule:
+                          $ref: '#/components/schemas/RoutingRule'
+                        matches:
+                          type: boolean
+                          example: true
+                        destinationQueue:
+                          type: string
+                          example: "processing"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Statistics
+  /api/stats:
+    get:
+      tags: [Statistics]
+      summary: Get system statistics
+      description: Retrieve comprehensive system statistics and metrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: period
+          in: query
+          description: Time period for aggregated stats
+          schema:
+            type: string
+            enum: [hour, day, week, month]
+            default: day
+        - name: granularity
+          in: query
+          description: Data granularity for time series
+          schema:
+            type: string
+            enum: [minute, hour, day]
+            default: hour
+      responses:
+        '200':
+          description: System statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Resource Monitoring
+  /api/resources/current:
+    get:
+      tags: [Statistics]
+      summary: Get current resource usage
+      description: Retrieve current system resource utilization
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current resource usage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/resources/history:
+    get:
+      tags: [Statistics]
+      summary: Get resource usage history
+      description: Retrieve historical resource usage data
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of data points
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        '200':
+          description: Resource usage history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ResourceStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Settings
+  /api/settings:
+    get:
+      tags: [Settings]
+      summary: Get current settings
+      description: Retrieve current system configuration
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      tags: [Settings]
+      summary: Update settings
+      description: Update system configuration (runtime or requiring restart)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingsUpdateRequest'
+      responses:
+        '200':
+          description: Settings updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/settings/reset:
+    post:
+      tags: [Settings]
+      summary: Reset settings to defaults
+      description: Reset all configuration to default values
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Settings reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Health
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: System health status check
+      security: []
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  uptime:
+                    type: string
+                    example: "2h15m30s"
+        '503':
+          description: System is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "unhealthy"
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example: ["database connection failed"]
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /api/auth/login
+
+    hmacAuth:
+      type: apiKey
+      description: |
+        HMAC authentication for service-to-service communication.
+        Required headers:
+        - X-Service-ID: Service account identifier
+        - X-Timestamp: ISO 8601 timestamp (within 5-minute window)
+        - X-Signature: HMAC-SHA256 signature of canonical request
+        
+        Canonical request format: `METHOD\nPATH\nBODY\nTIMESTAMP`
+        Signature format: `sha256=<hex-encoded-hmac>`
+      in: header
+      name: X-Signature
+
+  schemas:
+    # User and Authentication
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "3562599b-791e-4c8e-8a5b-89bbb98909a7"
+        Username:
+          type: string
+          example: "admin"
+        role:
+          $ref: '#/components/schemas/UserRole'
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-06-12T10:22:29Z"
+        lastLogin:
+          type: string
+          format: date-time
+          example: "2025-06-17T09:41:28Z"
+        enabled:
+          type: boolean
+          example: true
+
+    UserRole:
+      type: string
+      enum: [admin, user]
+      example: admin
+
+    # Service Accounts
+    ServiceAccountCreateRequest:
+      type: object
+      required: [name, permissions]
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 50
+          example: "analytics-service"
+        permissions:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          example: ["publish:*", "consume:analytics", "manage:reports"]
+        ipWhitelist:
+          type: array
+          items:
+            type: string
+          example: ["192.168.1.0/24", "10.0.0.100"]
+
+    ServiceAccountUpdateRequest:
+      type: object
+      required: [permissions]
+      properties:
+        permissions:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          example: ["publish:*", "consume:*"]
+        ipWhitelist:
+          type: array
+          items:
+            type: string
+          example: ["192.168.1.0/24"]
+        enabled:
+          type: boolean
+          example: true
+
+    ServiceAccountView:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "analytics-service-250617-141530"
+        name:
+          type: string
+          example: "analytics-service"
+        secret:
+          type: string
+          description: "Secret key (masked with •••• after first disclosure)"
+          example: "••••••••••••••••"
+        isDisclosed:
+          type: boolean
+          example: true
+        permissions:
+          type: array
+          items:
+            type: string
+          example: ["publish:*", "consume:analytics"]
+        ipWhitelist:
+          type: array
+          items:
+            type: string
+          example: ["192.168.1.0/24"]
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-06-17T14:15:30Z"
+        lastUsed:
+          type: string
+          format: date-time
+          example: "2025-06-17T16:45:00Z"
+        enabled:
+          type: boolean
+          example: true
+
+    # Domains
+    Domain:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "orders"
+        schema:
+          $ref: '#/components/schemas/Schema'
+        queues:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Queue'
+        routes:
+          type: object
+          description: "Routing rules mapping (sourceQueue -> destQueue -> rule)"
+        system:
+          type: boolean
+          description: "Whether this is a system domain"
+          example: false
+
+    DomainCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          pattern: '^[a-zA-Z0-9_-]+$'
+          minLength: 1
+          maxLength: 50
+          example: "orders"
+        schema:
+          $ref: '#/components/schemas/SchemaRequest'
+
+    Schema:
+      type: object
+      properties:
+        fields:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/FieldType'
+          example:
+            orderId: "string"
+            amount: "number"
+            items: "array"
+
+    SchemaRequest:
+      type: object
+      properties:
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            orderId: "string"
+            amount: "number"
+            status: "string"
+
+    FieldType:
+      type: string
+      enum: [string, number, boolean, object, array]
+
+    # Queues
+    Queue:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "processing"
+        domainName:
+          type: string
+          example: "orders"
+        config:
+          $ref: '#/components/schemas/QueueConfig'
+        messageCount:
+          type: integer
+          example: 127
+
+    QueueCreateRequest:
+      type: object
+      required: [name, config]
+      properties:
+        name:
+          type: string
+          pattern: '^[a-zA-Z0-9_-]+$'
+          minLength: 1
+          maxLength: 50
+          example: "processing"
+        config:
+          $ref: '#/components/schemas/QueueConfig'
+
+    QueueConfig:
+      type: object
+      properties:
+        isPersistent:
+          type: boolean
+          description: "Whether messages should be persisted"
+          example: true
+        maxSize:
+          type: integer
+          minimum: 0
+          description: "Maximum queue size (0 = unlimited)"
+          example: 1000
+        ttl:
+          type: string
+          description: "Message time-to-live duration"
+          example: "1h"
+        deliveryMode:
+          $ref: '#/components/schemas/DeliveryMode'
+        workerCount:
+          type: integer
+          minimum: 1
+          example: 2
+        retryEnabled:
+          type: boolean
+          example: true
+        retryConfig:
+          $ref: '#/components/schemas/RetryConfig'
+        circuitBreakerEnabled:
+          type: boolean
+          example: true
+        circuitBreakerConfig:
+          $ref: '#/components/schemas/CircuitBreakerConfig'
+
+    DeliveryMode:
+      type: string
+      enum: [broadcast, roundRobin, singleConsumer]
+      example: "roundRobin"
+
+    RetryConfig:
+      type: object
+      properties:
+        maxRetries:
+          type: integer
+          minimum: 0
+          example: 3
+        initialDelay:
+          type: string
+          description: "Initial retry delay"
+          example: "1s"
+        maxDelay:
+          type: string
+          description: "Maximum retry delay"
+          example: "1m"
+        factor:
+          type: number
+          minimum: 1.0
+          description: "Exponential backoff factor"
+          example: 2.0
+
+    CircuitBreakerConfig:
+      type: object
+      properties:
+        errorThreshold:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: "Error rate threshold to open circuit"
+          example: 0.5
+        minimumRequests:
+          type: integer
+          minimum: 1
+          description: "Minimum requests before applying circuit logic"
+          example: 10
+        openTimeout:
+          type: string
+          description: "Duration to keep circuit open"
+          example: "30s"
+        successThreshold:
+          type: integer
+          minimum: 1
+          description: "Successful requests to close circuit"
+          example: 5
+
+    # Messages
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "msg-1750184818890780700-6070"
+        topic:
+          type: string
+          example: "order.created"
+        payload:
+          type: string
+          format: byte
+          description: "Message content as base64-encoded bytes"
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            "Content-Type": "application/json"
+            "Source": "order-service"
+        metadata:
+          type: object
+          description: "Routing and processing metadata"
+          example:
+            priority: "high"
+            region: "us-east-1"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-06-17T10:30:00Z"
+
+    # Consumer Groups
+    ConsumerGroup:
+      type: object
+      properties:
+        domainName:
+          type: string
+          example: "orders"
+        queueName:
+          type: string
+          example: "processing"
+        groupID:
+          type: string
+          example: "analytics-processors"
+        position:
+          type: integer
+          format: int64
+          description: "Current offset position"
+          example: 1234
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-06-17T10:00:00Z"
+        consumerIDs:
+          type: array
+          items:
+            type: string
+          example: ["processor-1", "processor-2"]
+        ttl:
+          type: string
+          description: "Time-to-live duration"
+          example: "1h"
+        lastActivity:
+          type: string
+          format: date-time
+          example: "2025-06-17T10:45:00Z"
+        messageCount:
+          type: integer
+          description: "Messages waiting for acknowledgment"
+          example: 15
+
+    # Routing
+    RoutingRule:
+      type: object
+      properties:
+        sourceQueue:
+          type: string
+          example: "orders"
+        destinationQueue:
+          type: string
+          example: "processing"
+        predicate:
+          $ref: '#/components/schemas/JSONPredicate'
+
+    RoutingRuleCreateRequest:
+      type: object
+      required: [sourceQueue, destinationQueue, predicate]
+      properties:
+        sourceQueue:
+          type: string
+          example: "orders"
+        destinationQueue:
+          type: string
+          example: "processing"
+        predicate:
+          $ref: '#/components/schemas/JSONPredicate'
+
+    JSONPredicate:
+      type: object
+      required: [type, field, value]
+      properties:
+        type:
+          type: string
+          enum: [eq, neq, gt, gte, lt, lte, contains]
+          example: "eq"
+        field:
+          type: string
+          description: "Field path (supports nested with dot notation)"
+          example: "status"
+        value:
+          description: "Value to compare against"
+          example: "pending"
+
+    # Statistics and Monitoring
+    SystemStats:
+      type: object
+      properties:
+        domains:
+          type: integer
+          example: 3
+        queues:
+          type: integer
+          example: 8
+        messages:
+          type: object
+          properties:
+            published:
+              type: integer
+              example: 1547
+            consumed:
+              type: integer
+              example: 1432
+            pending:
+              type: integer
+              example: 115
+        consumerGroups:
+          type: integer
+          example: 12
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemEvent'
+        trends:
+          type: object
+          properties:
+            messageRate:
+              type: object
+              properties:
+                current:
+                  type: number
+                  example: 45.7
+                change:
+                  type: number
+                  example: 12.3
+                trend:
+                  type: string
+                  enum: [up, down, stable]
+                  example: "up"
+
+    SystemEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "evt-1750184818890780700"
+        type:
+          type: string
+          enum: [info, warning, error]
+          example: "info"
+        eventType:
+          type: string
+          example: "domain_active"
+        resource:
+          type: string
+          example: "orders"
+        data:
+          description: "Additional event data"
+          example:
+            queueCount: 3
+            messageCount: 127
+        timestamp:
+          type: integer
+          format: int64
+          description: "Unix timestamp"
+          example: 1750184818
+
+    ResourceStats:
+      type: object
+      properties:
+        timestamp:
+          type: integer
+          format: int64
+          example: 1750184818
+        memoryUsage:
+          type: integer
+          format: int64
+          description: "Memory usage in bytes"
+          example: 52428800
+        goroutines:
+          type: integer
+          example: 127
+        gcCycles:
+          type: integer
+          format: int32
+          example: 45
+        gcPauseNs:
+          type: integer
+          format: int64
+          description: "GC pause time in nanoseconds"
+          example: 1500000
+        heapObjects:
+          type: integer
+          format: int64
+          example: 75432
+        domainStats:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/DomainResourceInfo'
+
+    DomainResourceInfo:
+      type: object
+      properties:
+        queueCount:
+          type: integer
+          example: 3
+        messageCount:
+          type: integer
+          example: 127
+        queueStats:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/QueueResourceInfo'
+        estimatedMemory:
+          type: integer
+          format: int64
+          description: "Estimated memory usage in bytes"
+          example: 1048576
+
+    QueueResourceInfo:
+      type: object
+      properties:
+        messageCount:
+          type: integer
+          example: 42
+        bufferSize:
+          type: integer
+          example: 1000
+        estimatedMemory:
+          type: integer
+          format: int64
+          description: "Estimated memory usage in bytes"
+          example: 524288
+
+    # Settings
+    SettingsResponse:
+      type: object
+      properties:
+        config:
+          $ref: '#/components/schemas/PublicConfig'
+        filePath:
+          type: string
+          example: "./config.yaml"
+        message:
+          type: string
+          example: "Settings retrieved successfully"
+
+    SettingsUpdateRequest:
+      type: object
+      required: [config]
+      properties:
+        config:
+          $ref: '#/components/schemas/PublicConfig'
+        restartNeeded:
+          type: boolean
+          example: false
+
+    PublicConfig:
+      type: object
+      properties:
+        general:
+          type: object
+          properties:
+            nodeId:
+              type: string
+              example: "node1"
+            dataDir:
+              type: string
+              example: "./data"
+            logLevel:
+              type: string
+              enum: [debug, info, warn, error]
+              example: "info"
+            development:
+              type: boolean
+              example: false
+        security:
+          type: object
+          properties:
+            enableAuthentication:
+              type: boolean
+              example: true
+            enableAuthorization:
+              type: boolean
+              example: true
+            adminUsername:
+              type: string
+              example: "admin"
+            hmac:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  example: true
+                timestampWindow:
+                  type: string
+                  example: "5m"
+                requireTLS:
+                  type: boolean
+                  example: false
+        http:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+              example: true
+            address:
+              type: string
+              example: "0.0.0.0"
+            port:
+              type: integer
+              example: 8080
+            tls:
+              type: boolean
+              example: false
+            cors:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  example: true
+                allowedOrigins:
+                  type: array
+                  items:
+                    type: string
+                  example: ["*"]
+            jwt:
+              type: object
+              properties:
+                expirationMinutes:
+                  type: integer
+                  example: 60
+        storage:
+          type: object
+          properties:
+            engine:
+              type: string
+              enum: [memory, file, sqlite, badger]
+              example: "memory"
+            path:
+              type: string
+              example: "./data/storage"
+            retentionDays:
+              type: integer
+              example: 7
+            sync:
+              type: boolean
+              example: true
+            maxSizeMB:
+              type: integer
+              example: 1024
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "bad_request"
+              message:
+                type: string
+                example: "Invalid request body"
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "unauthorized"
+              message:
+                type: string
+                example: "Authentication required"
+
+    Forbidden:
+      description: Access denied - insufficient permissions
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "forbidden"
+              message:
+                type: string
+                example: "Insufficient permissions"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "not_found"
+              message:
+                type: string
+                example: "Resource not found"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "internal_error"
+              message:
+                type: string
+                example: "Internal server error"
