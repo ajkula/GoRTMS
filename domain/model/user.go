@@ -27,3 +27,22 @@ type UserDatabase struct {
 	Users map[string]*User `json:"users"`
 	Salt  [32]byte         `json:"salt"`
 }
+
+type UserResponse struct {
+	ID        string    `json:"id"`
+	Username  string    `json:"username"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"createdAt"`
+	LastLogin time.Time `json:"lastLogin"`
+	Enabled   bool      `json:"enabled"`
+}
+
+func (u *User) ToResponse() *UserResponse {
+	return &UserResponse{
+		ID:        u.ID,
+		Username:  u.Username,
+		Role:      u.Role,
+		CreatedAt: u.CreatedAt,
+		Enabled:   u.Enabled,
+	}
+}

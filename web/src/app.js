@@ -19,7 +19,7 @@ import Settings from './components/SettingsComponent';
 import Events from './pages/Events';
 import Login from './pages/Login';
 import Profile from './pages/Profile';
-// import UserManagement from './pages/admin/UserManagement';
+import UserManagement from './pages/admin/UserManagement';
 // import ServiceAccountManagement from './pages/admin/ServiceAccountManagement';
 
 const App = () => {
@@ -137,18 +137,10 @@ const App = () => {
         </div>
       </AuthGuard>
     ),
+
     'admin-users': (
       <AuthGuard requiredRole="admin">
-        <div className="p-4">
-          <h1 className="text-2xl font-bold mb-4">User Management</h1>
-          <p>User management interface coming soon...</p>
-          <button
-            onClick={navigate.toDashboard}
-            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Back to Dashboard
-          </button>
-        </div>
+        <UserManagement onBack={navigate.toDashboard} />
       </AuthGuard>
     ),
   };
@@ -170,7 +162,7 @@ const App = () => {
         <Login isClosing={isLoginAnimating} />
       ) : (
         <div className="h-screen flex flex-col">
-          <Header toggleSidebar={toggleSidebar} />
+          <Header toggleSidebar={toggleSidebar} navigate={navigate} />
 
           {!systemHealthy && (
             <div

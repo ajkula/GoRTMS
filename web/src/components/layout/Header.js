@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Menu, Bell, Search, User, Settings, LogOut } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
+import { useAuth } from '../../hooks/useAuth';
+import { useNavigation } from '../../hooks/useNavigation';
 
-export const Header = ({ toggleSidebar }) => {
+export const Header = ({ toggleSidebar, navigate }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const { notifications, unreadCount, markAsRead } = useNotifications();
 
@@ -32,6 +34,7 @@ export const Header = ({ toggleSidebar }) => {
           <ProfileDropdown
             isOpen={profileOpen}
             setIsOpen={setProfileOpen}
+            navigate={navigate}
           />
         </div>
       </div>
@@ -74,7 +77,7 @@ const NotificationDropdown = ({ notifications, unreadCount, onMarkAsRead }) => {
           </div>
           <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
             {notifications.map((notification) => (
-              {notification}
+              { notification }
               // <NotificationItem
               //   key={notification.id}
               //   notification={notification}
@@ -88,35 +91,69 @@ const NotificationDropdown = ({ notifications, unreadCount, onMarkAsRead }) => {
   );
 };
 
-const ProfileDropdown = ({ isOpen, setIsOpen }) => (
-  <div className="relative">
-    <button
-      className="flex items-center space-x-2 text-gray-700 hover:text-gray-900"
-      onClick={() => setIsOpen(!isOpen)}
-    >
-      <div className="h-8 w-8 rounded-full bg-indigo-200 flex items-center justify-center">
-        <User className="h-5 w-5 text-indigo-600" />
-      </div>
-      <span className="hidden md:block text-sm font-medium">Admin User</span>
-    </button>
+const ProfileDropdown = ({ isOpen, setIsOpen, navigate }) => {
+  const { user, logout, isAdmin } = useAuth();
 
-    {isOpen && (
-      <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg overflow-hidden z-10">
-        <div className="py-1">
-          <button className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">
-            <User className="h-4 w-4 mr-2" />
-            Your Profile
-          </button>
-          <button className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
-          </button>
-          <button className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">
-            <LogOut className="h-4 w-4 mr-2" />
-            Sign out
-          </button>
+  const handleProfileClick = () => {
+    navigate.toProfile();
+    setIsOpen(false);
+  };
+
+  const handleUserManagementClick = () => {
+    navigate.toUserManagement();
+    setIsOpen(false);
+  };
+
+  const handleLogout = () => {
+    logout();
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        className="flex items-center space-x-2 text-gray-700 hover:text-gray-900"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <div className="h-8 w-8 rounded-full bg-indigo-200 flex items-center justify-center">
+          <User className="h-5 w-5 text-indigo-600" />
         </div>
-      </div>
-    )}
-  </div>
-);
+        <span className="hidden md:block text-sm font-medium">
+          {user?.username || 'User'}
+        </span>
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg overflow-hidden z-10">
+          <div className="py-1">
+            <button
+              onClick={handleProfileClick}
+              className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+            >
+              <User className="h-4 w-4 mr-2" />
+              Your Profile
+            </button>
+
+            {isAdmin() && (
+              <button
+                onClick={handleUserManagementClick}
+                className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                User Management
+              </button>
+            )}
+
+            <button
+              onClick={handleLogout}
+              className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

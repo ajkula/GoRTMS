@@ -21,8 +21,8 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	User  *model.User `json:"user"`
-	Token string      `json:"token"`
+	User  *model.UserResponse `json:"user"`
+	Token string              `json:"token"`
 }
 
 type CreateUserRequest struct {
@@ -32,9 +32,9 @@ type CreateUserRequest struct {
 }
 
 type BootstrapResponse struct {
-	Admin    *model.User `json:"admin"`
-	Password string      `json:"password"`
-	Message  string      `json:"message"`
+	Admin    *model.UserResponse `json:"admin"`
+	Password string              `json:"password"`
+	Message  string              `json:"message"`
 }
 
 func NewAuthHandler(authService inbound.AuthService, logger outbound.Logger) *AuthHandler {
@@ -64,10 +64,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("User logged in", "username", user.Username)
+	userRes := user.ToResponse()
+	h.logger.Info("User logged in", "userRes", userRes)
 
 	response := LoginResponse{
-		User:  user,
+		User:  userRes,
 		Token: token,
 	}
 
@@ -102,19 +103,25 @@ func (h *AuthHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("User created", "username", user.Username, "role", user.Role)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	json.NewEncoder(w).Encode(user.ToResponse())
 }
 
 func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.authService.ListUsers()
+
 	if err != nil {
 		h.logger.Error("Failed to list users", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
+	usersResponse := make([]*model.UserResponse, 0)
+	for _, user := range users {
+		usersResponse = append(usersResponse, user.ToResponse())
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(users)
+	json.NewEncoder(w).Encode(usersResponse)
 }
 
 func (h *AuthHandler) Bootstrap(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +130,7 @@ func (h *AuthHandler) Bootstrap(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error("Bootstrap check failed", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 	if len(users) > 0 {
 		h.logger.Warn("Bootstrap attempted but users already exist",
@@ -150,7 +158,7 @@ func (h *AuthHandler) Bootstrap(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Admin bootstrapped", "username", admin.Username)
 
 	response := BootstrapResponse{
-		Admin:    admin,
+		Admin:    admin.ToResponse(),
 		Password: password,
 		Message:  "Admin account created. Save this password - it will not be shown again!",
 	}
@@ -160,16 +168,16 @@ func (h *AuthHandler) Bootstrap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
-	h.logger.Warn("GetProfile 1")
 	user := GetUserFromContext(r.Context())
-	h.logger.Warn("GetProfile", "user", user, "Context", r.Context())
 	if user == nil {
 		http.Error(w, "User not found", http.StatusUnauthorized)
 		return
 	}
+	userResponse := user.ToResponse()
+	h.logger.Warn("GetProfile", "user", userResponse, "Context", r.Context())
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	json.NewEncoder(w).Encode(userResponse)
 }
 
 // extracts user from context

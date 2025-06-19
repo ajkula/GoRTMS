@@ -32,7 +32,6 @@ const Profile = ({ onBack }) => {
   // profile data form
   const [profileData, setProfileData] = useState({
     username: user?.username || '',
-    email: user?.email || '',
   });
 
   // password change form
@@ -81,7 +80,6 @@ const Profile = ({ onBack }) => {
     try {
       await apiClient.put('/auth/profile', {
         username: profileData.username,
-        email: profileData.email,
       });
       
       showMessage('Profile updated successfully!');
@@ -131,7 +129,6 @@ const Profile = ({ onBack }) => {
   const handleCancelEdit = () => {
     setProfileData({
       username: user?.username || '',
-      email: user?.email || '',
     });
     setEditing(false);
     clearMessages();
@@ -232,19 +229,6 @@ const Profile = ({ onBack }) => {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email <span className="text-gray-500">(optional)</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={profileData.email}
-                    onChange={handleProfileChange('email')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="your.email@example.com"
-                  />
-                </div>
-
                 <div className="flex space-x-3 pt-4">
                   <button
                     type="submit"
@@ -269,12 +253,6 @@ const Profile = ({ onBack }) => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Username</label>
                   <p className="mt-1 text-sm text-gray-900">{user?.username}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Email</label>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {user?.email || <span className="text-gray-500 italic">Not provided</span>}
-                  </p>
                 </div>
               </div>
             )}
@@ -393,7 +371,7 @@ const Profile = ({ onBack }) => {
               <div className="flex items-center">
                 <Calendar className="h-5 w-5 text-gray-400 mr-3" />
                 <div>
-                  <p className="text-sm font-medium text-gray-700">Member since</p>
+                  <p className="text-sm font-medium text-gray-700">User since</p>
                   <p className="text-sm text-gray-500">
                     {user?.createdAt 
                       ? new Date(user.createdAt).toLocaleDateString()
