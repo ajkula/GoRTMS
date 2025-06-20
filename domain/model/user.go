@@ -43,6 +43,7 @@ func (u *User) ToResponse() *UserResponse {
 		Username:  u.Username,
 		Role:      u.Role,
 		CreatedAt: u.CreatedAt,
+		LastLogin: u.LastLogin,
 		Enabled:   u.Enabled,
 	}
 }

@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
+	"github.com/gorilla/mux"
 )
 
 type AuthHandler struct {
@@ -20,7 +22,7 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-type LoginResponse struct {
+type UserApiResponse struct {
 	User  *model.UserResponse `json:"user"`
 	Token string              `json:"token"`
 }
@@ -67,7 +69,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	userRes := user.ToResponse()
 	h.logger.Info("User logged in", "userRes", userRes)
 
-	response := LoginResponse{
+	response := UserApiResponse{
 		User:  userRes,
 		Token: token,
 	}
@@ -79,13 +81,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.logger.Error("Failed to decode create user request", "error", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		h.logger.Error("failed to decode create user request", "error", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if req.Username == "" || req.Password == "" {
-		http.Error(w, "Username and password required", http.StatusBadRequest)
+		http.Error(w, "username and password required", http.StatusBadRequest)
 		return
 	}
 
@@ -95,22 +97,72 @@ func (h *AuthHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.authService.CreateUser(req.Username, req.Password, req.Role)
 	if err != nil {
-		h.logger.Error("Failed to create user", "username", req.Username, "error", err)
+		h.logger.Error("failed to create user", "username", req.Username, "error", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	h.logger.Info("User created", "username", user.Username, "role", user.Role)
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user.ToResponse())
+
+	token, err := h.authService.GenerateToken(user, time.Now())
+	if err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+	}
+
+	response := UserApiResponse{
+		User:  user.ToResponse(),
+		Token: token,
+	}
+	json.NewEncoder(w).Encode(response)
+}
+
+func (h *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	targetUserID := vars["id"]
+
+	user := GetUserFromContext(r.Context())
+	if user.ID == "" {
+		h.logger.Error("user not found", "user", user)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if user.ID != targetUserID && user.Role != model.RoleAdmin {
+		h.logger.Error("forbidden: can only modify your own profile", "role", user.Role)
+		http.Error(w, "forbidden: can only modify your own profile", http.StatusForbidden)
+		return
+	}
+
+	var req inbound.UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Error("failed to decode update user request", "error", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	isAdmin := user.Role == model.RoleAdmin
+	updatedUser, err := h.authService.UpdateUser(targetUserID, req, isAdmin)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	token, err := h.authService.GenerateToken(updatedUser, time.Now())
+	if err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+	}
+	response := UserApiResponse{
+		User:  user.ToResponse(),
+		Token: token,
+	}
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.authService.ListUsers()
 
 	if err != nil {
-		h.logger.Error("Failed to list users", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}

@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -21,6 +22,12 @@ var (
 	ErrUserDisabled       = errors.New("user disabled")
 	ErrFileNotFound       = errors.New("user database file not found")
 )
+
+type UpdateUserRequest struct {
+	Username *string         `json:"username,omitempty"`
+	Role     *model.UserRole `json:"role,omitempty"`
+	Enabled  *bool           `json:"enabled,omitempty"`
+}
 
 type authService struct {
 	userRepo     outbound.UserRepository
@@ -70,7 +77,7 @@ func (s *authService) Login(username, password string) (*model.User, string, err
 	user.LastLogin = now
 	s.saveDatabase()
 
-	token, err := s.generateToken(user, now)
+	token, err := s.GenerateToken(user, now)
 	if err != nil {
 		return nil, "", err
 	}
@@ -81,6 +88,7 @@ func (s *authService) Login(username, password string) (*model.User, string, err
 func (s *authService) ValidateToken(tokenString string) (*model.User, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, ErrInvalidToken
 		}
 		return []byte(s.jwtSecret), nil
 	})
@@ -152,6 +160,52 @@ func (s *authService) CreateUser(username, password string, role model.UserRole)
 		return nil, err
 	}
 
+	return user, nil
+}
+
+func (s *authService) UpdateUser(userID string, updates inbound.UpdateUserRequest, isAdmin bool) (*model.User, error) {
+	var user *model.User
+	var oldUsername string
+	for un := range s.userDatabase.Users {
+		if s.userDatabase.Users[un].ID == userID {
+			user = s.userDatabase.Users[un]
+			oldUsername = un
+			break
+		}
+	}
+	if user.ID == "" {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	if updates.Username != nil {
+		users, err := s.ListUsers()
+		if err != nil {
+			s.logger.Error("no users found", "err", err)
+			return nil, err
+		}
+
+		for _, u := range users {
+			if u.Username == *updates.Username {
+				return nil, fmt.Errorf("username %s already exists", u.Username)
+			}
+		}
+
+		user.Username = *updates.Username
+		if oldUsername != *updates.Username {
+			delete(s.userDatabase.Users, oldUsername)
+			s.userDatabase.Users[*updates.Username] = user
+		}
+	}
+
+	if updates.Enabled != nil && isAdmin {
+		user.Enabled = *updates.Enabled
+	}
+
+	if updates.Role != nil && isAdmin {
+		user.Role = *updates.Role
+	}
+
+	s.saveDatabase()
 	return user, nil
 }
 
@@ -227,7 +281,9 @@ func (s *authService) saveDatabase() error {
 	return s.userRepo.Save(s.userDatabase)
 }
 
-func (s *authService) generateToken(user *model.User, issuedAt time.Time) (string, error) {
+func (s *authService) GenerateToken(user *model.User, issuedAt time.Time) (string, error) {
+	user.LastValidLogin = issuedAt.Truncate(time.Second)
+
 	claims := jwt.MapClaims{
 		"username": user.Username,
 		"role":     user.Role,

@@ -42,7 +42,7 @@ func TestAuthHandler_Login_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response LoginResponse
+	var response UserApiResponse
 	err := json.NewDecoder(w.Body).Decode(&response)
 	assert.NoError(t, err)
 	assert.Equal(t, "testuser", response.User.Username)
@@ -124,10 +124,10 @@ func TestAuthHandler_CreateUser_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response model.User
+	var response UserApiResponse
 	err := json.NewDecoder(w.Body).Decode(&response)
 	assert.NoError(t, err)
-	assert.Equal(t, "testuser", response.Username)
+	assert.Equal(t, "testuser", response.User.Username)
 }
 
 func TestAuthHandler_CreateUser_DefaultRole(t *testing.T) {
@@ -157,7 +157,7 @@ func TestAuthHandler_CreateUser_UserExists(t *testing.T) {
 
 	authService.On("ListUsers").Return([]*model.User{}, nil)
 	authService.On("CreateUser", "existinguser", "password", model.RoleUser).Return(nil, assert.AnError)
-	logger.On("Error", "Failed to create user", mock.Anything).Return()
+	logger.On("Error", "failed to create user", mock.Anything).Return()
 
 	reqBody := CreateUserRequest{
 		Username: "existinguser",

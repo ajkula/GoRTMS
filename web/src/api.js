@@ -98,14 +98,6 @@ const api = {
   },
 
   async subscribeToQueue(domainName, queueName) {
-
-
-    console.log({
-      domainName,
-      queueName
-    });
-
-
     try {
       // This API is only for initial registration
       const response = await fetch(`${API_BASE_URL}/domains/${domainName}/queues/${queueName}/subscribe`, {

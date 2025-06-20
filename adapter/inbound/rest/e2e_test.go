@@ -520,6 +520,15 @@ type mockAuthService struct {
 	mu    sync.RWMutex
 }
 
+// UpdateUser implements inbound.AuthService.
+func (m *mockAuthService) UpdateUser(userID string, updates inbound.UpdateUserRequest, isAdmin bool) (*model.User, error) {
+	return &model.User{}, nil
+}
+
+func (s *mockAuthService) GenerateToken(user *model.User, issuedAt time.Time) (string, error) {
+	return "testuser", nil
+}
+
 type mockLogger struct {
 	t *testing.T
 }

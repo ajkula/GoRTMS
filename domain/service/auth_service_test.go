@@ -239,7 +239,7 @@ func TestAuthService_ValidateToken_Success(t *testing.T) {
 
 	user := testDB.Users["testuser"]
 	user.LastValidLogin = time.Now().Add(-1 * time.Minute)
-	token, err := service.generateToken(user, time.Now())
+	token, err := service.GenerateToken(user, time.Now())
 	assert.NoError(t, err)
 
 	validatedUser, err := service.ValidateToken(token)

@@ -106,6 +106,7 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 	jwtRouter.HandleFunc("/auth/profile", h.authHandler.GetProfile).Methods("GET")
 	adminRouter.HandleFunc("/users", h.authHandler.CreateUser).Methods("POST")
 	adminRouter.HandleFunc("/users", h.authHandler.ListUsers).Methods("GET")
+	jwtRouter.HandleFunc("/users/{id}", h.authHandler.UpdateUser).Methods("PATCH")
 
 	// Service rutes
 	adminRouter.HandleFunc("/services", serviceHandler.CreateService).Methods("POST")
@@ -128,7 +129,7 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}", h.deleteQueue).Methods("DELETE")
 
 	// Messages routes
-	hmacRouter.HandleFunc("/domains/{domain}/queues/{queue}/messages", h.publishMessage).Methods("POST")
+	hybridRouter.HandleFunc("/domains/{domain}/queues/{queue}/messages", h.publishMessage).Methods("POST")
 	hmacRouter.HandleFunc("/domains/{domain}/queues/{queue}/messages", h.consumeMessages).Methods("GET")
 	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/subscribe", h.subscribeToQueue).Methods("POST")
 	jwtRouter.HandleFunc("/domains/{domain}/queues/{queue}/unsubscribe", h.unsubscribeFromQueue).Methods("POST")

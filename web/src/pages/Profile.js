@@ -14,6 +14,7 @@ import {
   Eye,
   EyeOff 
 } from 'lucide-react';
+import { authService } from '../services/authService';
 
 const Profile = ({ onBack }) => {
   const { user, isAdmin, refresh } = useAuth();
@@ -78,7 +79,7 @@ const Profile = ({ onBack }) => {
     clearMessages();
 
     try {
-      await apiClient.put('/auth/profile', {
+      await authService.updateUser(user.id, {
         username: profileData.username,
       });
       
@@ -89,6 +90,7 @@ const Profile = ({ onBack }) => {
       showMessage(err.message || 'Failed to update profile', true);
     } finally {
       setLoading(false);
+      refresh();
     }
   };
 

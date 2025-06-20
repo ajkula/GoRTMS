@@ -5,15 +5,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/ajkula/GoRTMS/config"
 	"github.com/ajkula/GoRTMS/domain/model"
+	"github.com/ajkula/GoRTMS/domain/port/inbound"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
 type MockAuthService struct {
 	mock.Mock
+}
+
+func (s *MockAuthService) GenerateToken(user *model.User, issuedAt time.Time) (string, error) {
+	return "testuser", nil
 }
 
 func (m *MockAuthService) Login(username, password string) (*model.User, string, error) {
@@ -34,6 +40,14 @@ func (m *MockAuthService) ValidateToken(token string) (*model.User, error) {
 
 func (m *MockAuthService) CreateUser(username, password string, role model.UserRole) (*model.User, error) {
 	args := m.Called(username, password, role)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*model.User), args.Error(1)
+}
+
+func (m *MockAuthService) UpdateUser(userID string, updateUser inbound.UpdateUserRequest, isAdmin bool) (*model.User, error) {
+	args := m.Called(userID, updateUser, isAdmin)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
