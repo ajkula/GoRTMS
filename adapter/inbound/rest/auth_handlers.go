@@ -159,6 +159,34 @@ func (h *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	user := GetUserFromContext(r.Context())
+	if user.ID == "" {
+		h.logger.Error("user not found", "user", user)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	type PasswordChange struct {
+		CurrentPassword string
+		NewPassword     string
+	}
+
+	var req PasswordChange
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Error("failed to decode update user request", "error", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	err := h.authService.UpdatePassword(user, req.CurrentPassword, req.NewPassword)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	}
+
+	json.NewEncoder(w).Encode("{status: OK}")
+}
+
 func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.authService.ListUsers()
 

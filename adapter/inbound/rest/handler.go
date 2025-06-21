@@ -107,6 +107,7 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 	adminRouter.HandleFunc("/users", h.authHandler.CreateUser).Methods("POST")
 	adminRouter.HandleFunc("/users", h.authHandler.ListUsers).Methods("GET")
 	jwtRouter.HandleFunc("/users/{id}", h.authHandler.UpdateUser).Methods("PATCH")
+	jwtRouter.HandleFunc("/auth/change-password", h.authHandler.ChangePassword).Methods("PUT")
 
 	// Service rutes
 	adminRouter.HandleFunc("/services", serviceHandler.CreateService).Methods("POST")

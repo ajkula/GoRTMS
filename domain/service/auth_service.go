@@ -85,6 +85,19 @@ func (s *authService) Login(username, password string) (*model.User, string, err
 	return user, token, nil
 }
 
+func (s *authService) UpdatePassword(user *model.User, old, new string) error {
+	hashed := s.crypto.HashPassword(old, user.Salt)
+	if hashed != user.PasswordHash {
+		return fmt.Errorf("unauthorized")
+	}
+
+	newPass := s.crypto.HashPassword(new, user.Salt)
+	user.PasswordHash = newPass
+	s.saveDatabase()
+
+	return nil
+}
+
 func (s *authService) ValidateToken(tokenString string) (*model.User, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -161,6 +174,11 @@ func (s *authService) CreateUser(username, password string, role model.UserRole)
 	}
 
 	return user, nil
+}
+
+type PasswordChange struct {
+	CurrentPassword string
+	NewPassword     string
 }
 
 func (s *authService) UpdateUser(userID string, updates inbound.UpdateUserRequest, isAdmin bool) (*model.User, error) {

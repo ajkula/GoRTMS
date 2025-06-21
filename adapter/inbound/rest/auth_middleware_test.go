@@ -18,6 +18,11 @@ type MockAuthService struct {
 	mock.Mock
 }
 
+// ValidatePassword implements inbound.AuthService.
+func (s *MockAuthService) UpdatePassword(user *model.User, old, new string) error {
+	return nil
+}
+
 func (s *MockAuthService) GenerateToken(user *model.User, issuedAt time.Time) (string, error) {
 	return "testuser", nil
 }

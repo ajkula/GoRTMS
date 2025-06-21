@@ -1,24 +1,24 @@
-import React, { useState } from 'react';
+import React, { lazy, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
 import { apiClient } from '../utils/apiClient';
-import { 
-  User, 
-  Shield, 
-  Calendar, 
-  Lock, 
-  Save, 
-  X, 
+import {
+  User,
+  Shield,
+  Calendar,
+  Lock,
+  Save,
+  X,
   Edit,
   ArrowLeft,
   Eye,
-  EyeOff 
+  EyeOff
 } from 'lucide-react';
 import { authService } from '../services/authService';
 
 const Profile = ({ onBack }) => {
   const { user, isAdmin, refresh } = useAuth();
-  
+
   const [editing, setEditing] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -82,7 +82,7 @@ const Profile = ({ onBack }) => {
       await authService.updateUser(user.id, {
         username: profileData.username,
       });
-      
+
       showMessage('Profile updated successfully!');
       setEditing(false);
       refresh();
@@ -96,7 +96,7 @@ const Profile = ({ onBack }) => {
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
-    
+
     // surface ctrl
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       showMessage('New passwords do not match', true);
@@ -116,7 +116,7 @@ const Profile = ({ onBack }) => {
         currentPassword: passwordData.currentPassword,
         newPassword: passwordData.newPassword,
       });
-      
+
       showMessage('Password changed successfully!');
       setChangingPassword(false);
       setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -180,7 +180,7 @@ const Profile = ({ onBack }) => {
             </button>
           </div>
         </div>
-        
+
         <h1 className="text-3xl font-bold text-gray-900 mt-4">Profile Settings</h1>
         <p className="text-gray-600 mt-2">Manage your account information and security settings</p>
       </div>
@@ -191,7 +191,7 @@ const Profile = ({ onBack }) => {
           {message}
         </div>
       )}
-      
+
       {error && (
         <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
           {error}
@@ -199,7 +199,7 @@ const Profile = ({ onBack }) => {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+
         {/* ===== PROFILE INFORMATION ===== */}
         <div className="lg:col-span-2">
           <div className="bg-white shadow rounded-lg p-6">
@@ -277,44 +277,44 @@ const Profile = ({ onBack }) => {
 
             {changingPassword ? (
               <form onSubmit={handleChangePassword} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Current Password
-                  </label>
-                  {renderPasswordInput(
-                    'current',
-                    'Enter current password',
-                    passwordData.currentPassword,
-                    handlePasswordChange('currentPassword')
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    New Password
-                  </label>
-                  {renderPasswordInput(
-                    'new',
-                    'Enter new password',
-                    passwordData.newPassword,
-                    handlePasswordChange('newPassword')
-                  )}
-                  <p className="mt-1 text-xs text-gray-500">
-                    Minimum 6 characters
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Confirm New Password
-                  </label>
-                  {renderPasswordInput(
-                    'confirm',
-                    'Confirm new password',
-                    passwordData.confirmPassword,
-                    handlePasswordChange('confirmPassword')
-                  )}
-                </div>
+                {[
+                  {
+                    label: "Current Password",
+                    renderedInput: renderPasswordInput(
+                      'current',
+                      'Enter current password',
+                      passwordData.currentPassword,
+                      handlePasswordChange('currentPassword')
+                    ),
+                  },
+                  {
+                    label: "New Password",
+                    renderedInput: renderPasswordInput(
+                      'new',
+                      'Enter new password',
+                      passwordData.newPassword,
+                      handlePasswordChange('newPassword')
+                    ),
+                    message: "Minimum 6 characters",
+                  },
+                  {
+                    label: "Confirm New Password",
+                    renderedInput: renderPasswordInput(
+                      'confirm',
+                      'Confirm new password',
+                      passwordData.confirmPassword,
+                      handlePasswordChange('confirmPassword')
+                    ),
+                  },
+                ].map(formElement => (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {formElement.label}
+                    </label>
+                    {formElement.renderedInput}
+                    {formElement.message && (<p>{formElement.message}</p>)}
+                  </div>
+                ))}
 
                 <div className="flex space-x-3 pt-4">
                   <button
@@ -347,22 +347,21 @@ const Profile = ({ onBack }) => {
 
         {/* ===== ACCOUNT INFO SIDEBAR ===== */}
         <div className="space-y-6">
-          
+
           {/* Account Overview */}
           <div className="bg-white shadow rounded-lg p-6">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Account Overview</h3>
-            
+
             <div className="space-y-4">
               <div className="flex items-center">
                 <User className="h-5 w-5 text-gray-400 mr-3" />
                 <div>
                   <p className="text-sm font-medium text-gray-700">Role</p>
                   <div className="flex items-center space-x-2">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      isAdmin 
-                        ? 'bg-yellow-100 text-yellow-800' 
-                        : 'bg-blue-100 text-blue-800'
-                    }`}>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isAdmin
+                      ? 'bg-yellow-100 text-yellow-800'
+                      : 'bg-blue-100 text-blue-800'
+                      }`}>
                       {user?.role || 'user'}
                     </span>
                     {isAdmin && <Shield className="h-4 w-4 text-yellow-500" />}
@@ -375,7 +374,7 @@ const Profile = ({ onBack }) => {
                 <div>
                   <p className="text-sm font-medium text-gray-700">User since</p>
                   <p className="text-sm text-gray-500">
-                    {user?.createdAt 
+                    {user?.createdAt
                       ? new Date(user.createdAt).toLocaleDateString()
                       : 'Unknown'
                     }

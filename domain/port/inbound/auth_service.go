@@ -15,6 +15,7 @@ type AuthService interface {
 	ListUsers() ([]*model.User, error)
 	BootstrapAdmin() (*model.User, string, error) // user, plainPassword, error
 	GenerateToken(user *model.User, issuedAt time.Time) (string, error)
+	UpdatePassword(user *model.User, old, new string) error
 }
 
 type UpdateUserRequest struct {

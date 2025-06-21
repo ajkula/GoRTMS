@@ -520,6 +520,11 @@ type mockAuthService struct {
 	mu    sync.RWMutex
 }
 
+// ValidatePassword implements inbound.AuthService.
+func (m *mockAuthService) UpdatePassword(user *model.User, old, new string) error {
+	return nil
+}
+
 // UpdateUser implements inbound.AuthService.
 func (m *mockAuthService) UpdateUser(userID string, updates inbound.UpdateUserRequest, isAdmin bool) (*model.User, error) {
 	return &model.User{}, nil
