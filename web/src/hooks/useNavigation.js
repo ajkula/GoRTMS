@@ -8,20 +8,20 @@ export const useNavigation = () => {
     toDashboard: () => setPage({ type: 'dashboard' }),
     toDomains: () => setPage({ type: 'domains' }),
     toQueues: (domainName) => setPage({ type: 'queues', domainName }),
-    toQueueMonitor: (domainName, queueName) => 
+    toQueueMonitor: (domainName, queueName) =>
       setPage({ type: 'queue-monitor', domainName, queueName }),
-    toMessagePublisher: (domainName, queueName) => 
+    toMessagePublisher: (domainName, queueName) =>
       setPage({ type: 'message-publisher', domainName, queueName }),
-    toRouting: (domainName = null) => 
+    toRouting: (domainName = null) =>
       setPage(domainName ? { type: 'domain-routing', domainName } : { type: 'routes' }),
     toConsumerGroups: () => setPage({ type: 'consumer-groups' }),
-    toConsumerGroupDetail: (domainName, queueName, groupID) => 
+    toConsumerGroupDetail: (domainName, queueName, groupID) =>
       setPage({ type: 'consumer-group-detail', domainName, queueName, groupID }),
     toSettings: () => setPage({ type: 'settings' }),
     toEvents: () => setPage({ type: 'events' }),
     toProfile: () => setPage({ type: 'profile' }),
     toUserManagement: () => setPage({ type: 'admin-users' }),
-    toServiceManagement: () => setPage({ type: 'admin-services' }),
+    toServices: () => setPage({ type: 'services' }),
   }), []);
 
   return { page, navigate, setPage };

@@ -110,12 +110,12 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 	jwtRouter.HandleFunc("/auth/change-password", h.authHandler.ChangePassword).Methods("PUT")
 
 	// Service rutes
-	adminRouter.HandleFunc("/services", serviceHandler.CreateService).Methods("POST")
-	adminRouter.HandleFunc("/services", serviceHandler.ListServices).Methods("GET")
-	adminRouter.HandleFunc("/services/{id}", serviceHandler.GetService).Methods("GET")
-	adminRouter.HandleFunc("/services/{id}", serviceHandler.DeleteService).Methods("DELETE")
-	adminRouter.HandleFunc("/services/{id}/rotate-secret", serviceHandler.RotateSecret).Methods("POST")
-	adminRouter.HandleFunc("/services/{id}/permissions", serviceHandler.UpdatePermissions).Methods("PUT")
+	jwtRouter.HandleFunc("/services", serviceHandler.CreateService).Methods("POST")
+	jwtRouter.HandleFunc("/services", serviceHandler.ListServices).Methods("GET")
+	jwtRouter.HandleFunc("/services/{id}", serviceHandler.GetService).Methods("GET")
+	jwtRouter.HandleFunc("/services/{id}", serviceHandler.DeleteService).Methods("DELETE")
+	jwtRouter.HandleFunc("/services/{id}/rotate-secret", serviceHandler.RotateSecret).Methods("POST")
+	jwtRouter.HandleFunc("/services/{id}/permissions", serviceHandler.UpdatePermissions).Methods("PUT")
 
 	// Domains routes
 	jwtRouter.HandleFunc("/domains", h.listDomains).Methods("GET")
@@ -167,9 +167,9 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 	}
 
 	// settings routes
-	jwtRouter.HandleFunc("/settings", h.getSettings).Methods("GET")
-	jwtRouter.HandleFunc("/settings", h.updateSettings).Methods("PUT")
-	jwtRouter.HandleFunc("/settings/reset", h.resetSettings).Methods("POST")
+	adminRouter.HandleFunc("/settings", h.getSettings).Methods("GET")
+	adminRouter.HandleFunc("/settings", h.updateSettings).Methods("PUT")
+	adminRouter.HandleFunc("/settings/reset", h.resetSettings).Methods("POST")
 
 	// health check routes
 	router.HandleFunc("/health", h.healthCheck).Methods("GET")

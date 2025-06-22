@@ -13,4 +13,11 @@ export default {
   formatHistoryForCharts: jest.fn(),
   getNotifications: jest.fn(),
   markNotificationAsRead: jest.fn(),
+  // service account
+  getServices: jest.fn(),
+  createService: jest.fn(),
+  getService: jest.fn(),
+  deleteService: jest.fn(),
+  rotateServiceSecret: jest.fn(),
+  updateServicePermissions: jest.fn(),
 };

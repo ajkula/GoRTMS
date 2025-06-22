@@ -20,7 +20,7 @@ import Events from './pages/Events';
 import Login from './pages/Login';
 import Profile from './pages/Profile';
 import UserManagement from './pages/admin/UserManagement';
-// import ServiceAccountManagement from './pages/admin/ServiceAccountManagement';
+import ServiceManagement from './pages/ServiceManagement';
 
 const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -123,18 +123,9 @@ const App = () => {
         <Profile onBack={navigate.toDashboard} />
       </AuthGuard>
     ),
-    'admin-services': (
+    'services': (
       <AuthGuard>
-        <div className="p-4">
-          <h1 className="text-2xl font-bold mb-4">Service Account Management</h1>
-          <p>Service account management interface coming soon...</p>
-          <button
-            onClick={navigate.toDashboard}
-            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Back to Dashboard
-          </button>
-        </div>
+        <ServiceManagement onBack={navigate.toDashboard} />
       </AuthGuard>
     ),
 

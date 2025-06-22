@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Menu, Bell, Search, User, Settings, LogOut } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useAuth } from '../../hooks/useAuth';
-import { useNavigation } from '../../hooks/useNavigation';
 
 export const Header = ({ toggleSidebar, navigate }) => {
   const [profileOpen, setProfileOpen] = useState(false);

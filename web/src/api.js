@@ -487,6 +487,49 @@ const api = {
       },
     });
   },
+
+  // Service accounts
+  async getServices() {
+    try {
+      const data = await this.fetchJSON(`${API_BASE_URL}/services`);
+      return data.services || [];
+    } catch (error) {
+      console.error('Error fetching services:', error);
+      return [];
+    }
+  },
+
+  async createService(serviceData) {
+    return this.fetchJSON(`${API_BASE_URL}/services`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(serviceData)
+    });
+  },
+
+  async getService(serviceId) {
+    return this.fetchJSON(`${API_BASE_URL}/services/${serviceId}`);
+  },
+
+  async deleteService(serviceId) {
+    return this.fetchJSON(`${API_BASE_URL}/services/${serviceId}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async rotateServiceSecret(serviceId) {
+    return this.fetchJSON(`${API_BASE_URL}/services/${serviceId}/rotate-secret`, {
+      method: 'POST'
+    });
+  },
+
+  async updateServicePermissions(serviceId, permissions) {
+    return this.fetchJSON(`${API_BASE_URL}/services/${serviceId}/permissions`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(permissions)
+    });
+  },
 };
 
 export default api;

@@ -1,24 +1,28 @@
 import React from 'react';
-import { 
-  X, LayoutDashboard, Database, MessageSquare, 
-  GitBranch, User, Settings 
+import {
+  X, LayoutDashboard, Database, MessageSquare, Shield,
+  GitBranch, User, Settings
 } from 'lucide-react';
-
-const menuItems = [
-  { type: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { type: 'domains', icon: Database, label: 'Domains' },
-  { type: 'queues', icon: MessageSquare, label: 'Queues', alsoActive: ['queue-monitor'] },
-  { type: 'routes', icon: GitBranch, label: 'Routing' },
-  { type: 'consumer-groups', icon: User, label: 'Consumer Groups', alsoActive: ['consumer-group-detail'] },
-  { type: 'settings', icon: Settings, label: 'Settings' },
-];
+import { useAuth } from '../../hooks/useAuth';
 
 export const Sidebar = ({ isOpen, toggleSidebar, navigate, currentPage, setPage }) => {
+  const { isAdmin } = useAuth();
   const isActive = (item) => {
     if (currentPage.type === item.type) return true;
     if (item.alsoActive && item.alsoActive.includes(currentPage.type)) return true;
     return false;
   };
+
+  const menuItems = [
+    { type: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', admin: false },
+    { type: 'domains', icon: Database, label: 'Domains', admin: false },
+    { type: 'queues', icon: MessageSquare, label: 'Queues', alsoActive: ['queue-monitor'], admin: false },
+    { type: 'services', icon: Shield, label: 'Service Accounts', admin: false },
+    { type: 'routes', icon: GitBranch, label: 'Routing', admin: false },
+    { type: 'consumer-groups', icon: User, label: 'Consumer Groups', alsoActive: ['consumer-group-detail'], admin: false },
+    { type: 'settings', icon: Settings, label: 'Settings', admin: true },
+  ].filter(button => button.admin === false || button.admin === isAdmin);
+
 
   return (
     <>
@@ -48,7 +52,7 @@ export const Sidebar = ({ isOpen, toggleSidebar, navigate, currentPage, setPage 
             {menuItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(item);
-              
+
               return (
                 <button
                   key={item.type}
