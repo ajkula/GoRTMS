@@ -11,7 +11,7 @@ export const useServicePermissions = (initialPermissions = [], initialIpWhitelis
 
   const addPermission = useCallback(() => {
     const { action, domain } = permissionBuilder;
-    const permission = action === '*' ? '*' : `${action}:${domain}`;
+    const permission = action === '*' && domain === '*' ? '*' : `${action}:${domain}`;
     
     if (!permissions.includes(permission)) {
       setPermissions(prev => [...prev, permission]);

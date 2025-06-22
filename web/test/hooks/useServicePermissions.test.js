@@ -57,7 +57,7 @@ describe('useServicePermissions', () => {
       result.current.addPermission();
     });
 
-    expect(result.current.permissions).toEqual(['*']);
+    expect(result.current.permissions).toEqual(["*:ignored"]);
   });
 
   test('prevents duplicate permissions', () => {

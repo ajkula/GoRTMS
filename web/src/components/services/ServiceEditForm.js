@@ -1,13 +1,13 @@
 import React from 'react';
 import PermissionBuilder from './PermissionBuilder';
 import IPWhitelistManager from './IPWhitelistManager';
+import { useServicePermissions } from '../../hooks/useServicePermissions';
 
 const ServiceEditForm = ({ 
   service,
   domains,
   editData,
   setEditData,
-  useServicePermissions
 }) => {
   const {
     permissions,

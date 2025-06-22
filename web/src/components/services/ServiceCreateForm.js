@@ -4,14 +4,14 @@ import { useServicePermissions } from '../../hooks/useServicePermissions';
 import PermissionBuilder from './PermissionBuilder';
 import IPWhitelistManager from './IPWhitelistManager';
 
-const ServiceCreateForm = ({ 
+const ServiceCreateForm = ({
   domains,
-  onSubmit, 
-  onCancel, 
+  onSubmit,
+  onCancel,
   loading
 }) => {
   const [name, setName] = useState('');
-  
+
   const {
     permissions,
     ipWhitelist,
@@ -22,12 +22,13 @@ const ServiceCreateForm = ({
     addPermission,
     removePermission,
     addIP,
-    removeIP
+    removeIP,
+    // resetPermissions
   } = useServicePermissions();
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    
+
     if (!name.trim()) {
       alert('Service name is required');
       return;
@@ -46,6 +47,7 @@ const ServiceCreateForm = ({
 
     // Reset form
     setName('');
+    // resetPermissions();
   };
 
   return (

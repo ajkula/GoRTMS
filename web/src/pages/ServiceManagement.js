@@ -32,9 +32,6 @@ const ServiceManagement = ({ onBack }) => {
     enabled: true
   });
 
-  const createFormPermissions = useServicePermissions();
-  const editFormPermissions = useServicePermissions(editData.permissions, editData.ipWhitelist);
-
   const loadDomains = async () => {
     try {
       const domainsList = await api.getDomains();
@@ -54,7 +51,6 @@ const ServiceManagement = ({ onBack }) => {
     try {
       await createService(serviceData);
       setShowCreateForm(false);
-      createFormPermissions.resetPermissions();
     } catch (err) {
       // noop
     }
@@ -185,7 +181,6 @@ const ServiceManagement = ({ onBack }) => {
           onSubmit={handleCreateService}
           onCancel={() => setShowCreateForm(false)}
           loading={false}
-          useServicePermissions={createFormPermissions}
         />
       )}
 
@@ -207,7 +202,6 @@ const ServiceManagement = ({ onBack }) => {
           domains={domains}
           editData={editData}
           setEditData={setEditData}
-          useServicePermissions={editFormPermissions}
         />
       )}
     </div>
