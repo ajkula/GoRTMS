@@ -24,10 +24,19 @@ func (s *ServiceAccount) HasPermission(permission string) bool {
 		if p == permission || p == "*" {
 			return true
 		}
-		// Support wildcard patterns like "publish:*" or "consume:orders"
+
+		// Support wildcard patterns like "publish:*" (action wildcard)
 		if strings.HasSuffix(p, ":*") {
 			prefix := strings.TrimSuffix(p, "*")
 			if strings.HasPrefix(permission, prefix) {
+				return true
+			}
+		}
+
+		// Support wildcard patterns like "*:tasks" (domain wildcard)
+		if strings.HasPrefix(p, "*:") {
+			suffix := strings.TrimPrefix(p, "*:")
+			if strings.HasSuffix(permission, ":"+suffix) {
 				return true
 			}
 		}
