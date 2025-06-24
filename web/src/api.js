@@ -466,11 +466,11 @@ const api = {
 
   // Settings
   async getSettings() {
-    return this.fetchJSON('/api/settings');
+    return this.fetchJSON('/api/admin/settings');
   },
 
   async updateSettings(config) {
-    return this.fetchJSON('/api/settings', {
+    return this.fetchJSON('/api/admin/settings', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -480,7 +480,7 @@ const api = {
   },
 
   async resetSettings() {
-    return this.fetchJSON('/api/settings/reset', {
+    return this.fetchJSON('/api/admin/settings/reset', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

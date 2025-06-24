@@ -111,8 +111,8 @@ Permissions follow the pattern: `action:domain`
 
 | Action | Description | API Access |
 |--------|-------------|------------|
-| `publish` | Send messages to queues | POST `/domains/{domain}/queues/{queue}/messages` |
-| `consume` | Read messages from queues | GET `/domains/{domain}/queues/{queue}/messages` |
+| `publish` | Send messages to queues | POST `/api/domains/{domain}/queues/{queue}/messages` |
+| `consume` | Read messages from queues | GET `/api/domains/{domain}/queues/{queue}/messages` |
 | `manage` | Manage consumer groups | Consumer group operations |
 | `*` | All actions | Full API access |
 
@@ -129,7 +129,8 @@ Permissions follow the pattern: `action:domain`
 publish:orders     → Can publish to "orders" domain only
 consume:*          → Can consume from any domain  
 manage:analytics   → Can manage consumer groups in "analytics"
-*                  → Full access to everything
+*:tasks           → All actions on "tasks" domain
+*                 → Full access to everything
 ```
 
 ### Common Permission Patterns
@@ -315,12 +316,16 @@ class GoRTMSClient {
 
   async consumeMessages(domain, queue, options = {}) {
     const timestamp = new Date().toISOString();
-    const queryParams = new URLSearchParams(options).toString();
-    const path = `/api/domains/${domain}/queues/${queue}/messages${queryParams ? `?${queryParams}` : ''}`;
+    // CRITICAL: Sign the path WITHOUT query parameters
+    const path = `/api/domains/${domain}/queues/${queue}/messages`;
     
     const signature = this.generateSignature('GET', path, '', timestamp);
 
-    const response = await fetch(`${this.baseURL}${path}`, {
+    // Build URL with query parameters for the actual request
+    const queryParams = new URLSearchParams(options).toString();
+    const fullURL = `${this.baseURL}${path}${queryParams ? `?${queryParams}` : ''}`;
+
+    const response = await fetch(fullURL, {
       method: 'GET',
       headers: {
         'X-Service-ID': this.serviceId,
@@ -354,7 +359,9 @@ await client.publishMessage('orders', 'pending', {
 // Consume messages
 const messages = await client.consumeMessages('orders', 'pending', {
   timeout: 30,
-  max: 10
+  max: 10,
+  group: 'my-consumer-group',
+  consumer: 'consumer-1'
 });
 ```
 
@@ -372,6 +379,7 @@ import (
     "fmt"
     "io"
     "net/http"
+    "net/url"
     "time"
 )
 
@@ -425,6 +433,64 @@ func (c *GoRTMSClient) PublishMessage(domain, queue string, message interface{})
     return nil
 }
 
+func (c *GoRTMSClient) ConsumeMessages(domain, queue string, options map[string]string) ([]map[string]interface{}, error) {
+    timestamp := time.Now().UTC().Format(time.RFC3339)
+    // CRITICAL: Sign the path WITHOUT query parameters
+    path := fmt.Sprintf("/api/domains/%s/queues/%s/messages", domain, queue)
+    
+    signature := c.generateSignature("GET", path, "", timestamp)
+    
+    // Build URL with query parameters for the actual request
+    reqURL := c.BaseURL + path
+    if len(options) > 0 {
+        params := url.Values{}
+        for key, value := range options {
+            params.Add(key, value)
+        }
+        reqURL += "?" + params.Encode()
+    }
+    
+    req, err := http.NewRequest("GET", reqURL, nil)
+    if err != nil {
+        return nil, err
+    }
+    
+    req.Header.Set("X-Service-ID", c.ServiceID)
+    req.Header.Set("X-Timestamp", timestamp)
+    req.Header.Set("X-Signature", signature)
+    
+    client := &http.Client{Timeout: 30 * time.Second}
+    resp, err := client.Do(req)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+    
+    if resp.StatusCode != http.StatusOK {
+        body, _ := io.ReadAll(resp.Body)
+        return nil, fmt.Errorf("API error: %d %s - %s", resp.StatusCode, resp.Status, string(body))
+    }
+    
+    var result map[string]interface{}
+    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+        return nil, err
+    }
+    
+    messages, ok := result["messages"].([]interface{})
+    if !ok {
+        return []map[string]interface{}{}, nil
+    }
+    
+    var typedMessages []map[string]interface{}
+    for _, msg := range messages {
+        if typedMsg, ok := msg.(map[string]interface{}); ok {
+            typedMessages = append(typedMessages, typedMsg)
+        }
+    }
+    
+    return typedMessages, nil
+}
+
 // Usage
 func main() {
     client := &GoRTMSClient{
@@ -444,7 +510,19 @@ func main() {
         panic(err)
     }
     
-    fmt.Println("Message published successfully!")
+    options := map[string]string{
+        "timeout":  "30",
+        "max":      "10",
+        "group":    "my-consumer-group",
+        "consumer": "consumer-1",
+    }
+    
+    messages, err := client.ConsumeMessages("orders", "pending", options)
+    if err != nil {
+        panic(err)
+    }
+    
+    fmt.Printf("Consumed %d messages\n", len(messages))
 }
 ```
 
@@ -493,10 +571,8 @@ class GoRTMSClient:
     
     def consume_messages(self, domain, queue, **options):
         timestamp = datetime.utcnow().isoformat() + 'Z'
-        query_string = urlencode(options) if options else ''
+        # CRITICAL: Sign the path WITHOUT query parameters
         path = f"/api/domains/{domain}/queues/{queue}/messages"
-        if query_string:
-            path += f"?{query_string}"
         
         signature = self.generate_signature('GET', path, '', timestamp)
         
@@ -506,7 +582,13 @@ class GoRTMSClient:
             'X-Signature': signature
         }
         
-        response = requests.get(f"{self.base_url}{path}", headers=headers)
+        # Build URL with query parameters for the actual request
+        url = f"{self.base_url}{path}"
+        if options:
+            query_string = urlencode(options)
+            url += f"?{query_string}"
+        
+        response = requests.get(url, headers=headers)
         response.raise_for_status()
         return response.json()
 
@@ -525,7 +607,12 @@ client.publish_message('orders', 'pending', {
 })
 
 # Consume messages
-messages = client.consume_messages('orders', 'pending', timeout=30, max=10)
+messages = client.consume_messages('orders', 'pending', 
+    timeout=30, 
+    max=10,
+    group='my-consumer-group',
+    consumer='consumer-1'
+)
 ```
 
 ---
@@ -573,6 +660,7 @@ const timestamp = new Date().toISOString();
 **Solution**:
 - Verify secret is correct
 - Check signature generation algorithm
+- **CRITICAL**: Ensure you're signing the path WITHOUT query parameters
 - Ensure canonical request format: `METHOD\nPATH\nBODY\nTIMESTAMP`
 
 #### 403 Forbidden - "insufficient permissions"
@@ -598,7 +686,7 @@ const timestamp = new Date().toISOString();
 ```javascript
 // Example canonical request
 const method = 'POST';
-const path = '/api/domains/orders/queues/pending/messages';
+const path = '/api/domains/orders/queues/pending/messages'; // WITHOUT query params
 const body = '{"customer":"john","amount":100}';
 const timestamp = '2024-06-22T14:30:22Z';
 
@@ -687,6 +775,9 @@ consume:user-events
 # Payment processor - specific domain access
 publish:payments
 consume:payment-confirmations
+
+# Task processor - all actions on tasks domain
+*:tasks
 ```
 
 **Bad Permission Examples:**

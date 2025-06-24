@@ -114,8 +114,8 @@ const App = () => {
     ),
     'events': <AuthGuard><Events onBack={navigate.toDashboard} /></AuthGuard>,
     'settings': (
-      <AuthGuard>
-        <Settings />
+      <AuthGuard requiredRole="admin">
+        <Settings onBack={navigate.toDashboard} />
       </AuthGuard>
     ),
     'profile': (

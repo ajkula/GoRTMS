@@ -67,10 +67,13 @@ const Login = ({ isClosing = false }) => {
         </div>
       </div>
 
-      {/* Partie droite - Formulaire */}
-      <div className={`flex-1 flex items-center justify-center bg-gray-50 transition-all duration-700 ${isClosing ? 'w-full' : ''
+      {/* Partie droite - Formulaire avec animation de fade */}
+      <div className={`flex-1 flex items-center justify-center bg-gray-50 transition-all duration-700 ${
+        isClosing ? 'w-full opacity-0 scale-95' : 'opacity-100 scale-100'
+      }`}>
+        <div className={`max-w-md w-full space-y-8 p-8 transition-all duration-700 ${
+          isClosing ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0'
         }`}>
-        <div className="max-w-md w-full space-y-8 p-8">
           <div className="text-center">
             <h2 className="text-3xl font-extrabold text-gray-900 mb-2">
               Welcome back
