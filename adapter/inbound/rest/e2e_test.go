@@ -216,7 +216,7 @@ func (s *completeTestServer) createServiceAccount(t *testing.T, name string, per
 	}
 
 	body, _ := json.Marshal(createReq)
-	req := httptest.NewRequest("POST", "/api/admin/services", bytes.NewBuffer(body))
+	req := httptest.NewRequest("POST", "/api/services", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mock-jwt-token")
 	w := httptest.NewRecorder()
