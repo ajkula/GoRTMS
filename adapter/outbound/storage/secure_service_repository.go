@@ -190,12 +190,92 @@ func (r *SecureServiceRepository) UpdateLastUsed(ctx context.Context, serviceID 
 	// Update last used timestamp
 	service.LastUsed = time.Now()
 
+	// saving deep copy for safe async save
+	serviceCopy := make(map[string]*model.ServiceAccount, len(r.services))
+	for id, svc := range r.services {
+		svcCopy := *svc
+		serviceCopy[id] = &svcCopy
+	}
+
 	// Persist to file (async to avoid blocking)
-	go func() {
-		if err := r.save(); err != nil {
+	go func(services map[string]*model.ServiceAccount) {
+		if err := r.saveServices(services); err != nil {
 			r.logger.Error("Failed to persist last used update", "serviceID", serviceID, "error", err)
 		}
-	}()
+	}(serviceCopy)
+
+	return nil
+}
+
+func (r *SecureServiceRepository) saveServices(services map[string]*model.ServiceAccount) error {
+	// Convert service accounts to encrypted service accounts
+	encryptedServices := make(map[string]*encryptedServiceAccount)
+	for id, service := range services {
+		// Encrypt the service secret
+		encryptedSecret, secretNonce, err := r.crypto.Encrypt([]byte(service.Secret), r.key)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt secret for service %s: %w", id, err)
+		}
+
+		encryptedService := &encryptedServiceAccount{
+			ID:              service.ID,
+			Name:            service.Name,
+			EncryptedSecret: hex.EncodeToString(encryptedSecret),
+			SecretNonce:     hex.EncodeToString(secretNonce),
+			Permissions:     service.Permissions,
+			IPWhitelist:     service.IPWhitelist,
+			CreatedAt:       service.CreatedAt,
+			LastUsed:        service.LastUsed,
+			Enabled:         service.Enabled,
+		}
+
+		encryptedServices[id] = encryptedService
+	}
+
+	// Create storage data structure
+	storageData := serviceStorageData{
+		Services: encryptedServices,
+		Version:  "1.0",
+	}
+
+	// Marshal to JSON
+	jsonData, err := json.MarshalIndent(storageData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal services data: %w", err)
+	}
+
+	// Encrypt the entire data
+	encryptedData, nonce, err := r.crypto.Encrypt(jsonData, r.key)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt services data: %w", err)
+	}
+
+	// Create outer structure with encrypted data and nonce
+	outerData := struct {
+		EncryptedServices string `json:"encrypted_services"`
+		Nonce             string `json:"nonce"`
+		Version           string `json:"version"`
+	}{
+		EncryptedServices: hex.EncodeToString(encryptedData),
+		Nonce:             hex.EncodeToString(nonce),
+		Version:           "1.0",
+	}
+
+	// Marshal outer structure
+	finalData, err := json.MarshalIndent(outerData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal outer data: %w", err)
+	}
+
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(r.filePath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(r.filePath, finalData, 0600); err != nil {
+		return fmt.Errorf("failed to write services file: %w", err)
+	}
 
 	return nil
 }
@@ -290,76 +370,7 @@ func (r *SecureServiceRepository) load() error {
 
 // encrypts and writes services to file
 func (r *SecureServiceRepository) save() error {
-	// Convert service accounts to encrypted service accounts
-	encryptedServices := make(map[string]*encryptedServiceAccount)
-	for id, service := range r.services {
-		// Encrypt the service secret
-		encryptedSecret, secretNonce, err := r.crypto.Encrypt([]byte(service.Secret), r.key)
-		if err != nil {
-			return fmt.Errorf("failed to encrypt secret for service %s: %w", id, err)
-		}
-
-		encryptedService := &encryptedServiceAccount{
-			ID:              service.ID,
-			Name:            service.Name,
-			EncryptedSecret: hex.EncodeToString(encryptedSecret),
-			SecretNonce:     hex.EncodeToString(secretNonce),
-			Permissions:     service.Permissions,
-			IPWhitelist:     service.IPWhitelist,
-			CreatedAt:       service.CreatedAt,
-			LastUsed:        service.LastUsed,
-			Enabled:         service.Enabled,
-		}
-
-		encryptedServices[id] = encryptedService
-	}
-
-	// Create storage data structure
-	storageData := serviceStorageData{
-		Services: encryptedServices,
-		Version:  "1.0",
-	}
-
-	// Marshal to JSON
-	jsonData, err := json.MarshalIndent(storageData, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal services data: %w", err)
-	}
-
-	// Encrypt the entire data
-	encryptedData, nonce, err := r.crypto.Encrypt(jsonData, r.key)
-	if err != nil {
-		return fmt.Errorf("failed to encrypt services data: %w", err)
-	}
-
-	// Create outer structure with encrypted data and nonce
-	outerData := struct {
-		EncryptedServices string `json:"encrypted_services"`
-		Nonce             string `json:"nonce"`
-		Version           string `json:"version"`
-	}{
-		EncryptedServices: hex.EncodeToString(encryptedData),
-		Nonce:             hex.EncodeToString(nonce),
-		Version:           "1.0",
-	}
-
-	// Marshal outer structure
-	finalData, err := json.MarshalIndent(outerData, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal outer data: %w", err)
-	}
-
-	// Create directory if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(r.filePath), 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	// Write to file
-	if err := os.WriteFile(r.filePath, finalData, 0600); err != nil {
-		return fmt.Errorf("failed to write services file: %w", err)
-	}
-
-	return nil
+	return r.saveServices(r.services)
 }
 
 // generates a cryptographically secure secret for a service

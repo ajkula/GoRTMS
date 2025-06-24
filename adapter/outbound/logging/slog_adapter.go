@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ajkula/GoRTMS/config"
@@ -39,6 +40,8 @@ type SlogAdapter struct {
 	cancel    context.CancelFunc
 	levelMu   sync.RWMutex
 	slogLevel *slog.LevelVar
+	// atomic level for fast shouldLog() checks
+	currentLevel atomic.Int32
 }
 
 func NewSlogAdapter(config *config.Config) outbound.Logger {
@@ -62,6 +65,9 @@ func NewSlogAdapter(config *config.Config) outbound.Logger {
 		slogLevel: levelVar,
 	}
 
+	// Initialize atomic level
+	adapter.currentLevel.Store(int32(parseLogLevel(config.General.LogLevel)))
+
 	go adapter.processLogs()
 
 	return adapter
@@ -78,6 +84,8 @@ func (s *SlogAdapter) UpdateLevel(logLvl string) {
 	s.config.Logging.Level = strings.ToUpper(normalizedLevel)
 
 	s.slogLevel.Set(parseSlogLevel(normalizedLevel))
+
+	s.currentLevel.Store(int32(parseLogLevel(normalizedLevel)))
 
 	s.Info("Logger level updated dynamically", "new_level", normalizedLevel)
 }
@@ -97,6 +105,22 @@ func (s *SlogAdapter) processLogs() {
 			}
 			return
 		}
+	}
+}
+
+// converts string level to LogLevel enum
+func parseLogLevel(level string) LogLevel {
+	switch strings.ToLower(level) {
+	case "debug":
+		return LevelDebug
+	case "info":
+		return LevelInfo
+	case "warn":
+		return LevelWarn
+	case "error":
+		return LevelError
+	default:
+		return LevelError
 	}
 }
 
@@ -145,20 +169,8 @@ func (s *SlogAdapter) sendLog(level LogLevel, msg string, args ...any) {
 }
 
 func (s *SlogAdapter) shouldLog(level LogLevel) bool {
-	currentLevel := strings.ToUpper(s.config.General.LogLevel)
-
-	switch currentLevel {
-	case "ERROR":
-		return level == LevelError
-	case "WARN":
-		return level <= LevelWarn
-	case "INFO":
-		return level <= LevelInfo
-	case "DEBUG":
-		return level <= LevelDebug
-	default:
-		return level == LevelError
-	}
+	currentLevel := LogLevel(s.currentLevel.Load())
+	return level <= currentLevel
 }
 
 func (s *SlogAdapter) Error(msg string, args ...any) {
