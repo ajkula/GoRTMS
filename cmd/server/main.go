@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"embed"
 	"flag"
 	"fmt"
 	"log"
@@ -33,8 +34,12 @@ import (
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
 )
 
-func main() {
+//go:embed index.html
+//go:embed bundle.js
+//go:embed favicon.ico
+var uiFiles embed.FS
 
+func main() {
 	// Handle command-line arguments
 	var configPath string
 	var generateConfig bool
@@ -218,6 +223,7 @@ func main() {
 		restHandler := rest.NewHandler(
 			logger,
 			cfg,
+			uiFiles,
 			authService,
 			messageService,
 			domainService,

@@ -3,13 +3,12 @@ package rest
 import (
 	"bytes"
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +24,7 @@ import (
 type Handler struct {
 	logger               outbound.Logger
 	config               *config.Config
+	uiFiles              embed.FS
 	authService          inbound.AuthService
 	authMiddleware       *AuthMiddleware
 	authHandler          *AuthHandler
@@ -44,6 +44,7 @@ type Handler struct {
 func NewHandler(
 	logger outbound.Logger,
 	config *config.Config,
+	uiFiles embed.FS,
 	authService inbound.AuthService,
 	messageService inbound.MessageService,
 	domainService inbound.DomainService,
@@ -63,6 +64,7 @@ func NewHandler(
 	return &Handler{
 		logger:               logger,
 		config:               config,
+		uiFiles:              uiFiles,
 		authService:          authService,
 		authMiddleware:       authMiddleware,
 		authHandler:          authHandler,
@@ -175,22 +177,50 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 	router.HandleFunc("/health", h.healthCheck).Methods("GET")
 
 	// UI routes
-	router.PathPrefix("/ui/").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// req file path
-		path := strings.TrimPrefix(r.URL.Path, "/ui/")
-		filePath := filepath.Join("./web/dist", path)
+	router.PathPrefix("/ui/").Handler(h.serveEmbeddedUI())
+}
 
-		// check if file exists
-		_, err := os.Stat(filePath)
-		if os.IsNotExist(err) {
-			// if file doesn't exist, serve index.html for React routing
-			http.ServeFile(w, r, "./web/dist/index.html")
-			return
+// serves UI files from embedded filesystem
+func (h *Handler) serveEmbeddedUI() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/ui/")
+		if path == "" {
+			path = "index.html"
 		}
 
-		// Or, serve static file
-		http.StripPrefix("/ui/", http.FileServer(http.Dir("./web/dist"))).ServeHTTP(w, r)
-	}))
+		// Try to read the file directly
+		content, err := h.uiFiles.ReadFile(path)
+		if err != nil {
+			// File doesn't exist, serve index.html for React routing
+			content, err = h.uiFiles.ReadFile("index.html")
+			if err != nil {
+				http.Error(w, "UI not available", http.StatusServiceUnavailable)
+				return
+			}
+			path = "index.html"
+		}
+
+		// Set appropriate content type
+		switch {
+		case strings.HasSuffix(path, ".html"):
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		case strings.HasSuffix(path, ".js"):
+			w.Header().Set("Content-Type", "application/javascript")
+		case strings.HasSuffix(path, ".css"):
+			w.Header().Set("Content-Type", "text/css")
+		case strings.HasSuffix(path, ".ico"):
+			w.Header().Set("Content-Type", "image/x-icon")
+		case strings.HasSuffix(path, ".png"):
+			w.Header().Set("Content-Type", "image/png")
+		case strings.HasSuffix(path, ".svg"):
+			w.Header().Set("Content-Type", "image/svg+xml")
+		case strings.HasSuffix(path, ".txt"):
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		}
+
+		// Serve the content
+		w.Write(content)
+	})
 }
 
 func (h *Handler) RefreshConfig(config *config.Config) {

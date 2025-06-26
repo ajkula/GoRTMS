@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -178,6 +179,7 @@ func setupCompleteTestServer(t *testing.T) *completeTestServer {
 	handler := NewHandler(
 		logger,
 		cfg,
+		embed.FS{},
 		authService,
 		messageService,
 		domainService,
