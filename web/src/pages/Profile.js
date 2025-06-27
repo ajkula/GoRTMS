@@ -358,13 +358,13 @@ const Profile = ({ onBack }) => {
                 <div>
                   <p className="text-sm font-medium text-gray-700">Role</p>
                   <div className="flex items-center space-x-2">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isAdmin
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isAdmin()
                       ? 'bg-yellow-100 text-yellow-800'
                       : 'bg-blue-100 text-blue-800'
                       }`}>
                       {user?.role || 'user'}
                     </span>
-                    {isAdmin && <Shield className="h-4 w-4 text-yellow-500" />}
+                    {isAdmin() && <Shield className="h-4 w-4 text-yellow-500" />}
                   </div>
                 </div>
               </div>
@@ -397,7 +397,7 @@ const Profile = ({ onBack }) => {
           </div>
 
           {/* Permissions */}
-          {isAdmin && (
+          {isAdmin() && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex items-center">
                 <Shield className="h-5 w-5 text-yellow-600 mr-2" />

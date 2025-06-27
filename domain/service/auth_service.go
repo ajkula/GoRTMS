@@ -176,6 +176,37 @@ func (s *authService) CreateUser(username, password string, role model.UserRole)
 	return user, nil
 }
 
+func (s *authService) CreateUserWithHash(username, passwordHash string, salt [16]byte, role model.UserRole) (*model.User, error) {
+	s.logger.Info("Creating user with pre-hashed password", "username", username, "role", role)
+
+	if err := s.loadDatabase(); err != nil {
+		return nil, err
+	}
+
+	if _, exists := s.userDatabase.Users[username]; exists {
+		return nil, ErrUserExists
+	}
+
+	user := &model.User{
+		ID:           uuid.New().String(),
+		Username:     username,
+		PasswordHash: passwordHash,
+		Salt:         salt,
+		Role:         role,
+		CreatedAt:    time.Now(),
+		Enabled:      true,
+	}
+
+	s.userDatabase.Users[username] = user
+
+	if err := s.saveDatabase(); err != nil {
+		return nil, err
+	}
+
+	s.logger.Info("User created successfully with pre-hashed password", "username", username, "userID", user.ID)
+	return user, nil
+}
+
 type PasswordChange struct {
 	CurrentPassword string
 	NewPassword     string

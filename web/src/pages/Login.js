@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import AccountRequestModal from '../components/AccountRequestModal';
 
 const Login = ({ isClosing = false }) => {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
 
   const { login: logUserIn } = useAuth();
 
@@ -32,8 +34,8 @@ const Login = ({ isClosing = false }) => {
       {/* Partie gauche bleue avec animation */}
       <div
         className={`relative transition-all duration-700 ease-in-out ${isClosing
-            ? 'w-0 opacity-0 -translate-x-full'
-            : 'w-2/5 opacity-100 translate-x-0'
+          ? 'w-0 opacity-0 -translate-x-full'
+          : 'w-2/5 opacity-100 translate-x-0'
           }`}
       >
         <div className="h-full bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 flex items-center justify-center p-8">
@@ -68,12 +70,10 @@ const Login = ({ isClosing = false }) => {
       </div>
 
       {/* Partie droite - Formulaire avec animation de fade */}
-      <div className={`flex-1 flex items-center justify-center bg-gray-50 transition-all duration-700 ${
-        isClosing ? 'w-full opacity-0 scale-95' : 'opacity-100 scale-100'
-      }`}>
-        <div className={`max-w-md w-full space-y-8 p-8 transition-all duration-700 ${
-          isClosing ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0'
+      <div className={`flex-1 flex items-center justify-center bg-gray-50 transition-all duration-700 ${isClosing ? 'w-full opacity-0 scale-95' : 'opacity-100 scale-100'
         }`}>
+        <div className={`max-w-md w-full space-y-8 p-8 transition-all duration-700 ${isClosing ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0'
+          }`}>
           <div className="text-center">
             <h2 className="text-3xl font-extrabold text-gray-900 mb-2">
               Welcome back
@@ -135,10 +135,25 @@ const Login = ({ isClosing = false }) => {
                 'Sign in'
               )}
             </button>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => setShowRequestModal(true)}
+                className="text-sm text-blue-600 hover:text-blue-500 font-medium transition-colors"
+              >
+                Don't have an account? Request one
+              </button>
+            </div>
           </form>
+
+          <AccountRequestModal
+            isOpen={showRequestModal}
+            onClose={() => setShowRequestModal(false)}
+          />
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 

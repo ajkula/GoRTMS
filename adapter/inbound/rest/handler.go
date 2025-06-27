@@ -22,23 +22,25 @@ import (
 
 // REST API handler
 type Handler struct {
-	logger               outbound.Logger
-	config               *config.Config
-	uiFiles              embed.FS
-	authService          inbound.AuthService
-	authMiddleware       *AuthMiddleware
-	authHandler          *AuthHandler
-	hmacMiddleware       *HMACMiddleware
-	hybridMiddleware     *HybridMiddleware
-	messageService       inbound.MessageService
-	domainService        inbound.DomainService
-	queueService         inbound.QueueService
-	routingService       inbound.RoutingService
-	statsService         inbound.StatsService
-	resourceMonitor      inbound.ResourceMonitorService
-	consumerGroupService inbound.ConsumerGroupService
-	consumerGroupRepo    outbound.ConsumerGroupRepository
-	serviceRepo          outbound.ServiceRepository
+	logger                outbound.Logger
+	config                *config.Config
+	uiFiles               embed.FS
+	authService           inbound.AuthService
+	authMiddleware        *AuthMiddleware
+	authHandler           *AuthHandler
+	hmacMiddleware        *HMACMiddleware
+	hybridMiddleware      *HybridMiddleware
+	messageService        inbound.MessageService
+	domainService         inbound.DomainService
+	queueService          inbound.QueueService
+	routingService        inbound.RoutingService
+	statsService          inbound.StatsService
+	resourceMonitor       inbound.ResourceMonitorService
+	consumerGroupService  inbound.ConsumerGroupService
+	consumerGroupRepo     outbound.ConsumerGroupRepository
+	serviceRepo           outbound.ServiceRepository
+	accountRequestHandler *AccountRequestHandler
+	accountRequestService inbound.AccountRequestService
 }
 
 func NewHandler(
@@ -55,30 +57,34 @@ func NewHandler(
 	consumerGroupService inbound.ConsumerGroupService,
 	consumerGroupRepo outbound.ConsumerGroupRepository,
 	repoService outbound.ServiceRepository,
+	accountRequestService inbound.AccountRequestService,
 ) *Handler {
 	authMiddleware := NewAuthMiddleware(authService, logger, config)
 	authHandler := NewAuthHandler(authService, logger)
 	hmacMiddleware := NewHMACMiddleware(repoService, logger, config)
 	hybridMiddleware := NewHybridMiddleware(config, hmacMiddleware, authMiddleware, logger)
+	accountRequestHandler := NewAccountRequestHandler(accountRequestService, authService, logger)
 
 	return &Handler{
-		logger:               logger,
-		config:               config,
-		uiFiles:              uiFiles,
-		authService:          authService,
-		authMiddleware:       authMiddleware,
-		authHandler:          authHandler,
-		hmacMiddleware:       hmacMiddleware,
-		hybridMiddleware:     hybridMiddleware,
-		messageService:       messageService,
-		domainService:        domainService,
-		queueService:         queueService,
-		routingService:       routingService,
-		statsService:         statsService,
-		resourceMonitor:      resourceMonitor,
-		consumerGroupService: consumerGroupService,
-		consumerGroupRepo:    consumerGroupRepo,
-		serviceRepo:          repoService,
+		logger:                logger,
+		config:                config,
+		uiFiles:               uiFiles,
+		authService:           authService,
+		authMiddleware:        authMiddleware,
+		authHandler:           authHandler,
+		hmacMiddleware:        hmacMiddleware,
+		hybridMiddleware:      hybridMiddleware,
+		messageService:        messageService,
+		domainService:         domainService,
+		queueService:          queueService,
+		routingService:        routingService,
+		statsService:          statsService,
+		resourceMonitor:       resourceMonitor,
+		consumerGroupService:  consumerGroupService,
+		consumerGroupRepo:     consumerGroupRepo,
+		serviceRepo:           repoService,
+		accountRequestHandler: accountRequestHandler,
+		accountRequestService: accountRequestService,
 	}
 }
 
@@ -110,6 +116,13 @@ func (h *Handler) SetupRoutes(router *mux.Router) {
 	adminRouter.HandleFunc("/users", h.authHandler.ListUsers).Methods("GET")
 	jwtRouter.HandleFunc("/users/{id}", h.authHandler.UpdateUser).Methods("PATCH")
 	jwtRouter.HandleFunc("/auth/change-password", h.authHandler.ChangePassword).Methods("PUT")
+
+	// Account request routes
+	router.HandleFunc("/api/account-requests", h.accountRequestHandler.CreateAccountRequest).Methods("POST")
+	adminRouter.HandleFunc("/account-requests", h.accountRequestHandler.ListAccountRequests).Methods("GET")
+	adminRouter.HandleFunc("/account-requests/{requestId}", h.accountRequestHandler.GetAccountRequest).Methods("GET")
+	adminRouter.HandleFunc("/account-requests/{requestId}/review", h.accountRequestHandler.ReviewAccountRequest).Methods("POST")
+	adminRouter.HandleFunc("/account-requests/{requestId}", h.accountRequestHandler.DeleteAccountRequest).Methods("DELETE")
 
 	// Service rutes
 	jwtRouter.HandleFunc("/services", serviceHandler.CreateService).Methods("POST")

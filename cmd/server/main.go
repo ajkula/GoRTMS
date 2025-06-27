@@ -21,6 +21,7 @@ import (
 	"github.com/ajkula/GoRTMS/adapter/inbound/rest"
 	"github.com/ajkula/GoRTMS/adapter/inbound/websocket"
 	"github.com/ajkula/GoRTMS/adapter/outbound/crypto"
+	"github.com/ajkula/GoRTMS/adapter/outbound/filewatcher"
 	"github.com/ajkula/GoRTMS/adapter/outbound/logging"
 	"github.com/ajkula/GoRTMS/adapter/outbound/machineid"
 	"github.com/ajkula/GoRTMS/adapter/outbound/storage"
@@ -183,7 +184,7 @@ func main() {
 	if err := domainRepo.StoreDomain(ctx, &model.Domain{
 		Name: "SYSTEM",
 		Queues: map[string]*model.Queue{
-			"SYSTEM": {
+			"_account_requests": {
 				Name:       "_account_requests",
 				DomainName: "SYSTEM",
 				Config: model.QueueConfig{
@@ -214,6 +215,53 @@ func main() {
 		log.Fatal("Could not create system domain")
 	}
 
+	// Initialize account request repository
+	accountRequestRepoPath := filepath.Join(cfg.General.DataDir, "account_requests.db")
+	accountRequestRepo, err := storage.NewSecureAccountRequestRepository(
+		accountRequestRepoPath,
+		cryptoService,
+		machineIDService,
+		logger,
+	)
+	if err != nil {
+		logger.Error("Failed to create account request repository", "error", err)
+		os.Exit(1)
+	}
+
+	// Initialize account request service
+	accountRequestService := service.NewAccountRequestService(
+		accountRequestRepo,
+		userRepo,
+		cryptoService,
+		messageService,
+		authService,
+		logger,
+	)
+
+	// Initialize file watcher service
+	fileWatcher, err := filewatcher.NewFSWatcher()
+	if err != nil {
+		logger.Error("Failed to create file watcher", "error", err)
+		os.Exit(1)
+	}
+
+	fileWatcherService := service.NewFileWatcherService(
+		fileWatcher,
+		accountRequestService,
+		logger,
+	)
+
+	// Start file watcher service
+	if err := fileWatcherService.Start(ctx); err != nil {
+		logger.Error("Failed to start file watcher service", "error", err)
+		os.Exit(1)
+	}
+
+	// Watch account request file
+	if err := fileWatcherService.WatchAccountRequestFile(ctx, userRepoPath); err != nil {
+		logger.Error("Failed to watch account request file", "error", err)
+	}
+
 	// Create HTTP router
 	router := mux.NewRouter()
 
@@ -234,6 +282,7 @@ func main() {
 			consumerGroupService,
 			consumerGroupRepo,
 			serviceRepo,
+			accountRequestService,
 		)
 		restHandler.SetupRoutes(router)
 
@@ -325,6 +374,12 @@ func main() {
 
 			if slogAdapter, ok := logger.(*logging.SlogAdapter); ok {
 				slogAdapter.Shutdown()
+			}
+
+			if fileWatcher != nil {
+				if cleanable, ok := fileWatcher.(interface{ Cleanup() }); ok {
+					cleanable.Cleanup()
+				}
 			}
 
 			logger.Info("All services cleaned up")

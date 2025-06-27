@@ -10,6 +10,7 @@ type AuthService interface {
 	Login(username, password string) (*model.User, string, error) // user, token, error
 	ValidateToken(token string) (*model.User, error)
 	CreateUser(username, password string, role model.UserRole) (*model.User, error)
+	CreateUserWithHash(username, passwordHash string, salt [16]byte, role model.UserRole) (*model.User, error)
 	UpdateUser(userID string, updates UpdateUserRequest, isAdmin bool) (*model.User, error)
 	GetUser(username string) (*model.User, bool)
 	ListUsers() ([]*model.User, error)

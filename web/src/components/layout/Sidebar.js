@@ -21,7 +21,7 @@ export const Sidebar = ({ isOpen, toggleSidebar, navigate, currentPage, setPage 
     { type: 'routes', icon: GitBranch, label: 'Routing', admin: false },
     { type: 'consumer-groups', icon: User, label: 'Consumer Groups', alsoActive: ['consumer-group-detail'], admin: false },
     { type: 'settings', icon: Settings, label: 'Settings', admin: true },
-  ].filter(button => !button.admin || isAdmin);
+  ].filter(button => !button.admin || isAdmin());
 
 
   return (

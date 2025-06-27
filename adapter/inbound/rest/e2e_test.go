@@ -190,6 +190,7 @@ func setupCompleteTestServer(t *testing.T) *completeTestServer {
 		consumerGroupService,
 		consumerGroupRepo,
 		serviceRepo,
+		nil,
 	)
 
 	// Setup routes
@@ -520,6 +521,10 @@ func (s *completeTestServer) testHMACRouteWithInvalidSignature(t *testing.T, ser
 type mockAuthService struct {
 	users map[string]*model.User
 	mu    sync.RWMutex
+}
+
+func (m *mockAuthService) CreateUserWithHash(username, passwordHash string, salt [16]byte, role model.UserRole) (*model.User, error) {
+	return nil, nil
 }
 
 // ValidatePassword implements inbound.AuthService.

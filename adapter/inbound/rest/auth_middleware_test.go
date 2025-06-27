@@ -18,6 +18,10 @@ type MockAuthService struct {
 	mock.Mock
 }
 
+func (m *MockAuthService) CreateUserWithHash(username, passwordHash string, salt [16]byte, role model.UserRole) (*model.User, error) {
+	return nil, nil
+}
+
 // ValidatePassword implements inbound.AuthService.
 func (s *MockAuthService) UpdatePassword(user *model.User, old, new string) error {
 	return nil

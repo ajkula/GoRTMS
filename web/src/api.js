@@ -488,6 +488,68 @@ const api = {
     });
   },
 
+  // Account Requests
+  async getAccountRequests(status = null) {
+    try {
+      const params = status ? `?status=${status}` : '';
+      const data = await this.fetchJSON(`${API_BASE_URL}/admin/account-requests${params}`);
+      return data || { requests: [], count: 0 };
+    } catch (error) {
+      console.error('Error fetching account requests:', error);
+      return { requests: [], count: 0 };
+    }
+  },
+
+  async getAccountRequest(requestId) {
+    try {
+      const data = await this.fetchJSON(`${API_BASE_URL}/admin/account-requests/${requestId}`);
+      return data.request || null;
+    } catch (error) {
+      console.error(`Error fetching account request ${requestId}:`, error);
+      throw error;
+    }
+  },
+
+  async createAccountRequest(requestData) {
+    try {
+      const data = await this.fetchJSON(`${API_BASE_URL}/account-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestData)
+      });
+      return data;
+    } catch (error) {
+      console.error('Error creating account request:', error);
+      throw error;
+    }
+  },
+
+  async reviewAccountRequest(requestId, reviewData) {
+    try {
+      const data = await this.fetchJSON(`${API_BASE_URL}/admin/account-requests/${requestId}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reviewData)
+      });
+      return data;
+    } catch (error) {
+      console.error(`Error reviewing account request ${requestId}:`, error);
+      throw error;
+    }
+  },
+
+  async deleteAccountRequest(requestId) {
+    try {
+      const data = await this.fetchJSON(`${API_BASE_URL}/admin/account-requests/${requestId}`, {
+        method: 'DELETE'
+      });
+      return data;
+    } catch (error) {
+      console.error(`Error deleting account request ${requestId}:`, error);
+      throw error;
+    }
+  },
+
   // Service accounts
   async getServices() {
     try {
