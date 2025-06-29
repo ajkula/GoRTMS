@@ -66,12 +66,7 @@ func NewChannelQueue(
 
 	workerCount := queue.Config.WorkerCount
 	if workerCount <= 0 {
-		// Use a default number based on the delivery mode
-		if queue.Config.DeliveryMode == BroadcastMode {
-			workerCount = 2
-		} else {
-			workerCount = 1
-		}
+		workerCount = 2
 	}
 
 	var cb *CircuitBreaker
@@ -400,10 +395,7 @@ func (cq *ChannelQueue) RemoveSubscriber(handler MessageHandler) {
 }
 
 func (cq *ChannelQueue) Start(ctx context.Context) {
-	workerCount := 1
-	if cq.queue.Config.DeliveryMode == BroadcastMode {
-		workerCount = 2
-	}
+	workerCount := 2
 
 	for i := 0; i < workerCount; i++ {
 		cq.wg.Add(1)
@@ -443,36 +435,16 @@ func (cq *ChannelQueue) processMessages() {
 						<-cq.workerSem
 					}()
 
-					// Notify subscribers based on delivery mode
+					// Notify subscribers
 					cq.mu.RLock()
 					subscribers := cq.subscribers
 					cq.mu.RUnlock()
 
-					switch cq.queue.Config.DeliveryMode {
-					case BroadcastMode:
-						for _, handler := range subscribers {
-							// Clone the message for each subscriber to avoid race conditions
-							msgCopy := *m
-							if err := handler(&msgCopy); err != nil {
-								cq.handleDeliveryError(&msgCopy, handler, err)
-							}
-						}
-					case RoundRobinMode:
-						// Improve round-robin with a less predictable index
-						if len(subscribers) > 0 {
-							idx := int(m.Timestamp.UnixNano()) % len(subscribers)
-							handler := subscribers[idx]
-							if err := handler(m); err != nil {
-								cq.handleDeliveryError(m, handler, err)
-							}
-						}
-					case SingleConsumerMode:
-						// Send to the first available subscriber
-						if len(subscribers) > 0 {
-							handler := subscribers[0]
-							if err := handler(m); err != nil {
-								cq.handleDeliveryError(m, handler, err)
-							}
+					for _, handler := range subscribers {
+						// Clone the message for each subscriber to avoid race conditions
+						msgCopy := *m
+						if err := handler(&msgCopy); err != nil {
+							cq.handleDeliveryError(&msgCopy, handler, err)
 						}
 					}
 				}(msg)

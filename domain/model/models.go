@@ -39,9 +39,6 @@ type QueueConfig struct {
 	// TTL defines the time-to-live for messages (0 = unlimited)
 	TTL time.Duration `yaml:"ttl"`
 
-	// DeliveryMode defines how messages are delivered to consumers
-	DeliveryMode DeliveryMode `yaml:"deliveryMode"`
-
 	// New fields
 	WorkerCount int `yaml:"workerCount"`
 
@@ -137,20 +134,6 @@ type CircuitBreaker struct {
 	NextAttempt      time.Time           // Next attempt time after opening
 	mu               sync.RWMutex        // Mutex for thread-safety
 }
-
-// DeliveryMode defines how messages are distributed to consumers
-type DeliveryMode int
-
-const (
-	// BroadcastMode sends the message to all consumers
-	BroadcastMode DeliveryMode = iota
-
-	// RoundRobinMode distributes messages evenly among consumers
-	RoundRobinMode
-
-	// SingleConsumerMode sends the message to only one consumer
-	SingleConsumerMode
-)
 
 // Domain represents a domain that encapsulates queues and rules
 type Domain struct {

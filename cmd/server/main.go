@@ -191,7 +191,6 @@ func main() {
 					IsPersistent: true,
 					MaxSize:      1000,
 					TTL:          0,
-					DeliveryMode: model.RoundRobinMode,
 					WorkerCount:  2,
 					RetryEnabled: true,
 					RetryConfig: &model.RetryConfig{

@@ -1761,8 +1761,6 @@ components:
           type: string
           description: "Message time-to-live duration"
           example: "1h"
-        deliveryMode:
-          $ref: '#/components/schemas/DeliveryMode'
         workerCount:
           type: integer
           minimum: 1
@@ -1777,11 +1775,6 @@ components:
           example: true
         circuitBreakerConfig:
           $ref: '#/components/schemas/CircuitBreakerConfig'
-
-    DeliveryMode:
-      type: string
-      enum: [broadcast, roundRobin, singleConsumer]
-      example: "roundRobin"
 
     RetryConfig:
       type: object

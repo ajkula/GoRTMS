@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { PlusCircle, Trash2, Loader, AlertTriangle, Eye, ArrowLeft, Send, GitBranch } from 'lucide-react';
 import QueueConfigForm, { defaultQueueConfig } from './QueueConfigForm';
 import api from '../api';
-import { formatDeliveryMode } from '../utils/utils';
 
 const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, onViewRouting }) => {
   const [queues, setQueues] = useState([]);
@@ -48,7 +47,6 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
           isPersistent: queueConfig.isPersistent,
           maxSize: queueConfig.maxSize,
           ttl: queueConfig.ttl,
-          deliveryMode: queueConfig.deliveryMode,
           workerCount: queueConfig.workerCount
         }
       };
@@ -222,9 +220,6 @@ const QueuesManager = ({ domainName, onBack, onSelectQueue, onPublishMessage, on
                           <span className="space-x-2">
                             <span className={`inline-flex px-2 py-1 rounded-full ${queue.config.IsPersistent ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
                               {queue.config.IsPersistent ? 'Persistent' : 'Temporary'}
-                            </span>
-                            <span className="inline-flex px-2 py-1 rounded-full bg-blue-100 text-blue-800">
-                              {formatDeliveryMode(queue.config.DeliveryMode)}
                             </span>
                           </span>
                         )}

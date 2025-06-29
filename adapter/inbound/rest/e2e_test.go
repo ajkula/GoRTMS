@@ -288,7 +288,6 @@ func (s *completeTestServer) createQueueWithHMAC(t *testing.T, serviceID, secret
 			"isPersistent": true,
 			"maxSize":      1000,
 			"ttl":          "1h",
-			"deliveryMode": "broadcast",
 		},
 	}
 

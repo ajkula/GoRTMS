@@ -116,8 +116,7 @@ You should see the GoRTMS admin interface with the dashboard, domain management,
      {
        "isPersistent": true,
        "maxSize": 1000,
-       "ttl": 86400000,
-       "deliveryMode": "broadcast"
+       "ttl": 86400000
      }
      ```
 4. Click "Create"

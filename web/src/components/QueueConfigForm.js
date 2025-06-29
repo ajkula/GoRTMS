@@ -1,5 +1,4 @@
 import React from 'react';
-import { deliveryModes } from '../utils/utils';
 
 const QueueConfigForm = ({ queueConfig, setQueueConfig }) => {
   return (
@@ -23,15 +22,8 @@ const QueueConfigForm = ({ queueConfig, setQueueConfig }) => {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Delivery Mode
+            autoCreateGroups (not implemented)
           </label>
-          <select
-            value={queueConfig.deliveryMode}
-            onChange={(e) => setQueueConfig({ ...queueConfig, deliveryMode: e.target.value })}
-            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-          >
-            {deliveryModes.map((mode) =>(<option value={mode.value}>{mode.label}</option>))}
-          </select>
         </div>
       </div>
 
@@ -260,7 +252,6 @@ export const defaultQueueConfig = {
   isPersistent: true,
   maxSize: 1000,
   ttl: "86400s",
-  deliveryMode: "broadcast",
   retryEnabled: false,
   retryConfig: {
     maxRetries: 3,

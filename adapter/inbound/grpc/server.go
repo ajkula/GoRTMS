@@ -133,7 +133,6 @@ func (s *Server) CreateDomain(
 			IsPersistent: config.IsPersistent,
 			MaxSize:      int(config.MaxSize),
 			TTL:          time.Duration(config.TtlMs) * time.Millisecond,
-			DeliveryMode: model.DeliveryMode(config.DeliveryMode),
 		}
 	}
 
@@ -280,7 +279,6 @@ func (s *Server) CreateQueue(
 		IsPersistent: req.Config.IsPersistent,
 		MaxSize:      int(req.Config.MaxSize),
 		TTL:          time.Duration(req.Config.TtlMs) * time.Millisecond,
-		DeliveryMode: model.DeliveryMode(req.Config.DeliveryMode),
 	}
 
 	// Créer la file d'attente
@@ -308,7 +306,6 @@ func (s *Server) GetQueue(
 		IsPersistent: queue.Config.IsPersistent,
 		MaxSize:      int32(queue.Config.MaxSize),
 		TtlMs:        int64(queue.Config.TTL / time.Millisecond),
-		DeliveryMode: proto.DeliveryMode(queue.Config.DeliveryMode),
 	}
 
 	return &proto.QueueResponse{

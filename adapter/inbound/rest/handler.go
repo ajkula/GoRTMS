@@ -520,21 +520,6 @@ func (h *Handler) createQueue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Process delivery mode
-	if modeStr, ok := configMap["deliveryMode"].(string); ok {
-		switch modeStr {
-		case "broadcast":
-			config.DeliveryMode = model.BroadcastMode
-		case "roundRobin":
-			config.DeliveryMode = model.RoundRobinMode
-		case "singleConsumer":
-			config.DeliveryMode = model.SingleConsumerMode
-		default:
-			h.logger.Warn("Unknown delivery mode, using default", "mode", modeStr)
-			config.DeliveryMode = model.BroadcastMode
-		}
-	}
-
 	h.logger.Debug("Creating queue", "config", config)
 
 	// Process retry config
