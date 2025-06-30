@@ -122,7 +122,7 @@ security:
 
 #### JWT Authentication
 
-[JWT docs](docs\usersAuth.md)
+[JWT docs](docs/usersAuth.md)
 
 Create admin user:
 
@@ -149,7 +149,7 @@ curl -X POST http://localhost:8080/api/auth/login \
 
 #### HMAC Authentication
 
-[Service Account docs](docs\service_accounts.md)
+[Service Account docs](docs/service_accounts.md)
 
 For service-to-service communication, create service accounts and sign requests with:
 
