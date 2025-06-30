@@ -23,7 +23,7 @@ security:
 
 ## Authentication Endpoints
 
-### 🔐 Login
+### Login
 Authenticate a user and receive a JWT token.
 
 **Endpoint:** `POST /api/auth/login`  
@@ -67,7 +67,7 @@ curl -X POST http://localhost:8080/api/auth/login \
 
 ---
 
-### 🚀 Bootstrap Admin
+### Bootstrap Admin
 Create the first admin user if no users exist. Returns a random secure password.
 
 **Endpoint:** `POST /api/auth/bootstrap`  
@@ -104,7 +104,7 @@ curl -X POST http://localhost:8080/api/auth/bootstrap
 
 ---
 
-### 👤 Get Profile
+### Get Profile
 Get the profile of the currently authenticated user.
 
 **Endpoint:** `GET /api/auth/profile`  
@@ -139,7 +139,7 @@ curl -X GET http://localhost:8080/api/auth/profile \
 
 ## User Management Endpoints (Admin Only)
 
-### 👥 Create User
+### Create User
 Create a new user account. Only admins can create users.
 
 **Endpoint:** `POST /api/admin/users`  
@@ -187,7 +187,7 @@ curl -X POST http://localhost:8080/api/admin/users \
 
 ---
 
-### 📋 List Users
+### List Users
 Get a list of all users in the system.
 
 **Endpoint:** `GET /api/admin/users`  
@@ -236,14 +236,14 @@ curl -X GET http://localhost:8080/api/admin/users \
 ### 1. System Startup
 ```
 ┌─────────────────────────────────────────────────┐
-│ System starts → Check for existing users       │
+│ System starts → Check for existing users        │
 │                                                 │
 │ IF no users exist:                              │
 │   → Auto-create admin/admin                     │
 │   → Log: "Default admin created"                │
 │                                                 │
 │ ELSE:                                           │
-│   → Log: "Users exist, skipping bootstrap"     │
+│   → Log: "Users exist, skipping bootstrap"      │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -254,7 +254,7 @@ curl -X GET http://localhost:8080/api/admin/users \
 │    {"username":"admin", "password":"admin"}     │
 │                                                 │
 │ 2. Receive JWT token                            │
-│    {"token": "eyJ...", "user": {...}}          │
+│    {"token": "eyJ...", "user": {...}}           │
 │                                                 │
 │ 3. Include token in subsequent requests         │
 │    Authorization: Bearer eyJ...                 │
