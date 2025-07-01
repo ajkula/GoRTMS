@@ -14,7 +14,7 @@ http:
     enabled: true
     address: 127.0.0.1
     port: 8080
-    tls: false
+    tls: true
     certFile: ""
     keyFile: ""
     cors:

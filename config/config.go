@@ -406,14 +406,18 @@ func ValidateConfig(config *Config) error {
 
 	// Check the TLS configurations
 	if config.HTTP.TLS {
-		if config.HTTP.CertFile == "" || config.HTTP.KeyFile == "" {
-			return fmt.Errorf("TLS enabled but certificate or key file not specified")
+		// Only validate if custom certificates are specified
+		if config.HTTP.CertFile != "" && config.HTTP.KeyFile != "" {
+			if _, err := os.Stat(config.HTTP.CertFile); os.IsNotExist(err) {
+				return fmt.Errorf("certificate file not found: %s", config.HTTP.CertFile)
+			}
+			if _, err := os.Stat(config.HTTP.KeyFile); os.IsNotExist(err) {
+				return fmt.Errorf("key file not found: %s", config.HTTP.KeyFile)
+			}
 		}
-		if _, err := os.Stat(config.HTTP.CertFile); os.IsNotExist(err) {
-			return fmt.Errorf("certificate file not found: %s", config.HTTP.CertFile)
-		}
-		if _, err := os.Stat(config.HTTP.KeyFile); os.IsNotExist(err) {
-			return fmt.Errorf("key file not found: %s", config.HTTP.KeyFile)
+		// If both empty, auto-generation will handle it in EnsureTLSCertificates()
+		if (config.HTTP.CertFile == "") != (config.HTTP.KeyFile == "") {
+			return fmt.Errorf("both certFile and keyFile must be specified together, or both empty for auto-generation")
 		}
 	}
 

@@ -358,15 +358,6 @@ func main() {
 			}
 		}()
 
-		go func() {
-			logger.Info("HTTP server listening", "URL", httpAddr)
-			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				_, shutdownCancel := context.WithTimeout(ctx, 1*time.Second)
-				defer shutdownCancel()
-				logger.Error("HTTP server", "ERROR", err)
-			}
-		}()
-
 		// stop HTTP server
 		defer func() {
 			// Important cleanup order: start with services that depend on others
