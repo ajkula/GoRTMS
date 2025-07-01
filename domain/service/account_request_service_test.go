@@ -7,6 +7,7 @@ import (
 
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
+	"github.com/stretchr/testify/mock"
 )
 
 // Mock implementations for testing
@@ -89,32 +90,6 @@ func (m *mockUserRepository) Load() (*model.UserDatabase, error) {
 
 func (m *mockUserRepository) Exists() bool {
 	return m.db != nil
-}
-
-type mockCryptoService struct{}
-
-func (m *mockCryptoService) Encrypt(data []byte, key [32]byte) ([]byte, []byte, error) {
-	return data, []byte("nonce"), nil
-}
-
-func (m *mockCryptoService) Decrypt(encrypted []byte, nonce []byte, key [32]byte) ([]byte, error) {
-	return encrypted, nil
-}
-
-func (m *mockCryptoService) DeriveKey(machineID string) [32]byte {
-	return [32]byte{}
-}
-
-func (m *mockCryptoService) GenerateSalt() [32]byte {
-	return [32]byte{}
-}
-
-func (m *mockCryptoService) HashPassword(password string, salt [16]byte) string {
-	return "hashed_" + password
-}
-
-func (m *mockCryptoService) VerifyPassword(password, hash string, salt [16]byte) bool {
-	return hash == "hashed_"+password
 }
 
 type mockMessageService struct {
@@ -208,13 +183,20 @@ func (m *mockAuthService) UpdatePassword(user *model.User, old, new string) erro
 // func (m *mockLogger) Shutdown()                     {}
 
 func createTestService() *accountRequestService {
+	// Create and configure the mock crypto service
+	mockCrypto := &MockCryptoService{}
+
+	// Configure necessary stubs
+	mockCrypto.On("HashPassword", mock.AnythingOfType("string"), mock.AnythingOfType("[16]uint8")).Return("mocked_hash_password")
+	mockCrypto.On("GenerateSalt").Return([32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32})
+
 	return &accountRequestService{
 		repo: &mockAccountRequestRepository{
 			requests:  make(map[string]*model.AccountRequest),
 			usernames: make(map[string]*model.AccountRequest),
 		},
 		userRepo:       &mockUserRepository{},
-		crypto:         &mockCryptoService{},
+		crypto:         mockCrypto,
 		messageService: &mockMessageService{},
 		authService: &mockAuthService{
 			users: make(map[string]*model.User),

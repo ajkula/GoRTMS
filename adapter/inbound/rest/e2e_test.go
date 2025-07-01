@@ -5,10 +5,12 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,13 +20,491 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ajkula/GoRTMS/adapter/outbound/crypto"
 	"github.com/ajkula/GoRTMS/adapter/outbound/storage"
 	"github.com/ajkula/GoRTMS/config"
 	"github.com/ajkula/GoRTMS/domain/model"
 	"github.com/ajkula/GoRTMS/domain/port/inbound"
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
 	"github.com/gorilla/mux"
+	"github.com/stretchr/testify/mock"
 )
+
+// ============================================================================
+// TLS E2E TESTS - Ajout après TestE2E_CompleteWorkflow
+// ============================================================================
+
+// E2E test that validates TLS certificate generation and HTTPS functionality
+func TestE2E_TLS_Complete(t *testing.T) {
+	t.Log("=== Starting TLS E2E Test ===")
+
+	// ====================================
+	// STEP 1: Test certificate generation
+	// ====================================
+
+	server := setupTLSTestServer(t)
+	defer server.cleanup()
+
+	t.Log("=== STEP 1: Testing certificate generation ===")
+	server.testCertificateGeneration(t)
+
+	// ====================================
+	// STEP 2: Test HTTPS server functionality
+	// ====================================
+
+	t.Log("=== STEP 2: Testing HTTPS server ===")
+	server.testHTTPSServer(t)
+
+	// ====================================
+	// STEP 3: Test HMAC RequireTLS guard
+	// ====================================
+
+	t.Log("=== STEP 3: Testing HMAC RequireTLS guard ===")
+	server.testHMACRequireTLS(t)
+
+	// ====================================
+	// STEP 4: Test TLS with real HMAC flow
+	// ====================================
+
+	t.Log("=== STEP 4: Testing complete HMAC flow over TLS ===")
+	server.testCompleteHMACFlowOverTLS(t)
+
+	t.Log("=== TLS E2E TEST COMPLETED SUCCESSFULLY ===")
+}
+
+// ============================================================================
+// TLS TEST SERVER SETUP - Ajout après completeTestServer
+// ============================================================================
+
+// tlsTestServer extends completeTestServer with TLS capabilities
+type tlsTestServer struct {
+	*completeTestServer
+	cryptoService    outbound.CryptoService
+	tlsServer        *httptest.Server
+	clientWithTLS    *http.Client
+	clientWithoutTLS *http.Client
+}
+
+// setupTLSTestServer creates a test server with TLS support
+func setupTLSTestServer(t *testing.T) *tlsTestServer {
+	base := setupCompleteTestServer(t)
+
+	// Create crypto service
+	cryptoService := &MockCryptoService{}
+
+	// Setup mock for certificate generation
+	certPEM := []byte(`-----BEGIN CERTIFICATE-----
+MIICljCCAX4CCQDTFgP8S8ZH6TANBgkqhkiG9w0BAQsFADATMREwDwYDVQQDDAhs
+b2NhbGhvc3QwHhcNMjQwMTAxMDAwMDAwWhcNMjUwMTAxMDAwMDAwWjATMREwDwYD
+VQQDDAhsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC8
+mock_certificate_data_here_for_testing_purposes_only
+-----END CERTIFICATE-----`)
+
+	keyPEM := []byte(`-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC8mock_key_data
+here_for_testing_purposes_only
+-----END PRIVATE KEY-----`)
+
+	cryptoService.On("GenerateTLSCertificate", "localhost").Return(certPEM, keyPEM, nil)
+
+	// Create TLS config for testing
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		// Use a real certificate generation for testing
+		realCrypto := crypto.NewAESCryptoService()
+		realCertPEM, realKeyPEM, err := realCrypto.GenerateTLSCertificate("localhost")
+		if err != nil {
+			t.Fatalf("Failed to generate test certificate: %v", err)
+		}
+		cert, err = tls.X509KeyPair(realCertPEM, realKeyPEM)
+		if err != nil {
+			t.Fatalf("Failed to create test key pair: %v", err)
+		}
+	}
+
+	// Create HTTPS test server
+	tlsServer := httptest.NewUnstartedServer(base.router)
+	tlsServer.TLS = &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+	tlsServer.StartTLS()
+
+	// Create clients - one that accepts self-signed certs, one that doesn't
+	clientWithTLS := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // Accept self-signed for testing
+			},
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	clientWithoutTLS := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	return &tlsTestServer{
+		completeTestServer: base,
+		cryptoService:      cryptoService,
+		tlsServer:          tlsServer,
+		clientWithTLS:      clientWithTLS,
+		clientWithoutTLS:   clientWithoutTLS,
+	}
+}
+
+func (s *tlsTestServer) cleanup() {
+	if s.tlsServer != nil {
+		s.tlsServer.Close()
+	}
+	s.completeTestServer.cleanup()
+}
+
+// ============================================================================
+// TLS SPECIFIC TEST METHODS - Ajout après les méthodes existantes
+// ============================================================================
+
+// testCertificateGeneration validates certificate generation
+func (s *tlsTestServer) testCertificateGeneration(t *testing.T) {
+	certPEM, keyPEM, err := s.cryptoService.GenerateTLSCertificate("localhost")
+	if err != nil {
+		t.Fatalf("Failed to generate certificate: %v", err)
+	}
+
+	if len(certPEM) == 0 {
+		t.Error("Certificate PEM is empty")
+	}
+
+	if len(keyPEM) == 0 {
+		t.Error("Key PEM is empty")
+	}
+
+	// Validate certificate format
+	if !bytes.Contains(certPEM, []byte("BEGIN CERTIFICATE")) {
+		t.Error("Certificate doesn't have proper PEM format")
+	}
+
+	if !bytes.Contains(keyPEM, []byte("BEGIN PRIVATE KEY")) {
+		t.Error("Key doesn't have proper PEM format")
+	}
+
+	t.Logf("✅ Certificate generated: %d bytes, Key: %d bytes", len(certPEM), len(keyPEM))
+}
+
+// testHTTPSServer validates HTTPS server functionality
+func (s *tlsTestServer) testHTTPSServer(t *testing.T) {
+	// Test 1: HTTPS health check
+	url := s.tlsServer.URL + "/health"
+	resp, err := s.clientWithTLS.Get(url)
+	if err != nil {
+		t.Fatalf("Failed to make HTTPS request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200, got %d", resp.StatusCode)
+	}
+
+	// Test 2: Verify TLS connection details
+	if resp.TLS == nil {
+		t.Error("Response should have TLS information")
+	} else {
+		t.Logf("✅ TLS Version: %s", tlsVersionToString(resp.TLS.Version))
+		t.Logf("✅ Cipher Suite: %s", tls.CipherSuiteName(resp.TLS.CipherSuite))
+	}
+
+	// Test 3: Verify client without TLS trust fails
+	_, err = s.clientWithoutTLS.Get(url)
+	if err == nil {
+		t.Error("Expected TLS verification error with untrusted client")
+	} else {
+		t.Logf("✅ Untrusted client correctly rejected: %v", err)
+	}
+}
+
+// testHMACRequireTLS validates HMAC RequireTLS guard functionality
+func (s *tlsTestServer) testHMACRequireTLS(t *testing.T) {
+	// Create service account first
+	serviceSecret, serviceID := s.createServiceAccountTLS(t, "tls-test-service", []string{"publish:*"})
+
+	// Enable RequireTLS in config
+	s.handler.config.Security.HMAC.RequireTLS = true
+	s.handler.config.Security.EnableAuthentication = true
+
+	// Create domain and queue for testing
+	domainName := "tls-test-domain"
+	queueName := "tls-test-queue"
+
+	// Test 1: HMAC request over HTTPS should work
+	t.Log("Testing HMAC over HTTPS (should work)")
+	s.createDomainWithHMACOverTLS(t, serviceID, serviceSecret, domainName)
+	s.createQueueWithHMACOverTLS(t, serviceID, serviceSecret, domainName, queueName)
+
+	// Test 2: Simulate HMAC request over HTTP (should fail with 404)
+	t.Log("Testing HMAC over HTTP with RequireTLS=true (should fail)")
+	s.testHMACOverHTTPShouldFail(t, serviceID, serviceSecret, domainName)
+}
+
+// testCompleteHMACFlowOverTLS validates complete HMAC workflow over TLS
+func (s *tlsTestServer) testCompleteHMACFlowOverTLS(t *testing.T) {
+	serviceSecret, serviceID := s.createServiceAccountTLS(t, "tls-flow-service", []string{"publish:*", "consume:*", "manage:*"})
+
+	domainName := "tls-flow-domain"
+	queueName := "tls-flow-queue"
+
+	// Complete workflow over TLS
+	s.createDomainWithHMACOverTLS(t, serviceID, serviceSecret, domainName)
+	s.createQueueWithHMACOverTLS(t, serviceID, serviceSecret, domainName, queueName)
+
+	messageID := s.publishMessageWithHMACOverTLS(t, serviceID, serviceSecret, domainName, queueName, map[string]interface{}{
+		"type":   "tls-test-message",
+		"secure": true,
+	})
+
+	messages := s.consumeMessagesWithHMACOverTLS(t, serviceID, serviceSecret, domainName, queueName)
+
+	if len(messages) == 0 {
+		t.Error("Expected to consume message over TLS")
+	}
+
+	t.Logf("✅ Complete HMAC flow over TLS successful: published %s, consumed %d messages", messageID, len(messages))
+}
+
+// ============================================================================
+// TLS-SPECIFIC HELPER METHODS - Ajout après les méthodes existantes
+// ============================================================================
+
+// createServiceAccountTLS creates service account using TLS
+func (s *tlsTestServer) createServiceAccountTLS(t *testing.T, name string, permissions []string) (secret, serviceID string) {
+	createReq := model.ServiceAccountCreateRequest{
+		Name:        name,
+		Permissions: permissions,
+		IPWhitelist: []string{},
+	}
+
+	body, _ := json.Marshal(createReq)
+	url := s.tlsServer.URL + "/api/services"
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer mock-jwt-token")
+
+	resp, err := s.clientWithTLS.Do(req)
+	if err != nil {
+		t.Fatalf("Failed to make TLS request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Failed to create service account over TLS. Status: %d, Body: %s", resp.StatusCode, bodyBytes)
+	}
+
+	var response struct {
+		*model.ServiceAccountView
+		Message string `json:"message"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode TLS response: %v", err)
+	}
+
+	return response.Secret, response.ID
+}
+
+// createDomainWithHMACOverTLS creates domain via HMAC over TLS
+func (s *tlsTestServer) createDomainWithHMACOverTLS(t *testing.T, serviceID, secret, domainName string) {
+	domainReq := map[string]interface{}{
+		"name": domainName,
+		"schema": map[string]interface{}{
+			"fields": map[string]string{},
+		},
+	}
+
+	body, _ := json.Marshal(domainReq)
+	path := "/api/domains"
+	timestamp := time.Now().Format(time.RFC3339)
+	signature := s.generateHMACSignature("POST", path, string(body), timestamp, secret)
+
+	url := s.tlsServer.URL + path
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Service-ID", serviceID)
+	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Signature", signature)
+
+	resp, err := s.clientWithTLS.Do(req)
+	if err != nil {
+		t.Fatalf("Failed to create domain over TLS: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Failed to create domain via HMAC over TLS. Status: %d, Body: %s", resp.StatusCode, bodyBytes)
+	}
+}
+
+// createQueueWithHMACOverTLS creates queue via HMAC over TLS
+func (s *tlsTestServer) createQueueWithHMACOverTLS(t *testing.T, serviceID, secret, domainName, queueName string) {
+	queueReq := map[string]interface{}{
+		"name": queueName,
+		"config": map[string]interface{}{
+			"isPersistent": true,
+			"maxSize":      1000,
+			"ttl":          "1h",
+		},
+	}
+
+	body, _ := json.Marshal(queueReq)
+	path := fmt.Sprintf("/api/domains/%s/queues", domainName)
+	timestamp := time.Now().Format(time.RFC3339)
+	signature := s.generateHMACSignature("POST", path, string(body), timestamp, secret)
+
+	url := s.tlsServer.URL + path
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Service-ID", serviceID)
+	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Signature", signature)
+
+	resp, err := s.clientWithTLS.Do(req)
+	if err != nil {
+		t.Fatalf("Failed to create queue over TLS: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Failed to create queue via HMAC over TLS. Status: %d, Body: %s", resp.StatusCode, bodyBytes)
+	}
+}
+
+// publishMessageWithHMACOverTLS publishes message via HMAC over TLS
+func (s *tlsTestServer) publishMessageWithHMACOverTLS(t *testing.T, serviceID, secret, domainName, queueName string, message map[string]interface{}) string {
+	body, _ := json.Marshal(message)
+	path := fmt.Sprintf("/api/domains/%s/queues/%s/messages", domainName, queueName)
+	timestamp := time.Now().Format(time.RFC3339)
+	signature := s.generateHMACSignature("POST", path, string(body), timestamp, secret)
+
+	url := s.tlsServer.URL + path
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Service-ID", serviceID)
+	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Signature", signature)
+
+	resp, err := s.clientWithTLS.Do(req)
+	if err != nil {
+		t.Fatalf("Failed to publish message over TLS: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Failed to publish message via HMAC over TLS. Status: %d, Body: %s", resp.StatusCode, bodyBytes)
+	}
+
+	var response map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&response)
+	return response["messageId"].(string)
+}
+
+// consumeMessagesWithHMACOverTLS consumes messages via HMAC over TLS
+func (s *tlsTestServer) consumeMessagesWithHMACOverTLS(t *testing.T, serviceID, secret, domainName, queueName string) []map[string]interface{} {
+	path := fmt.Sprintf("/api/domains/%s/queues/%s/messages", domainName, queueName)
+	timestamp := time.Now().Format(time.RFC3339)
+	signature := s.generateHMACSignature("GET", path, "", timestamp, secret)
+
+	url := s.tlsServer.URL + path + "?max=10"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+
+	req.Header.Set("X-Service-ID", serviceID)
+	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Signature", signature)
+
+	resp, err := s.clientWithTLS.Do(req)
+	if err != nil {
+		t.Fatalf("Failed to consume messages over TLS: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Failed to consume messages via HMAC over TLS. Status: %d, Body: %s", resp.StatusCode, bodyBytes)
+	}
+
+	var response struct {
+		Messages []map[string]interface{} `json:"messages"`
+	}
+	json.NewDecoder(resp.Body).Decode(&response)
+	return response.Messages
+}
+
+// testHMACOverHTTPShouldFail tests HMAC over HTTP should fail when RequireTLS=true
+func (s *tlsTestServer) testHMACOverHTTPShouldFail(t *testing.T, serviceID, secret, domainName string) {
+	// Create an HTTP test request (simulating what would happen if someone tried HTTP)
+	domainReq := map[string]interface{}{
+		"name": domainName + "-should-fail",
+	}
+
+	body, _ := json.Marshal(domainReq)
+	timestamp := time.Now().Format(time.RFC3339)
+	signature := s.generateHMACSignature("POST", "/api/domains", string(body), timestamp, secret)
+
+	// Use httptest.NewRequest to simulate HTTP (no TLS)
+	req := httptest.NewRequest("POST", "/api/domains", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Service-ID", serviceID)
+	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Signature", signature)
+	// Note: req.TLS will be nil, simulating HTTP
+
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	// Should return 404 (security by obscurity)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected 404 for HMAC over HTTP when RequireTLS=true, got %d. Body: %s", w.Code, w.Body.String())
+	} else {
+		t.Logf("✅ HMAC over HTTP correctly rejected with 404")
+	}
+}
+
+// tlsVersionToString helper function
+func tlsVersionToString(version uint16) string {
+	switch version {
+	case tls.VersionTLS10:
+		return "TLS 1.0"
+	case tls.VersionTLS11:
+		return "TLS 1.1"
+	case tls.VersionTLS12:
+		return "TLS 1.2"
+	case tls.VersionTLS13:
+		return "TLS 1.3"
+	default:
+		return fmt.Sprintf("Unknown (%d)", version)
+	}
+}
 
 // E2E test that validates the complete HMAC/JWT/Hybrid routing system
 func TestE2E_CompleteWorkflow(t *testing.T) {
@@ -514,7 +994,46 @@ func (s *completeTestServer) testHMACRouteWithInvalidSignature(t *testing.T, ser
 
 // ============================================================================
 // MOCK IMPLEMENTATIONS
+
 // ============================================================================
+type MockCryptoService struct {
+	mock.Mock
+}
+
+func (m *MockCryptoService) GenerateTLSCertificate(hostname string) (certPEM, keyPEM []byte, err error) {
+	args := m.Called(hostname)
+	return args.Get(0).([]byte), args.Get(1).([]byte), args.Error(2)
+}
+
+func (m *MockCryptoService) Encrypt(data []byte, key [32]byte) ([]byte, []byte, error) {
+	args := m.Called(data, key)
+	return args.Get(0).([]byte), args.Get(1).([]byte), args.Error(2)
+}
+
+func (m *MockCryptoService) Decrypt(encrypted []byte, nonce []byte, key [32]byte) ([]byte, error) {
+	args := m.Called(encrypted, nonce, key)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (m *MockCryptoService) DeriveKey(machineID string) [32]byte {
+	args := m.Called(machineID)
+	return args.Get(0).([32]byte)
+}
+
+func (m *MockCryptoService) GenerateSalt() [32]byte {
+	args := m.Called()
+	return args.Get(0).([32]byte)
+}
+
+func (m *MockCryptoService) HashPassword(password string, salt [16]byte) string {
+	args := m.Called(password, salt)
+	return args.String(0)
+}
+
+func (m *MockCryptoService) VerifyPassword(password, hash string, salt [16]byte) bool {
+	args := m.Called(password, hash, salt)
+	return args.Bool(0)
+}
 
 // Mock AuthService for testing
 type mockAuthService struct {

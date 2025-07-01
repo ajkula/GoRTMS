@@ -143,6 +143,7 @@ type CryptoService interface {
 	GenerateSalt() [32]byte
 	HashPassword(password string, salt [16]byte) string
 	VerifyPassword(password, hash string, salt [16]byte) bool
+	GenerateTLSCertificate(hostname string) (certPEM, keyPEM []byte, err error)
 }
 
 // users persistence

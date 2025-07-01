@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"embed"
 	"flag"
 	"fmt"
@@ -266,6 +267,12 @@ func main() {
 
 	// Configure the incoming adapters
 	if cfg.HTTP.Enabled {
+		// Ensure TLS certificates exist if TLS is enabled
+		if err := config.EnsureTLSCertificates(cfg, cryptoService, logger); err != nil {
+			logger.Error("Failed to setup TLS certificates", "error", err)
+			os.Exit(1)
+		}
+
 		// REST adapter
 		restHandler := rest.NewHandler(
 			logger,
@@ -317,6 +324,39 @@ func main() {
 			ReadTimeout:  5 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		}
+
+		// Configure TLS if enabled
+		if cfg.HTTP.TLS {
+			// Optional: Configure TLS settings for security
+			server.TLSConfig = &tls.Config{
+				MinVersion: tls.VersionTLS12, // Minimum TLS 1.2
+				CipherSuites: []uint16{
+					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				},
+			}
+		}
+
+		// Start HTTP/HTTPS server
+		go func() {
+			if cfg.HTTP.TLS {
+				logger.Info("HTTPS server listening",
+					"URL", fmt.Sprintf("https://%s", httpAddr),
+					"certFile", cfg.HTTP.CertFile,
+					"keyFile", cfg.HTTP.KeyFile)
+
+				if err := server.ListenAndServeTLS(cfg.HTTP.CertFile, cfg.HTTP.KeyFile); err != nil && err != http.ErrServerClosed {
+					logger.Error("HTTPS server error", "error", err)
+				}
+			} else {
+				logger.Info("HTTP server listening", "URL", fmt.Sprintf("http://%s", httpAddr))
+
+				if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					logger.Error("HTTP server error", "error", err)
+				}
+			}
+		}()
 
 		go func() {
 			logger.Info("HTTP server listening", "URL", httpAddr)

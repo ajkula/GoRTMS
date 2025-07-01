@@ -157,6 +157,174 @@ For service-to-service communication, create service accounts and sign requests 
 - `X-Timestamp`: ISO 8601 timestamp
 - `X-Signature`: HMAC-SHA256 signature
 
+## TLS/HTTPS Configuration
+
+GoRTMS supports HTTPS with automatic certificate generation for secure communication. The system can operate in both HTTP (development) and HTTPS (production) modes.
+
+### Automatic Certificate Generation
+
+GoRTMS automatically generates self-signed TLS certificates when HTTPS is enabled without providing custom certificates:
+
+```yaml
+http:
+  enabled: true
+  address: "0.0.0.0"
+  port: 8080
+  tls: true
+  # certFile and keyFile left empty for auto-generation
+```
+
+On first startup with TLS enabled, GoRTMS will:
+
+1. **Generate RSA 2048-bit certificate** valid for 1 year
+2. **Save certificates** to `{dataDir}/tls/server.crt` and `{dataDir}/tls/server.key`
+3. **Include common hostnames** (localhost, 127.0.0.1, ::1) in certificate
+4. **Log certificate details** for verification
+
+Expected startup output:
+```
+🔐 TLS certificates generated successfully
+Certificate file: ./data/tls/server.crt
+Key file: ./data/tls/server.key
+Hostname: localhost
+Validity: 1 year
+Note: Self-signed certificate - browsers will show security warning
+HTTPS server listening on https://0.0.0.0:8080
+```
+
+### Custom Certificates
+
+For production environments, provide your own certificates:
+
+```yaml
+http:
+  enabled: true
+  address: "0.0.0.0"
+  port: 8080
+  tls: true
+  certFile: "/path/to/your/certificate.pem"
+  keyFile: "/path/to/your/private.key"
+```
+
+### Security Configuration
+
+Configure HMAC authentication to require TLS for enhanced security:
+
+```yaml
+security:
+  enableAuthentication: true
+  hmac:
+    enabled: true
+    requireTLS: true  # Reject HMAC requests over HTTP
+    timestampWindow: "5m"
+```
+
+When `requireTLS` is enabled:
+- **HMAC requests over HTTP** are rejected with 404 (security by obscurity)
+- **Server logs** explicit security warnings for administrators
+- **HTTPS-only enforcement** for service-to-service authentication
+
+### TLS Client Configuration
+
+#### cURL with Self-Signed Certificates
+
+```bash
+# Accept self-signed certificates (development)
+curl -k https://localhost:8080/api/health
+
+# Or verify against specific certificate
+curl --cacert ./data/tls/server.crt https://localhost:8080/api/health
+```
+
+#### Application Clients
+
+```go
+// Go client accepting self-signed certificates
+client := &http.Client{
+    Transport: &http.Transport{
+        TLSClientConfig: &tls.Config{
+            InsecureSkipVerify: true, // Only for development
+        },
+    },
+}
+
+resp, err := client.Get("https://localhost:8080/api/health")
+```
+
+```javascript
+// Node.js client with self-signed certificate support
+const https = require('https');
+
+const agent = new https.Agent({
+    rejectUnauthorized: false // Only for development
+});
+
+const response = await fetch('https://localhost:8080/api/health', {
+    agent: agent
+});
+```
+
+### WebSocket over TLS (WSS)
+
+WebSocket connections automatically use WSS when TLS is enabled:
+
+```javascript
+// Secure WebSocket connection
+const ws = new WebSocket('wss://localhost:8080/api/ws/domains/ecommerce/queues/orders');
+
+// For self-signed certificates in development environments,
+// browser security settings may need adjustment
+```
+
+### TLS Configuration Reference
+
+| Property | Type | Description | Default |
+|----------|------|-------------|---------|
+| `http.tls` | boolean | Enable HTTPS/TLS | false |
+| `http.certFile` | string | Custom certificate file path | "" (auto-generate) |
+| `http.keyFile` | string | Custom private key file path | "" (auto-generate) |
+| `security.hmac.requireTLS` | boolean | Force HMAC over HTTPS only | false |
+
+### Production Deployment
+
+#### Let's Encrypt Integration
+
+For public-facing deployments, use Let's Encrypt certificates:
+
+```bash
+# Obtain Let's Encrypt certificate
+certbot certonly --standalone -d yourdomain.com
+
+# Configure GoRTMS
+```
+
+```yaml
+http:
+  tls: true
+  certFile: "/etc/letsencrypt/live/yourdomain.com/fullchain.pem"
+  keyFile: "/etc/letsencrypt/live/yourdomain.com/privkey.pem"
+```
+
+#### Corporate PKI
+
+For enterprise environments with internal Certificate Authority:
+
+```yaml
+http:
+  tls: true
+  certFile: "/etc/ssl/certs/gortms.crt"
+  keyFile: "/etc/ssl/private/gortms.key"
+```
+
+### Security Best Practices
+
+1. **Always enable TLS in production** environments
+2. **Set `requireTLS: true`** for HMAC authentication
+3. **Use proper certificates** from trusted CA for public deployment
+4. **Regularly rotate certificates** before expiration
+5. **Monitor certificate validity** in production systems
+6. **Configure firewalls** to block HTTP when HTTPS is available
+
 ## API Usage Examples
 
 ### Domain and Queue Management

@@ -71,6 +71,21 @@ func (m *HMACMiddleware) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Check RequireTLS guard
+		if m.config.Security.HMAC.RequireTLS && r.TLS == nil {
+			// Log explicit message for admin
+			m.logger.Warn("HMAC request rejected: RequireTLS enabled but request over HTTP",
+				"path", r.URL.Path,
+				"method", r.Method,
+				"remoteAddr", r.RemoteAddr,
+				"serviceID", serviceID)
+
+			// Return 404 security by obscurity
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte("404 page not found"))
+			return
+		}
+
 		// Validate timestamp window
 		if !m.isTimestampValid(timestamp) {
 			m.unauthorized(w, "timestamp outside valid window")

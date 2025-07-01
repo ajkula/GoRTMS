@@ -36,6 +36,11 @@ type MockCryptoService struct {
 	mock.Mock
 }
 
+func (m *MockCryptoService) GenerateTLSCertificate(hostname string) (certPEM, keyPEM []byte, err error) {
+	args := m.Called(hostname)
+	return args.Get(0).([]byte), args.Get(1).([]byte), args.Error(2)
+}
+
 func (m *MockCryptoService) Encrypt(data []byte, key [32]byte) ([]byte, []byte, error) {
 	args := m.Called(data, key)
 	return args.Get(0).([]byte), args.Get(1).([]byte), args.Error(2)

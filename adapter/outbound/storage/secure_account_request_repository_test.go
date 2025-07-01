@@ -8,10 +8,18 @@ import (
 	"time"
 
 	"github.com/ajkula/GoRTMS/domain/model"
+	"github.com/stretchr/testify/mock"
 )
 
 // Mock implementations for testing
-type mockCryptoService struct{}
+type mockCryptoService struct {
+	mock.Mock
+}
+
+func (m *mockCryptoService) GenerateTLSCertificate(hostname string) (certPEM, keyPEM []byte, err error) {
+	args := m.Called(hostname)
+	return args.Get(0).([]byte), args.Get(1).([]byte), args.Error(2)
+}
 
 func (m *mockCryptoService) Encrypt(data []byte, key [32]byte) ([]byte, []byte, error) {
 	// Simple XOR encryption for testing
