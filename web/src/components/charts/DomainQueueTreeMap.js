@@ -30,10 +30,10 @@ const DomainQueueTreeMap = ({ data }) => {
 
   // Generate the usage legend
   const usageLegend = [
-    { label: "Critique (>90%)", color: getUsageColor(95) },
-    { label: "Élevée (>75%)", color: getUsageColor(80) },
-    { label: "Moyenne (>50%)", color: getUsageColor(60) },
-    { label: "Faible (<50%)", color: getUsageColor(40) }
+    { label: "Critical (>90%)", color: getUsageColor(95) },
+    { label: "High (>75%)", color: getUsageColor(80) },
+    { label: "Medium (>50%)", color: getUsageColor(60) },
+    { label: "Low (<50%)", color: getUsageColor(40) }
   ];
 
   return (
@@ -111,7 +111,7 @@ const DomainQueueTreeMap = ({ data }) => {
       {/* Inline usage legend */}
       <div className="mt-4 text-center">
         <div className="inline-block text-center">
-          <span className="text-sm font-medium text-gray-700">Utilisation:</span>&nbsp;&nbsp;
+          <span className="text-sm font-medium text-gray-700">Relative usage:</span>&nbsp;&nbsp;
           {usageLegend.map((item, index) => (
             <span key={item.label} className="inline-flex items-center mx-2">
               <div
@@ -128,9 +128,9 @@ const DomainQueueTreeMap = ({ data }) => {
       {domains.length > 0 && (
         <div className="mt-3 text-center">
           <div className="inline-block text-center">
-            <span className="text-sm font-medium text-gray-700">Domaines:</span>&nbsp;&nbsp;
+            <span className="text-sm font-medium text-gray-700">Domains:</span>&nbsp;&nbsp;
             {domains.map((domain, index) => (
-              <span key={domain} className="inline-flex items-center mx-2">
+              <span key={index} className="inline-flex items-center mx-2">
                 <span className="text-sm text-gray-700">{domain}</span>
               </span>
             ))}

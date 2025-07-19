@@ -15,8 +15,8 @@ http:
     address: 127.0.0.1
     port: 8080
     tls: true
-    certFile: ""
-    keyFile: ""
+    certFile: C:\dev\GO\GoRTMS\data\tls\server.crt
+    keyFile: C:\dev\GO\GoRTMS\data\tls\server.key
     cors:
         enabled: true
         allowedOrigins:
@@ -37,17 +37,17 @@ grpc:
     address: 0.0.0.0
     port: 50051
 security:
-    enableAuthentication: false
-    enableAuthorization: false
+    enableAuthentication: true
+    enableAuthorization: true
     adminUsername: admin
     adminPassword: admin
     hmac:
         enabled: false
         timestampWindow: 5m
-        requireTLS: false
+        requireTLS: true
 monitoring:
     enabled: true
-    address: 0.0.0.0
+    address: 127.0.0.1
     port: 9090
     prometheus: true
 cluster:

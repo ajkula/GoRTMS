@@ -99,12 +99,20 @@ type StatsServiceImpl struct {
 	publishCountSinceLastCollect int
 	consumeCountSinceLastCollect int
 	countMu                      sync.Mutex
+	eventChan                    chan eventMessage
 
 	// Metrics collection interval
 	collectInterval time.Duration
 
 	// Channel to stop automatic collection
 	stopCollect chan struct{}
+}
+
+type eventMessage struct {
+	eventType string
+	severity  string
+	resource  string
+	data      any
 }
 
 func NewStatsService(
@@ -127,12 +135,26 @@ func NewStatsService(
 		messageRepo:     messageRepo,
 		metrics:         metrics,
 		collectInterval: ratesInterval,
+		eventChan:       make(chan eventMessage, 5000),
 		stopCollect:     make(chan struct{}),
 	}
 
+	go service.eventProcessor()
 	go service.startMetricsCollection()
 
 	return service
+}
+
+func (s *StatsServiceImpl) eventProcessor() {
+	for event := range s.eventChan {
+		if event.eventType == "_flush" {
+			if done, ok := event.data.(chan struct{}); ok {
+				close(done)
+				continue
+			}
+		}
+		s.RecordEvent(event.eventType, event.severity, event.resource, event.data)
+	}
 }
 
 func (s *StatsServiceImpl) TrackMessagePublished(domainName, queueName string) {
@@ -316,7 +338,22 @@ func (s *StatsServiceImpl) RecordQueueCapacity(domain, queue string, usage float
 	if usage >= 90 {
 		severity = "error"
 	}
-	s.RecordEvent("queue_capacity", severity, resource, usage)
+
+	select {
+	case s.eventChan <- eventMessage{eventType: "queue_capacity", severity: severity, resource: resource, data: usage}:
+	default:
+		s.metrics.logger.Warn("queue_capacity chan full skipping", "time", time.Now().Local())
+	}
+}
+
+// This one is for tests
+func (s *StatsServiceImpl) FlushEvents() {
+	done := make(chan struct{})
+	select {
+	case s.eventChan <- eventMessage{eventType: "_flush", data: done}:
+		<-done
+	default:
+	}
 }
 
 func (s *StatsServiceImpl) RecordConnectionLost(domain, queue, consumerId string) {

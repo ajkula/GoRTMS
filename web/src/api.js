@@ -14,6 +14,7 @@ const api = {
       const mergedOptions = {
         ...options,
         headers: {
+        'Connection': 'keep-alive',
           ...authHeaders,
           ...options.headers,
         }

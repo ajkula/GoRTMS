@@ -271,6 +271,7 @@ func TestRecordQueueCapacity(t *testing.T) {
 
 	t.Run("Warning level for usage < 90", func(t *testing.T) {
 		service.RecordQueueCapacity("domain1", "queue1", 85.5)
+		service.FlushEvents()
 
 		events := service.metrics.systemEvents
 		require.Len(t, events, 1)
@@ -286,6 +287,7 @@ func TestRecordQueueCapacity(t *testing.T) {
 		service.metrics.systemEvents = []model.SystemEvent{} // reset
 
 		service.RecordQueueCapacity("domain1", "queue1", 95.0)
+		service.FlushEvents()
 
 		events := service.metrics.systemEvents
 		require.Len(t, events, 1)

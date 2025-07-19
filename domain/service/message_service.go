@@ -180,7 +180,7 @@ func (s *MessageServiceImpl) PublishMessage(
 			}
 		}
 	} else {
-		s.logger.Info("No routes found for queue", "queue", queueName)
+		s.logger.Debug("No routes found for queue", "queue", queueName)
 	}
 
 	return nil

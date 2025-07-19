@@ -907,6 +907,7 @@ func (h *Handler) getStats(w http.ResponseWriter, r *http.Request) {
 	// Get aggregated stats
 	stats, err := h.statsService.GetStatsWithAggregation(ctx, period, granularity)
 	if err != nil {
+		h.logger.Error("getStats", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
