@@ -9,6 +9,7 @@
 *.dylib
 *.db
 config.yaml
+bundle.js
 
 # Test binary, built with `go test -c`
 *.test
