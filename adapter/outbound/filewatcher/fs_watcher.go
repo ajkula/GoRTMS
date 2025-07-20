@@ -83,7 +83,6 @@ func (fw *FsWatcher) Watch(ctx context.Context, path string) error {
 
 func (fw *FsWatcher) Stop() error {
 	fw.mu.Lock()
-	defer fw.mu.Unlock()
 
 	if !fw.running {
 		return nil
@@ -100,6 +99,9 @@ func (fw *FsWatcher) Stop() error {
 		return fmt.Errorf("failed to close fsnotify watcher: %w", err)
 	}
 
+	fw.running = false
+	fw.mu.Unlock()
+
 	// wait for goroutines to finish
 	<-fw.closed
 
@@ -107,7 +109,6 @@ func (fw *FsWatcher) Stop() error {
 	close(fw.errors)
 	close(fw.writeEvents)
 
-	fw.running = false
 	return nil
 }
 
@@ -177,7 +178,9 @@ func (fw *FsWatcher) processWriteEvents() {
 	for {
 		select {
 		case <-fw.ctx.Done():
+			fw.mu.Lock()
 			fw.cleanupDebouncers()
+			fw.mu.Unlock()
 			return
 
 		case event := <-fw.writeEvents:
