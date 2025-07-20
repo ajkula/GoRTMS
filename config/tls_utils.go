@@ -3,9 +3,12 @@
 package config
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/ajkula/GoRTMS/domain/port/outbound"
 )
@@ -36,10 +39,14 @@ func EnsureTLSCertificates(config *Config, cryptoService outbound.CryptoService,
 
 	// Check if certificates already exist
 	if certificatesExist(certPath, keyPath) {
-		logger.Info("Using existing TLS certificates",
-			"certFile", certPath,
-			"keyFile", keyPath)
-		return nil
+		if isCertificateValid(certPath, logger) {
+			logger.Info("Using existing valid TLS certificates",
+				"certFile", certPath,
+				"keyFile", keyPath)
+			return nil
+		} else {
+			logger.Info("Existing certificate expired or invalid, regenerating...")
+		}
 	}
 
 	// Generate new certificates
@@ -73,6 +80,31 @@ func EnsureTLSCertificates(config *Config, cryptoService outbound.CryptoService,
 		"note", "Self-signed certificate - browsers will show security warning")
 
 	return nil
+}
+
+func isCertificateValid(certPath string, logger outbound.Logger) bool {
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return false
+	}
+
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return false
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false
+	}
+
+	// Vérifier si le certificat expire dans les 30 prochains jours
+	if time.Until(cert.NotAfter) < 30*24*time.Hour {
+		logger.Info("Certificate expires soon", "expiry", cert.NotAfter)
+		return false
+	}
+
+	return true
 }
 
 // certificatesExist checks if both certificate and key files exist

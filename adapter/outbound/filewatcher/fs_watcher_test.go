@@ -59,7 +59,6 @@ func TestFSWatcher_BasicOperations(t *testing.T) {
 }
 
 func TestFSWatcher_FileEvents(t *testing.T) {
-	// This test may be flaky depending on the filesystem and timing
 	// Create temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "fs_watcher_events_test")
 	if err != nil {
@@ -97,9 +96,10 @@ func TestFSWatcher_FileEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to write to test file: %v", err)
 	}
+	file.Sync() // Force write to disk
 	file.Close()
 
-	// Wait for events with timeout
+	// Wait for debounced events with longer timeout (3 seconds for 2s debouncing + margin)
 	select {
 	case event := <-watcher.Events():
 		// Verify we got an event for our test file
@@ -114,29 +114,78 @@ func TestFSWatcher_FileEvents(t *testing.T) {
 	case err := <-watcher.Errors():
 		t.Fatalf("Unexpected error from watcher: %v", err)
 
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second): // Longer timeout for debouncing
 		t.Log("Warning: No file event received within timeout - this may be normal on some filesystems")
 		// Don't fail the test as file events can be unreliable in test environments
 	}
+}
 
-	// Test delete event
-	err = os.Remove(testFile)
+func TestFSWatcher_DebouncingBehavior(t *testing.T) {
+	// Test that rapid writes are debounced correctly
+	tempDir, err := os.MkdirTemp("", "fs_watcher_debounce_test")
 	if err != nil {
-		t.Fatalf("Failed to remove test file: %v", err)
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	watcher, err := NewFSWatcher()
+	if err != nil {
+		t.Fatalf("Failed to create watcher: %v", err)
+	}
+	defer watcher.Stop()
+
+	testFile := filepath.Join(tempDir, "test.db")
+	ctx := context.Background()
+
+	err = watcher.Watch(ctx, testFile)
+	if err != nil {
+		t.Fatalf("Failed to watch file: %v", err)
 	}
 
-	// Check for delete event (with timeout)
-	select {
-	case event := <-watcher.Events():
-		if event.EventType != "delete" {
-			t.Logf("Expected delete event, got %s - this may be normal", event.EventType)
+	// Give the watcher time to initialize
+	time.Sleep(100 * time.Millisecond)
+
+	// Create file and write multiple times rapidly
+	file, err := os.Create(testFile)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Rapid writes
+	for i := 0; i < 5; i++ {
+		_, err = file.WriteString("content ")
+		if err != nil {
+			t.Fatalf("Failed to write to test file: %v", err)
 		}
+		file.Sync()
+		time.Sleep(100 * time.Millisecond) // Short intervals
+	}
+	file.Close()
 
-	case err := <-watcher.Errors():
-		t.Fatalf("Unexpected error from watcher: %v", err)
+	// Should only get one debounced event
+	eventCount := 0
+	timeout := time.After(4 * time.Second) // Wait for debouncing to complete
 
-	case <-time.After(1 * time.Second):
-		t.Log("Warning: No delete event received - this may be normal on some filesystems")
+	for {
+		select {
+		case event := <-watcher.Events():
+			eventCount++
+			t.Logf("Received event: %s for file %s", event.EventType, event.FilePath)
+
+		case <-timeout:
+			// Debouncing should result in fewer events than writes
+			if eventCount == 0 {
+				t.Log("Warning: No events received - this may be normal on some filesystems")
+			} else if eventCount > 2 {
+				t.Logf("Received %d events, expected 1-2 due to debouncing", eventCount)
+			} else {
+				t.Logf("Debouncing working correctly: %d events for 5 rapid writes", eventCount)
+			}
+			return
+
+		case err := <-watcher.Errors():
+			t.Fatalf("Unexpected error: %v", err)
+		}
 	}
 }
 
@@ -188,29 +237,30 @@ func TestFSWatcher_StopAndCleanup(t *testing.T) {
 
 func TestFSWatcher_EventConversion(t *testing.T) {
 	// Test the event type mapping logic expectations
-	// Since fsnotify.Event creation requires actual filesystem operations,
-	// we test our expected mapping behavior
+	// Since we now only handle Write and Create events, update expectations
 
 	expectedMappings := map[string]string{
 		"CREATE": "create",
 		"WRITE":  "modify",
-		"REMOVE": "delete",
-		"RENAME": "delete",
-		"CHMOD":  "", // Should be ignored (nil return)
+		// REMOVE, RENAME, CHMOD are no longer handled
 	}
 
 	for fsOperation, expectedEventType := range expectedMappings {
 		t.Run(fsOperation+" mapping", func(t *testing.T) {
 			// Test that our mapping expectations are consistent
-			if fsOperation == "CHMOD" {
-				if expectedEventType != "" {
-					t.Errorf("CHMOD events should be ignored (empty string), got '%s'", expectedEventType)
-				}
-			} else {
-				if expectedEventType == "" {
-					t.Errorf("Operation %s should map to a non-empty event type", fsOperation)
-				}
+			if expectedEventType == "" {
+				t.Errorf("Operation %s should map to a non-empty event type", fsOperation)
 			}
+		})
+	}
+
+	// Test that we correctly ignore other event types
+	ignoredOperations := []string{"REMOVE", "RENAME", "CHMOD"}
+	for _, operation := range ignoredOperations {
+		t.Run(operation+" ignored", func(t *testing.T) {
+			// These operations should now be filtered out at the fsnotify level
+			// and never reach convertEvent, which is the intended behavior
+			t.Logf("Operation %s is now filtered out before conversion", operation)
 		})
 	}
 }

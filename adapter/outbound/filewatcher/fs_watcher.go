@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 
@@ -15,6 +16,8 @@ type FsWatcher struct {
 	watcher     *fsnotify.Watcher
 	events      chan outbound.FileChangeEvent
 	errors      chan error
+	writeEvents chan fsnotify.Event
+	debouncer   map[string]*time.Timer
 	watchedDirs map[string]bool
 	mu          sync.RWMutex
 	ctx         context.Context
@@ -33,8 +36,10 @@ func NewFSWatcher() (outbound.FileWatcher, error) {
 
 	fw := &FsWatcher{
 		watcher:     fsWatcher,
-		events:      make(chan outbound.FileChangeEvent, 100),
-		errors:      make(chan error, 10),
+		events:      make(chan outbound.FileChangeEvent, 1000),
+		errors:      make(chan error, 100),
+		writeEvents: make(chan fsnotify.Event, 100),
+		debouncer:   make(map[string]*time.Timer),
 		watchedDirs: make(map[string]bool),
 		ctx:         ctx,
 		cancel:      cancel,
@@ -42,7 +47,8 @@ func NewFSWatcher() (outbound.FileWatcher, error) {
 		closed:      make(chan struct{}),
 	}
 
-	go fw.processEvents()
+	go fw.filterToWriteEvents()
+	go fw.processWriteEvents()
 
 	return fw, nil
 }
@@ -86,16 +92,20 @@ func (fw *FsWatcher) Stop() error {
 	// cancel context to stop processing
 	fw.cancel()
 
+	// cleanup all debounce timers
+	fw.cleanupDebouncers()
+
 	// close fsnotify watcher
 	if err := fw.watcher.Close(); err != nil {
 		return fmt.Errorf("failed to close fsnotify watcher: %w", err)
 	}
 
-	// wait for goroutine to finish
+	// wait for goroutines to finish
 	<-fw.closed
 
 	close(fw.events)
 	close(fw.errors)
+	close(fw.writeEvents)
 
 	fw.running = false
 	return nil
@@ -126,10 +136,8 @@ func (fw *FsWatcher) GetWatchedPaths() []string {
 	return paths
 }
 
-// handles fsnotify events and converts them to our event format
-func (fw *FsWatcher) processEvents() {
-	defer close(fw.closed)
-
+// filterToWriteEvents filters fsnotify events to only Write/Create and applies debouncing
+func (fw *FsWatcher) filterToWriteEvents() {
 	for {
 		select {
 		case <-fw.ctx.Done():
@@ -140,14 +148,9 @@ func (fw *FsWatcher) processEvents() {
 				return
 			}
 
-			// convert fsnotify event to our event format
-			changeEvent := fw.convertEvent(event)
-			if changeEvent != nil {
-				select {
-				case fw.events <- *changeEvent:
-				case <-fw.ctx.Done():
-					return
-				}
+			// Only process Write and Create events
+			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
+				fw.debounceEvent(event)
 			}
 
 		case err, ok := <-fw.watcher.Errors:
@@ -164,26 +167,89 @@ func (fw *FsWatcher) processEvents() {
 	}
 }
 
-// converts fsnotify.Event to our FileChangeEvent
+// processWriteEvents handles debounced write events with safety timeouts
+func (fw *FsWatcher) processWriteEvents() {
+	defer close(fw.closed)
+
+	ticker := time.NewTicker(10 * time.Second) // Safety heartbeat
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-fw.ctx.Done():
+			fw.cleanupDebouncers()
+			return
+
+		case event := <-fw.writeEvents:
+			changeEvent := fw.convertEvent(event)
+			if changeEvent != nil {
+				select {
+				case fw.events <- *changeEvent:
+				case <-fw.ctx.Done():
+					return
+				}
+			}
+
+		case <-ticker.C:
+			// Periodic cleanup to prevent timer leaks
+			fw.cleanupExpiredDebouncers()
+		}
+	}
+}
+
+// debounceEvent applies debouncing logic per file
+func (fw *FsWatcher) debounceEvent(event fsnotify.Event) {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	// Stop existing timer for this file
+	if timer, exists := fw.debouncer[event.Name]; exists {
+		timer.Stop()
+	}
+
+	// Create new debounce timer
+	fw.debouncer[event.Name] = time.AfterFunc(2*time.Second, func() {
+		select {
+		case fw.writeEvents <- event:
+		case <-fw.ctx.Done():
+		}
+
+		// Clean up timer reference
+		fw.mu.Lock()
+		delete(fw.debouncer, event.Name)
+		fw.mu.Unlock()
+	})
+}
+
+// cleanupDebouncers stops and removes all debounce timers
+func (fw *FsWatcher) cleanupDebouncers() {
+	for _, timer := range fw.debouncer {
+		timer.Stop()
+	}
+	fw.debouncer = make(map[string]*time.Timer)
+}
+
+// cleanupExpiredDebouncers prevents timer accumulation
+func (fw *FsWatcher) cleanupExpiredDebouncers() {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	// Safety limit - if too many timers, clean them all
+	if len(fw.debouncer) > 100 {
+		fw.cleanupDebouncers()
+	}
+}
+
+// convertEvent converts fsnotify.Event to our FileChangeEvent (simplified for Write/Create only)
 func (fw *FsWatcher) convertEvent(event fsnotify.Event) *outbound.FileChangeEvent {
 	var eventType string
 
-	// Map fsnotify operations to our event types
-	switch {
-	case event.Has(fsnotify.Create):
+	if event.Has(fsnotify.Create) {
 		eventType = "create"
-	case event.Has(fsnotify.Write):
+	} else if event.Has(fsnotify.Write) {
 		eventType = "modify"
-	case event.Has(fsnotify.Remove):
-		eventType = "delete"
-	case event.Has(fsnotify.Rename):
-		eventType = "delete" // for simplicity
-	case event.Has(fsnotify.Chmod):
-		// ignore chmod events as they're usually not relevant for our use case
-		return nil
-	default:
-		// unknown
-		return nil
+	} else {
+		return nil // Should not happen given our filtering
 	}
 
 	return &outbound.FileChangeEvent{

@@ -168,11 +168,8 @@ func (s *fileWatcherService) processEvents() {
 
 // checks if the given file path is an account request database file
 func (s *fileWatcherService) isAccountRequestFile(filePath string) bool {
-	// simply checks based on filename pattern
 	fileName := filepath.Base(filePath)
-	return fileName == "account_requests.db" ||
-		filepath.Ext(fileName) == ".db" &&
-			filepath.Dir(filePath) != ""
+	return fileName == "users.db"
 }
 
 // processes file events for account request files

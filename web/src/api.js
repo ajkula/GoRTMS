@@ -15,6 +15,7 @@ const api = {
         ...options,
         headers: {
         'Connection': 'keep-alive',
+        'Keep-Alive': 'timeout=60',
           ...authHeaders,
           ...options.headers,
         }

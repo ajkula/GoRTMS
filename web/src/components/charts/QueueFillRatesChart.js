@@ -121,7 +121,7 @@ const QueueFillRatesChart = ({ data }) => {
               <ReferenceLine x={90} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'Critical', position: 'insideBottom', fill: '#ef4444' }} />
               <Bar 
                 dataKey="usage" 
-                name="Utilization %" 
+                name="Usage %" 
                 fill="#8884d8"
                 animationDuration={500}
                 isAnimationActive={true}

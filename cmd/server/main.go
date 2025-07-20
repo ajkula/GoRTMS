@@ -321,8 +321,9 @@ func main() {
 		server := &http.Server{
 			Addr:         httpAddr,
 			Handler:      router,
-			ReadTimeout:  5 * time.Second,
-			WriteTimeout: 10 * time.Second,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			IdleTimeout:  120 * time.Second,
 		}
 
 		// Configure TLS if enabled

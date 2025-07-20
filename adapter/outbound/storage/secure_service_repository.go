@@ -20,12 +20,14 @@ import (
 
 // implements ServiceRepository with encrypted storage
 type SecureServiceRepository struct {
-	crypto   outbound.CryptoService
-	key      [32]byte
-	filePath string
-	services map[string]*model.ServiceAccount
-	mutex    sync.RWMutex
-	logger   outbound.Logger
+	crypto         outbound.CryptoService
+	key            [32]byte
+	filePath       string
+	services       map[string]*model.ServiceAccount
+	mutex          sync.RWMutex
+	pendingUpdates map[string]*time.Timer
+	updateMutex    sync.Mutex
+	logger         outbound.Logger
 }
 
 // represents the encrypted data structure
@@ -62,11 +64,12 @@ func NewSecureServiceRepository(filePath string, logger outbound.Logger) (*Secur
 	key := cryptoService.DeriveKey(machineID)
 
 	repo := &SecureServiceRepository{
-		crypto:   cryptoService,
-		key:      key,
-		filePath: filePath,
-		services: make(map[string]*model.ServiceAccount),
-		logger:   logger,
+		crypto:         cryptoService,
+		key:            key,
+		filePath:       filePath,
+		services:       make(map[string]*model.ServiceAccount),
+		pendingUpdates: make(map[string]*time.Timer),
+		logger:         logger,
 	}
 
 	// Load existing services from file
@@ -180,31 +183,52 @@ func (r *SecureServiceRepository) List(ctx context.Context) ([]*model.ServiceAcc
 // updates the last used timestamp for a service
 func (r *SecureServiceRepository) UpdateLastUsed(ctx context.Context, serviceID string) error {
 	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
 	service, exists := r.services[serviceID]
 	if !exists {
+		r.mutex.Unlock()
 		return fmt.Errorf("service account not found: %s", serviceID)
 	}
 
 	// Update last used timestamp
 	service.LastUsed = time.Now()
+	r.mutex.Unlock()
 
-	// saving deep copy for safe async save
-	serviceCopy := make(map[string]*model.ServiceAccount, len(r.services))
-	for id, svc := range r.services {
-		svcCopy := *svc
-		serviceCopy[id] = &svcCopy
+	// Debounce fs io
+	r.updateMutex.Lock()
+	defer r.updateMutex.Unlock()
+
+	//cancel existing timer
+	if timer, exists := r.pendingUpdates[serviceID]; exists {
+		timer.Stop()
 	}
 
-	// Persist to file (async to avoid blocking)
-	go func(services map[string]*model.ServiceAccount) {
-		if err := r.saveServices(services); err != nil {
-			r.logger.Error("Failed to persist last used update", "serviceID", serviceID, "error", err)
-		}
-	}(serviceCopy)
+	// new timer debounced
+	r.pendingUpdates[serviceID] = time.AfterFunc(1*time.Second, func() {
+		r.flushLastUsed(serviceID)
+	})
 
 	return nil
+}
+
+func (r *SecureServiceRepository) flushLastUsed(serviceID string) {
+	r.mutex.RLock()
+	services := make(map[string]*model.ServiceAccount, len(r.services))
+	for id, svc := range r.services {
+		svcCopy := *svc
+		services[id] = &svcCopy
+	}
+	r.mutex.RUnlock()
+
+	go func() {
+		if err := r.saveServices(services); err != nil {
+			r.logger.Error("failed to persist debounced last update", "serviceID", serviceID, "error", err)
+		}
+
+		// cloeanup
+		r.updateMutex.Lock()
+		delete(r.pendingUpdates, serviceID)
+		r.updateMutex.Unlock()
+	}()
 }
 
 func (r *SecureServiceRepository) saveServices(services map[string]*model.ServiceAccount) error {
